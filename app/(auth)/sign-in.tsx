@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Google from 'expo-auth-session/providers/google';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as WebBrowser from 'expo-web-browser';
 import { Button } from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import { config } from '@/lib/config';
@@ -11,47 +10,17 @@ import { authApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
 
-// Must use package name as scheme - Google requires it for Android OAuth client
-const GOOGLE_REDIRECT_URI =
-  Platform.OS === 'android' ? 'com.miralab.matchpoint:/oauthredirect' : undefined;
-
 export default function SignInScreen() {
   const router = useRouter();
   const setUser = useUserStore((s) => s.setUser);
   const [loading, setLoading] = useState(false);
 
-  // Required: closes the auth browser tab when redirect returns to app
-  React.useEffect(() => {
-    WebBrowser.maybeCompleteAuthSession();
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: config.google.clientId,
+      offlineAccess: false,
+    });
   }, []);
-
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: config.google.clientId,
-    androidClientId: config.google.androidClientId,
-    ...(GOOGLE_REDIRECT_URI && { redirectUri: GOOGLE_REDIRECT_URI }),
-  });
-
-  React.useEffect(() => {
-    if (!response) return;
-    if (response.type === 'success' && response.params?.id_token) {
-      handleGoogleToken(response.params.id_token);
-    } else if (response.type === 'error') {
-      setLoading(false);
-      Alert.alert('Error', 'Google sign-in was cancelled or failed.');
-    }
-  }, [response]);
-
-  async function handleGoogleToken(idToken: string) {
-    try {
-      const user = (await authApi.signInWithGoogle(idToken)) as User;
-      setUser(user);
-      router.replace('/(tabs)');
-    } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Sign-in failed');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleGooglePress() {
     if (!config.google.isConfigured) {
@@ -60,11 +29,25 @@ export default function SignInScreen() {
     }
     setLoading(true);
     try {
-      await promptAsync();
-      if (response?.type !== 'success') setLoading(false);
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
+      const result = await GoogleSignin.signIn();
+      if (result.type === 'cancelled') {
+        setLoading(false);
+        return;
+      }
+      if (result.type === 'success' && result.data?.idToken) {
+        const user = (await authApi.signInWithGoogle(result.data.idToken)) as User;
+        setUser(user);
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert('Error', 'Could not get token from Google');
+      }
     } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Google sign-in failed');
+    } finally {
       setLoading(false);
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to open Google sign-in');
     }
   }
 

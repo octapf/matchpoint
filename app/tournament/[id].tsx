@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Share, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
+import { config } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTournament } from '@/lib/hooks/useTournaments';
@@ -67,6 +68,16 @@ export default function TournamentDetailScreen() {
   }
 
   const teamsCount = teams.length;
+  const isOrganizer = tournament.organizerIds?.includes(userId ?? '');
+
+  const handleShareInvite = () => {
+    const url = config.invite.getUrl(tournament.inviteLink);
+    Share.share({
+      message: `Join ${tournament.name} on Matchpoint: ${url}`,
+      url,
+      title: 'Invite to tournament',
+    }).catch(() => Alert.alert('Error', 'Could not share'));
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -115,6 +126,14 @@ export default function TournamentDetailScreen() {
       </View>
 
       <View style={styles.actions}>
+        {isOrganizer && tournament.inviteLink && (
+          <Button
+            title="Share invite link"
+            variant="secondary"
+            onPress={handleShareInvite}
+            fullWidth
+          />
+        )}
         {!hasJoined && (
           <Button
             title="Join tournament"
