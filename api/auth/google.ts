@@ -48,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (user) {
       await col.updateOne(
         { _id: user._id },
-        { $set: { updatedAt: now, authProvider: 'google' } }
+        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName } }
       );
       user = await col.findOne({ _id: user._id });
     } else {

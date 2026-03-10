@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/Colors';
 
 type ButtonProps = {
@@ -14,15 +14,15 @@ export function Button({ title, onPress, variant = 'primary', fullWidth }: Butto
   const isSecondary = variant === 'secondary';
 
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
-      style={({ pressed }) => [
+      activeOpacity={0.8}
+      style={[
         styles.button,
         fullWidth && styles.fullWidth,
         isPrimary && styles.primary,
         isSecondary && styles.secondary,
         variant === 'outline' && styles.outline,
-        pressed && styles.pressed,
       ]}
     >
       <Text
@@ -35,7 +35,7 @@ export function Button({ title, onPress, variant = 'primary', fullWidth }: Butto
       >
         {title}
       </Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -60,9 +60,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 2,
     borderColor: Colors.surfaceLight,
-  },
-  pressed: {
-    opacity: 0.9,
   },
   text: {
     fontSize: 16,
