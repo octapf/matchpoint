@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, TextInput, Alert, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
@@ -8,13 +9,8 @@ import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import type { Gender } from '@/types';
 
-const GENDERS: { value: Gender; label: string }[] = [
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
-];
-
 export default function EditProfileScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const setUser = useUserStore((s) => s.setUser);
@@ -22,7 +18,7 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [gender, setGender] = useState<Gender>('other');
+  const [gender, setGender] = useState<Gender | ''>('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -30,17 +26,21 @@ export default function EditProfileScreen() {
       setDisplayName(user.displayName ?? '');
       setFirstName(user.firstName ?? '');
       setLastName(user.lastName ?? '');
-      setGender((user.gender as Gender) || 'other');
+      setGender((user.gender as Gender) || '');
     }
   }, [user]);
 
   const handleSave = async () => {
     if (!user?._id || !config.api.isConfigured) {
-      Alert.alert('Error', 'Cannot save profile.');
+      Alert.alert(t('common.error'), t('editProfile.cannotSave'));
       return;
     }
     if (!firstName.trim()) {
-      Alert.alert('Missing field', 'First name is required.');
+      Alert.alert(t('common.error'), t('editProfile.missingFirstName'));
+      return;
+    }
+    if (!gender || (gender !== 'male' && gender !== 'female')) {
+      Alert.alert(t('common.error'), t('editProfile.genderRequired'));
       return;
     }
 
@@ -50,13 +50,13 @@ export default function EditProfileScreen() {
         displayName: displayName.trim(),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        gender,
+        gender: gender as Gender,
       };
       const updated = (await usersApi.updateOne(user._id, updatePayload)) as typeof user;
       setUser({ ...updated, ...updatePayload });
       router.back();
     } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to save');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('editProfile.failedToSave'));
     } finally {
       setSaving(false);
     }
@@ -68,26 +68,26 @@ export default function EditProfileScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Edit profile</Text>
+      <Text style={styles.title}>{t('editProfile.title')}</Text>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Display name (optional)</Text>
+        <Text style={styles.label}>{t('profile.displayName')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Tavo, Beach King"
+          placeholder={t('profile.displayNamePlaceholder')}
           placeholderTextColor={Colors.textMuted}
           value={displayName}
           onChangeText={setDisplayName}
           autoCapitalize="none"
         />
-        <Text style={styles.hint}>How you appear in teams. If empty, first name is used.</Text>
+        <Text style={styles.hint}>{t('profile.displayNameHint')}</Text>
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>First name</Text>
+        <Text style={styles.label}>{t('profile.firstName')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="Your first name"
+          placeholder={t('profile.firstNamePlaceholder')}
           placeholderTextColor={Colors.textMuted}
           value={firstName}
           onChangeText={setFirstName}
@@ -106,27 +106,26 @@ export default function EditProfileScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Gender (for avatar)</Text>
-        <Text style={styles.hint}>Required for mixed tournaments (Male + Female pairs). Google/Apple don&apos;t provide this.</Text>
-        <View style={[styles.genderRow, { marginTop: 8 }]}>
-          {GENDERS.map((g) => (
+        <Text style={styles.label}>{t('profile.gender')}</Text>
+        <View style={styles.genderRow}>
+          {(['male', 'female'] as const).map((g) => (
             <Pressable
-              key={g.value}
-              onPress={() => setGender(g.value)}
+              key={g}
+              onPress={() => setGender(g)}
               style={[
                 styles.genderBtn,
-                gender === g.value ? styles.genderBtnActive : styles.genderBtnInactive,
+                gender === g ? styles.genderBtnActive : styles.genderBtnInactive,
               ]}
             >
-              <Text style={[styles.genderBtnText, gender === g.value && styles.genderBtnTextActive]}>
-                {g.label}
+              <Text style={[styles.genderBtnText, gender === g && styles.genderBtnTextActive]}>
+                {t(`profile.gender${g === 'male' ? 'Male' : 'Female'}`)}
               </Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      <Button title="Save" onPress={handleSave} disabled={saving} fullWidth />
+      <Button title={t('common.save')} onPress={handleSave} disabled={saving} fullWidth />
     </ScrollView>
   );
 }

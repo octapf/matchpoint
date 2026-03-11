@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/Colors';
 
-type Gender = 'male' | 'female' | 'other';
+type Gender = 'male' | 'female';
 
 type AvatarProps = {
   firstName: string;
@@ -14,7 +14,7 @@ type AvatarProps = {
 const SIZES = { sm: 32, md: 48, lg: 64 };
 const FONT_SIZES = { sm: 12, md: 18, lg: 24 };
 
-export function Avatar({ firstName, lastName, gender = 'other', size = 'md' }: AvatarProps) {
+export function Avatar({ firstName, lastName, gender, size = 'md' }: AvatarProps) {
   const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || '?';
   const bgColor =
     gender === 'male'

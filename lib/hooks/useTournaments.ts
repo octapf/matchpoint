@@ -5,8 +5,34 @@ import { config } from '@/lib/config';
 import type { Tournament } from '@/types';
 
 const MOCK_TOURNAMENTS: Tournament[] = [
-  { _id: '1', name: 'Summer Beach Cup', date: '2026-07-15', location: 'Barceloneta Beach', maxTeams: 16, inviteLink: '', status: 'open', organizerIds: [], createdAt: '', updatedAt: '' },
-  { _id: '2', name: 'Weekend Volley', date: '2026-07-22', location: 'Nova Icària', maxTeams: 16, inviteLink: '', status: 'open', organizerIds: [], createdAt: '', updatedAt: '' },
+  {
+    _id: '1',
+    name: 'Summer Beach Cup',
+    date: '2026-07-15',
+    startDate: '2026-07-15',
+    endDate: '2026-07-15',
+    location: 'Barceloneta Beach',
+    maxTeams: 16,
+    inviteLink: '',
+    status: 'open',
+    organizerIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    _id: '2',
+    name: 'Weekend Volley',
+    date: '2026-07-22',
+    startDate: '2026-07-22',
+    endDate: '2026-07-22',
+    location: 'Nova Icària',
+    maxTeams: 16,
+    inviteLink: '',
+    status: 'open',
+    organizerIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
 ];
 
 export function useTournaments(params?: { status?: string; organizerId?: string }) {
@@ -23,6 +49,8 @@ const MOCK_TOURNAMENT: Tournament = {
   _id: '1',
   name: 'Summer Beach Cup',
   date: '2026-07-15',
+  startDate: '2026-07-15',
+  endDate: '2026-07-15',
   location: 'Barceloneta Beach',
   maxTeams: 16,
   inviteLink: '',

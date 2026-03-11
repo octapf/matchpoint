@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const allowed = ['name', 'date', 'location', 'description', 'maxTeams', 'status', 'organizerIds'];
+      const allowed = ['name', 'date', 'startDate', 'endDate', 'location', 'description', 'maxTeams', 'status', 'organizerIds'];
       const update: Record<string, unknown> = {};
       for (const k of allowed) {
         if (body[k] !== undefined) update[k] = body[k];

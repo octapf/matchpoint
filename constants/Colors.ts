@@ -19,6 +19,8 @@ const palette = {
   avatarOther: '#6b7280',
   success: '#22c55e',
   error: '#ef4444',
+  /** Carmesí / crimson — danger actions, delete, destructive (opaco) */
+  danger: '#b91c3c',
   warning: '#f59e0b',
   tabIconDefault: '#737373',
   tabIconSelected: '#fbbf24',

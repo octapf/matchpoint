@@ -1,0 +1,143 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create",
+    "delete": "Delete",
+    "error": "Error",
+    "ok": "OK",
+    "tournament": "Tournament",
+    "team": "Team",
+    "player": "Player",
+    "you": "You",
+    "loading": "Loading..."
+  },
+  "tabs": {
+    "tournaments": "Tournaments",
+    "myEntries": "My Entries",
+    "profile": "Profile"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "signingIn": "Signing in...",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithApple": "Continue with Apple",
+    "signInToJoin": "Sign in to join tournaments",
+    "webSignInOnly": "Sign in is only available in the app. Install Matchpoint from the Play Store to get started.",
+    "getOnPlayStore": "Get Matchpoint on Play Store"
+  },
+  "profile": {
+    "editProfile": "Edit profile",
+    "deleteAccount": "Delete account",
+    "deleteAccountConfirm": "This will be implemented soon. Contact support for now.",
+    "displayName": "Display name",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "gender": "Gender",
+    "genderMale": "Male",
+    "genderFemale": "Female",
+    "noUserData": "No user data",
+    "displayNameHint": "How you appear in teams. Defaults to first name if empty.",
+    "firstNamePlaceholder": "Your first name",
+    "lastNamePlaceholder": "Your last name",
+    "displayNamePlaceholder": "e.g. Tavo, Beach King",
+    "matchpointBy": "Matchpoint by Miralab"
+  },
+  "tournaments": {
+    "create": "Create tournament",
+    "createButton": "+ Create",
+    "teamsMax": "%{count} teams max",
+    "failedToLoad": "Failed to load tournaments",
+    "createTitle": "Create tournament",
+    "name": "Name",
+    "namePlaceholder": "e.g. Summer Beach Cup",
+    "startDate": "Start date",
+    "endDate": "End date (optional, same day if empty)",
+    "location": "Location",
+    "locationPlaceholder": "e.g. Barceloneta Beach",
+    "maxTeams": "Max teams",
+    "maxTeamsPlaceholder": "16",
+    "description": "Description (optional)",
+    "descriptionPlaceholder": "Add details...",
+    "missingFields": "Please fill in name, start date, and location.",
+    "invalidDates": "End date must be on or after start date.",
+    "invalidMaxTeams": "Max teams must be between 2 and 64.",
+    "mustBeSignedIn": "You must be signed in to create a tournament.",
+    "failedToCreate": "Failed to create tournament"
+  },
+  "tournamentDetail": {
+    "teams": "Teams",
+    "teamsCount": "%{count}/%{max} teams",
+    "noTeamsYet": "No teams yet",
+    "openSlot": "Open slot",
+    "genderRequired": "Set your gender in Profile to join tournaments.",
+    "joinTournament": "Join tournament",
+    "joinedBadge": "You've joined this tournament",
+    "createTeam": "Create team",
+    "alreadyInTeam": "You're already in a team",
+    "shareInvite": "Share invite link",
+    "deleteTournament": "Delete tournament",
+    "deleteConfirm": "Are you sure you want to delete \"%{name}\"? This cannot be undone.",
+    "inviteTitle": "Invite to tournament",
+    "inviteMessage": "Join %{name} on Matchpoint: %{url}",
+    "couldNotShare": "Could not share",
+    "failedToLoad": "Failed to load tournament"
+  },
+  "team": {
+    "createTeam": "Create team",
+    "teamName": "Team name",
+    "teamNamePlaceholder": "e.g. Team Alpha",
+    "players": "Players (2)",
+    "youCreator": "You (creator)",
+    "openSlotInvite": "Open slot — invite a partner",
+    "alreadyInTeam": "You can only be in one team per tournament.",
+    "missingName": "Please enter a team name.",
+    "genderRequiredTitle": "Gender required",
+    "genderRequired": "You need to set your gender in your profile to create a team.",
+    "failedToCreate": "Failed to create team"
+  },
+  "entries": {
+    "lookingForPartner": "Looking for partner",
+    "noEntries": "No entries yet. Join a tournament to get started.",
+    "failedToLoad": "Failed to load entries"
+  },
+  "inviteLink": {
+    "joinTournament": "Join Tournament",
+    "invalidLink": "Invalid link",
+    "invalidLinkSubtitle": "This tournament link may be expired or invalid.",
+    "goBack": "Go back",
+    "viewTournament": "View tournament",
+    "webOpenInApp": "Open this link in the Matchpoint app to join the tournament. Install the app from the Play Store if you don't have it yet.",
+    "webCopyHint": "Or copy this link and open it on your phone: %{url}",
+    "alreadyJoined": "You've already joined. View tournament details.",
+    "invitedToJoin": "You've been invited to join this tournament.",
+    "genderRequiredProfile": "Set your gender in Profile to join tournaments."
+  },
+  "editProfile": {
+    "title": "Edit profile",
+    "missingFirstName": "First name is required.",
+    "genderRequired": "Gender is required to join tournaments.",
+    "cannotSave": "Cannot save profile.",
+    "failedToSave": "Failed to save"
+  },
+  "notFound": {
+    "title": "Oops!",
+    "message": "This screen doesn't exist.",
+    "goHome": "Go to home screen!"
+  },
+  "splash": {
+    "tagline": "Beach volleyball tournaments"
+  },
+  "footer": {
+    "copyright": "© 2026 Miralab"
+  },
+  "settings": {
+    "language": "Language",
+    "english": "English",
+    "spanish": "Español",
+    "italian": "Italiano",
+    "chooseLanguage": "Choose your language",
+    "continue": "Continue"
+  }
+}

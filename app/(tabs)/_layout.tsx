@@ -1,9 +1,12 @@
 import React from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { Tabs } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import Colors from '@/constants/Colors';
 
 export default function TabLayout() {
+  const { t } = useTranslation();
+
   return (
     <Tabs
       screenOptions={{
@@ -18,7 +21,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tournaments',
+          title: t('tabs.tournaments'),
           tabBarIcon: ({ color }) => (
             <SymbolView name={{ ios: 'trophy', android: 'sports_esports', web: 'sports_esports' }} tintColor={color} size={24} />
           ),
@@ -27,7 +30,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="entries"
         options={{
-          title: 'My Entries',
+          title: t('tabs.myEntries'),
           tabBarIcon: ({ color }) => (
             <SymbolView name={{ ios: 'person.2', android: 'group', web: 'group' }} tintColor={color} size={24} />
           ),
@@ -36,7 +39,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('tabs.profile'),
           tabBarIcon: ({ color }) => (
             <SymbolView name={{ ios: 'person.circle', android: 'person', web: 'person' }} tintColor={color} size={24} />
           ),

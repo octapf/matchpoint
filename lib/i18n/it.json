@@ -1,0 +1,143 @@
+{
+  "common": {
+    "cancel": "Annulla",
+    "save": "Salva",
+    "create": "Crea",
+    "delete": "Elimina",
+    "error": "Errore",
+    "ok": "OK",
+    "tournament": "Torneo",
+    "team": "Squadra",
+    "player": "Giocatore",
+    "you": "Tu",
+    "loading": "Caricamento..."
+  },
+  "tabs": {
+    "tournaments": "Tornei",
+    "myEntries": "Le mie iscrizioni",
+    "profile": "Profilo"
+  },
+  "auth": {
+    "signIn": "Accedi",
+    "signOut": "Esci",
+    "signingIn": "Accesso in corso...",
+    "continueWithGoogle": "Continua con Google",
+    "continueWithApple": "Continua con Apple",
+    "signInToJoin": "Accedi per unirti ai tornei",
+    "webSignInOnly": "L'accesso è disponibile solo nell'app. Installa Matchpoint dal Play Store per iniziare.",
+    "getOnPlayStore": "Scarica Matchpoint dal Play Store"
+  },
+  "profile": {
+    "editProfile": "Modifica profilo",
+    "deleteAccount": "Elimina account",
+    "deleteAccountConfirm": "Funzionalità in arrivo. Contatta il supporto per ora.",
+    "displayName": "Nome visualizzato",
+    "firstName": "Nome",
+    "lastName": "Cognome",
+    "gender": "Genere",
+    "genderMale": "Uomo",
+    "genderFemale": "Donna",
+    "noUserData": "Nessun dato utente",
+    "displayNameHint": "Come appari nelle squadre. Se vuoto, usa il nome.",
+    "firstNamePlaceholder": "Il tuo nome",
+    "lastNamePlaceholder": "Il tuo cognome",
+    "displayNamePlaceholder": "es. Tavo, Re della spiaggia",
+    "matchpointBy": "Matchpoint by Miralab"
+  },
+  "tournaments": {
+    "create": "Crea torneo",
+    "createButton": "+ Crea",
+    "teamsMax": "%{count} squadre max",
+    "failedToLoad": "Impossibile caricare i tornei",
+    "createTitle": "Crea torneo",
+    "name": "Nome",
+    "namePlaceholder": "es. Summer Beach Cup",
+    "startDate": "Data inizio",
+    "endDate": "Data fine (opzionale, stesso giorno se vuota)",
+    "location": "Posizione",
+    "locationPlaceholder": "es. Spiaggia Barceloneta",
+    "maxTeams": "Squadre massime",
+    "maxTeamsPlaceholder": "16",
+    "description": "Descrizione (opzionale)",
+    "descriptionPlaceholder": "Aggiungi dettagli...",
+    "missingFields": "Compila nome, data di inizio e posizione.",
+    "invalidDates": "La data di fine deve essere uguale o successiva alla data di inizio.",
+    "invalidMaxTeams": "Le squadre massime devono essere tra 2 e 64.",
+    "mustBeSignedIn": "Devi essere autenticato per creare un torneo.",
+    "failedToCreate": "Impossibile creare il torneo"
+  },
+  "tournamentDetail": {
+    "teams": "Squadre",
+    "teamsCount": "%{count}/%{max} squadre",
+    "noTeamsYet": "Nessuna squadra ancora",
+    "openSlot": "Posto libero",
+    "genderRequired": "Imposta il tuo genere nel profilo per unirti ai tornei.",
+    "joinTournament": "Unisciti al torneo",
+    "joinedBadge": "Ti sei unito a questo torneo",
+    "createTeam": "Crea squadra",
+    "alreadyInTeam": "Sei già in una squadra",
+    "shareInvite": "Condividi link invito",
+    "deleteTournament": "Elimina torneo",
+    "deleteConfirm": "Vuoi davvero eliminare \"%{name}\"? Questa azione è irreversibile.",
+    "inviteTitle": "Invita al torneo",
+    "inviteMessage": "Unisciti a %{name} su Matchpoint: %{url}",
+    "couldNotShare": "Impossibile condividere",
+    "failedToLoad": "Impossibile caricare il torneo"
+  },
+  "team": {
+    "createTeam": "Crea squadra",
+    "teamName": "Nome squadra",
+    "teamNamePlaceholder": "es. Team Alpha",
+    "players": "Giocatori (2)",
+    "youCreator": "Tu (creatore)",
+    "openSlotInvite": "Posto libero — invita un compagno",
+    "alreadyInTeam": "Puoi stare in una sola squadra per torneo.",
+    "missingName": "Inserisci un nome squadra.",
+    "genderRequiredTitle": "Genere richiesto",
+    "genderRequired": "Devi impostare il tuo genere nel profilo per creare una squadra.",
+    "failedToCreate": "Impossibile creare la squadra"
+  },
+  "entries": {
+    "lookingForPartner": "Cerco compagno",
+    "noEntries": "Nessuna iscrizione. Unisciti a un torneo per iniziare.",
+    "failedToLoad": "Impossibile caricare le iscrizioni"
+  },
+  "inviteLink": {
+    "joinTournament": "Unisciti al torneo",
+    "invalidLink": "Link non valido",
+    "invalidLinkSubtitle": "Questo link potrebbe essere scaduto o non valido.",
+    "goBack": "Indietro",
+    "viewTournament": "Vedi torneo",
+    "webOpenInApp": "Apri questo link nell'app Matchpoint per unirti al torneo. Installa l'app dal Play Store se non ce l'hai.",
+    "webCopyHint": "Oppure copia questo link e aprilo sul telefono: %{url}",
+    "alreadyJoined": "Ti sei già unito. Vedi i dettagli del torneo.",
+    "invitedToJoin": "Sei stato invitato a unirti a questo torneo.",
+    "genderRequiredProfile": "Imposta il tuo genere nel profilo per unirti ai tornei."
+  },
+  "editProfile": {
+    "title": "Modifica profilo",
+    "missingFirstName": "Il nome è obbligatorio.",
+    "genderRequired": "Il genere è obbligatorio per unirsi ai tornei.",
+    "cannotSave": "Impossibile salvare il profilo.",
+    "failedToSave": "Impossibile salvare"
+  },
+  "notFound": {
+    "title": "Oops!",
+    "message": "Questa schermata non esiste.",
+    "goHome": "Vai alla home"
+  },
+  "splash": {
+    "tagline": "Tornei di beach volley"
+  },
+  "footer": {
+    "copyright": "© 2026 Miralab"
+  },
+  "settings": {
+    "language": "Lingua",
+    "english": "English",
+    "spanish": "Español",
+    "italian": "Italiano",
+    "chooseLanguage": "Scegli la tua lingua",
+    "continue": "Continua"
+  }
+}

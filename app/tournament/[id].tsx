@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useLayoutEffect } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Share, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import type { Gender, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { config } from '@/lib/config';
@@ -12,25 +14,19 @@ import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
+import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Team } from '@/types';
-
-function formatDate(dateStr: string) {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return dateStr;
-  }
-}
 
 function TeamCard({
   team,
   userMap,
   currentUserId,
+  t,
 }: {
   team: Team;
-  userMap: Record<string, { _id: string; firstName: string; lastName?: string; displayName?: string; gender?: string }>;
+  userMap: Record<string, User>;
   currentUserId: string | null;
+  t: (key: string, options?: Record<string, string | number>) => string;
 }) {
   return (
     <View style={styles.teamCard}>
@@ -46,10 +42,10 @@ function TeamCard({
               <Avatar
                 firstName={user?.firstName ?? ''}
                 lastName={user?.lastName ?? ''}
-                gender={(user?.gender as 'male' | 'female' | 'other') ?? 'other'}
+                gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
                 size="sm"
               />
-              <Text style={[styles.playerName, isYou && styles.playerNameHighlight]}>{displayName || 'Player'}</Text>
+              <Text style={[styles.playerName, isYou && styles.playerNameHighlight]}>{displayName || t('common.player')}</Text>
             </View>
           ) : (
             <View key={i} style={styles.slot}>
@@ -62,10 +58,25 @@ function TeamCard({
   );
 }
 
+function hasValidGender(g?: Gender | string): g is Gender {
+  return g === 'male' || g === 'female';
+}
+
+function TournamentHeaderTitle({ id }: { id: string | undefined }) {
+  const { t } = useTranslation();
+  const { data: tournament } = useTournament(id);
+  return <Text style={headerTitleStyle}>{tournament?.name ?? t('common.tournament')}</Text>;
+}
+
+const headerTitleStyle = { color: '#e5e5e5', fontSize: 17, fontWeight: '600' } as const;
+
 export default function TournamentDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const userId = useUserStore((s) => s.user?._id ?? null);
+  const user = useUserStore((s) => s.user);
+  const userId = user?._id ?? null;
+  const canEnroll = hasValidGender(user?.gender);
 
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
@@ -82,6 +93,11 @@ export default function TournamentDetailScreen() {
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
   const isLoading = loadingTournament;
   const isError = errorTournament;
+
+  const navigation = useNavigation();
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerTitle: () => <TournamentHeaderTitle id={id ?? undefined} /> });
+  }, [navigation, id]);
 
   if (isLoading || !tournament) {
     return (
@@ -110,7 +126,7 @@ export default function TournamentDetailScreen() {
   if (isError) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{tournamentError?.message || 'Failed to load tournament'}</Text>
+        <Text style={styles.errorText}>{tournamentError?.message || t('tournamentDetail.failedToLoad')}</Text>
       </View>
     );
   }
@@ -120,12 +136,12 @@ export default function TournamentDetailScreen() {
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete tournament',
-      `Are you sure you want to delete "${tournament.name}"? This cannot be undone.`,
+      t('tournamentDetail.deleteTournament'),
+      t('tournamentDetail.deleteConfirm', { name: tournament.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => deleteTournament.mutate(id),
         },
@@ -136,25 +152,25 @@ export default function TournamentDetailScreen() {
   const handleShareInvite = () => {
     const url = config.invite.getUrl(tournament.inviteLink);
     Share.share({
-      message: `Join ${tournament.name} on Matchpoint: ${url}`,
+      message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
       url,
-      title: 'Invite to tournament',
-    }).catch(() => Alert.alert('Error', 'Could not share'));
+      title: t('tournamentDetail.inviteTitle'),
+    }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>{tournament.name}</Text>
-        <Text style={styles.date}>{formatDate(tournament.date)}</Text>
+        <Text style={styles.date}>{formatTournamentDate(tournament.date)}</Text>
         <Text style={styles.location}>{tournament.location}</Text>
         <Text style={styles.spots}>
-          {teamsCount}/{tournament.maxTeams} teams
+          {t('tournamentDetail.teamsCount', { count: teamsCount, max: tournament.maxTeams ?? 16 })}
         </Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Teams</Text>
+        <Text style={styles.sectionTitle}>{t('tournamentDetail.teams')}</Text>
         {loadingTeams ? (
           <View style={styles.teamCard}>
             <Skeleton height={18} width="40%" style={{ marginBottom: 12 }} />
@@ -164,37 +180,21 @@ export default function TournamentDetailScreen() {
             </View>
           </View>
         ) : teams.length === 0 ? (
-          <Text style={styles.emptyText}>No teams yet</Text>
+          <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
         ) : (
           teams.map((team) => (
-            <TeamCard key={team._id} team={team} userMap={userMap} currentUserId={userId} />
+            <TeamCard key={team._id} team={team} userMap={userMap} currentUserId={userId} t={t} />
           ))
         )}
       </View>
 
       <View style={styles.actions}>
-        {isOrganizer && (
-          <>
-            {tournament.inviteLink && (
-              <Button
-                title="Share invite link"
-                variant="secondary"
-                onPress={handleShareInvite}
-                fullWidth
-              />
-            )}
-            <Button
-              title="Delete tournament"
-              variant="outline"
-              onPress={handleDelete}
-              disabled={deleteTournament.isPending}
-              fullWidth
-            />
-          </>
+        {!canEnroll && (
+          <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
         )}
-        {!hasJoined && (
+        {!hasJoined && canEnroll && (
           <Button
-            title="Join tournament"
+            title={t('tournamentDetail.joinTournament')}
             onPress={() => {
               if (!userId || !id) return;
               createEntry.mutate({ tournamentId: id, userId, lookingForPartner: true });
@@ -206,7 +206,7 @@ export default function TournamentDetailScreen() {
         {hasJoined && (
           <Text style={styles.joinedBadge}>You've joined this tournament</Text>
         )}
-        {!userHasTeam && hasJoined && (
+        {!userHasTeam && hasJoined && canEnroll && (
           <Button
             title="Create team"
             variant="secondary"
@@ -215,7 +215,24 @@ export default function TournamentDetailScreen() {
           />
         )}
         {userHasTeam && (
-          <Text style={styles.joinedBadge}>You're already in a team</Text>
+          <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
+        )}
+        {isOrganizer && tournament.inviteLink && (
+          <Button
+            title={t('tournamentDetail.shareInvite')}
+            variant="secondary"
+            onPress={handleShareInvite}
+            fullWidth
+          />
+        )}
+        {isOrganizer && (
+          <Button
+            title={t('tournamentDetail.deleteTournament')}
+            variant="danger"
+            onPress={handleDelete}
+            disabled={deleteTournament.isPending}
+            fullWidth
+          />
         )}
       </View>
     </ScrollView>
@@ -251,4 +268,5 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 16, color: Colors.textSecondary, textAlign: 'center' },
   emptyText: { fontSize: 14, color: Colors.textMuted, fontStyle: 'italic' },
   joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
+  genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
 });

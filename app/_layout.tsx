@@ -13,6 +13,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { queryClient } from '@/lib/queryClient';
+import { I18nProvider, i18n, useTranslation } from '@/lib/i18n';
+import { useLanguageStore } from '@/store/useLanguageStore';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -56,25 +58,46 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const { t } = useTranslation();
+  const language = useLanguageStore((s) => s.language);
+  const hasHydrated = useLanguageStore((s) => s._hasHydrated);
+
+  useEffect(() => {
+    if (hasHydrated && language) {
+      i18n.locale = language;
+    }
+  }, [hasHydrated, language]);
+
   const Wrapper = Platform.OS === 'web' ? View : GestureHandlerRootView;
 
   return (
     <Wrapper style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <I18nProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="tournament/[id]" options={{ headerShown: true, headerTintColor: '#e5e5e5', headerStyle: { backgroundColor: '#1a1a1a' } }} />
+        <Stack.Screen name="language" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="tournament/[id]"
+          options={{
+            headerShown: true,
+            title: t('common.tournament'),
+            headerTintColor: '#e5e5e5',
+            headerStyle: { backgroundColor: '#1a1a1a' },
+          }}
+        />
         <Stack.Screen name="tournament/create" />
         <Stack.Screen name="tournament/[id]/team/create" />
         <Stack.Screen name="t/[token]" />
-        <Stack.Screen name="profile/edit" options={{ headerShown: true, title: 'Edit profile' }} />
+        <Stack.Screen name="profile/edit" options={{ headerShown: true, title: t('profile.editProfile') }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>
+      </I18nProvider>
     </Wrapper>
   );
 }

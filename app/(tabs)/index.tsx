@@ -1,21 +1,15 @@
 import React from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Link } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTournaments } from '@/lib/hooks/useTournaments';
+import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Tournament } from '@/types';
 
-function formatDate(dateStr: string) {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return dateStr;
-  }
-}
-
 export default function TournamentsScreen() {
+  const { t } = useTranslation();
   const { data: tournaments = [], isLoading, isError, error } = useTournaments();
 
   if (isLoading) {
@@ -38,7 +32,7 @@ export default function TournamentsScreen() {
   if (isError) {
     return (
       <View style={[styles.container, styles.errorContainer]}>
-        <Text style={styles.errorText}>{error?.message || 'Failed to load tournaments'}</Text>
+        <Text style={styles.errorText}>{error?.message || t('tournaments.failedToLoad')}</Text>
       </View>
     );
   }
@@ -46,20 +40,20 @@ export default function TournamentsScreen() {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        {(tournaments as Tournament[]).map((t) => (
-          <Link key={t._id} href={`/tournament/${t._id}`} asChild>
+        {(tournaments as Tournament[]).map((tournament) => (
+          <Link key={tournament._id} href={`/tournament/${tournament._id}`} asChild>
             <Pressable style={styles.card}>
-              <Text style={styles.cardTitle}>{t.name}</Text>
-              <Text style={styles.cardDate}>{formatDate(t.date)}</Text>
-              <Text style={styles.cardLocation}>{t.location}</Text>
-              <Text style={styles.cardSpots}>{t.maxTeams} teams max</Text>
+              <Text style={styles.cardTitle}>{tournament.name}</Text>
+              <Text style={styles.cardDate}>{formatTournamentDate(tournament.date)}</Text>
+              <Text style={styles.cardLocation}>{tournament.location}</Text>
+              <Text style={styles.cardSpots}>{t('tournaments.teamsMax', { count: tournament.maxTeams ?? 16 })}</Text>
             </Pressable>
           </Link>
         ))}
       </ScrollView>
       <Link href="/tournament/create" asChild>
         <Pressable style={styles.fab}>
-          <Text style={styles.fabText}>+ Create</Text>
+          <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
         </Pressable>
       </Link>
     </View>
