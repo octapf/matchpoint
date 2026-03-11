@@ -131,6 +131,12 @@ export const usersApi = {
   findOne: (params: { id?: string; email?: string }) =>
     apiRequest<unknown>('/api/users', { params: params as Record<string, string> }),
 
+  findByIds: (ids: string[]) =>
+    apiRequest<unknown[]>(
+      '/api/users',
+      { params: { ids: ids.filter(Boolean).join(',') } }
+    ),
+
   insertOne: (document: Record<string, unknown>) =>
     apiRequest<unknown>('/api/users', {
       method: 'POST',

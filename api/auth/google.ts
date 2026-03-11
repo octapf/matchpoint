@@ -39,6 +39,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const email = payload.email;
     const firstName = payload.given_name || payload.name?.split(' ')[0] || '';
     const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
+    // Google OAuth does not provide gender in standard claims; default to 'other'
+    const gender = payload.gender === 'male' || payload.gender === 'female' ? payload.gender : 'other';
 
     const db = await getDb();
     const col = db.collection('users');
@@ -48,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (user) {
       await col.updateOne(
         { _id: user._id },
-        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName } }
+        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName, gender: user.gender || gender } }
       );
       user = await col.findOne({ _id: user._id });
     } else {
@@ -57,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: '',
-        gender: '',
+        gender,
         authProvider: 'google',
         createdAt: now,
         updatedAt: now,

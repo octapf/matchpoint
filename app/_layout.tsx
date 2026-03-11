@@ -70,6 +70,7 @@ function RootLayoutNav() {
         <Stack.Screen name="tournament/create" />
         <Stack.Screen name="tournament/[id]/team/create" />
         <Stack.Screen name="t/[token]" />
+        <Stack.Screen name="profile/edit" options={{ headerShown: true, title: 'Edit profile' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
         </ThemeProvider>

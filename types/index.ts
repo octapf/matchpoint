@@ -9,6 +9,7 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
+  displayName?: string;
   phone?: string;
   gender?: Gender;
   authProvider: 'google' | 'apple';
