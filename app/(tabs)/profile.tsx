@@ -61,6 +61,19 @@ export default function ProfileScreen() {
           <Text style={styles.email}>{user.email || '—'}</Text>
         </View>
 
+        {(user.gender === 'other' || !user.gender) && (
+          <TouchableOpacity
+            style={styles.genderBanner}
+            onPress={() => router.push('/profile/edit')}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.genderBannerText}>
+              Set your gender (Male or Female) to join mixed tournaments
+            </Text>
+            <Text style={styles.genderBannerLink}>Edit profile →</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.label}>Display name</Text>
           <Text style={styles.value}>{user.displayName || '—'}</Text>
@@ -182,6 +195,24 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 16,
     color: Colors.text,
+  },
+  genderBanner: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.yellow,
+  },
+  genderBannerText: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  genderBannerLink: {
+    fontSize: 14,
+    color: Colors.yellow,
+    fontWeight: '600',
   },
   editSection: {
     marginTop: 24,

@@ -107,7 +107,7 @@ export default function EditProfileScreen() {
 
       <View style={styles.field}>
         <Text style={styles.label}>Gender (for avatar)</Text>
-        <Text style={styles.hint}>Google usually doesn&apos;t provide this. Select to customize your avatar.</Text>
+        <Text style={styles.hint}>Required for mixed tournaments (Male + Female pairs). Google/Apple don&apos;t provide this.</Text>
         <View style={[styles.genderRow, { marginTop: 8 }]}>
           {GENDERS.map((g) => (
             <Pressable
