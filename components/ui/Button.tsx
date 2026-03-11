@@ -1,28 +1,34 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Pressable, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/Colors';
 
 type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
   fullWidth?: boolean;
+  disabled?: boolean;
 };
 
-export function Button({ title, onPress, variant = 'primary', fullWidth }: ButtonProps) {
+export function Button({ title, onPress, variant = 'primary', fullWidth, disabled }: ButtonProps) {
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
+  const isDanger = variant === 'danger';
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.8}
-      style={[
+      disabled={disabled}
+      style={({ pressed }) => [
         styles.button,
         fullWidth && styles.fullWidth,
         isPrimary && styles.primary,
         isSecondary && styles.secondary,
         variant === 'outline' && styles.outline,
+        isDanger && styles.danger,
+        (isPrimary || isSecondary || isDanger) && styles.elevated,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
       ]}
     >
       <Text
@@ -31,19 +37,21 @@ export function Button({ title, onPress, variant = 'primary', fullWidth }: Butto
           isPrimary && styles.primaryText,
           isSecondary && styles.secondaryText,
           variant === 'outline' && styles.outlineText,
+          isDanger && styles.dangerText,
         ]}
       >
         {title}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    paddingVertical: 14,
+    minHeight: 48,
+    paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -58,12 +66,29 @@ const styles = StyleSheet.create({
   },
   outline: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: Colors.surfaceLight,
+  },
+  danger: {
+    backgroundColor: Colors.danger,
+  },
+  elevated: {
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  pressed: {
+    transform: [{ translateY: 1 }],
+    opacity: 0.94,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   text: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   primaryText: {
     color: '#1a1a1a',
@@ -73,5 +98,8 @@ const styles = StyleSheet.create({
   },
   outlineText: {
     color: Colors.text,
+  },
+  dangerText: {
+    color: '#fff',
   },
 });

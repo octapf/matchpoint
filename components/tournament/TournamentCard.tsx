@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
+import { formatTournamentDate } from '@/lib/utils/dateFormat';
 
 type TournamentCardProps = {
   id: string;
@@ -28,7 +29,7 @@ export function TournamentCard({
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <Text style={styles.name}>{name}</Text>
-      <Text style={styles.date}>{date}</Text>
+      <Text style={styles.date}>{formatTournamentDate(date)}</Text>
       <Text style={styles.location}>{location}</Text>
       <View style={styles.footer}>
         <Text style={styles.spots}>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, TextInput, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
@@ -10,9 +11,19 @@ import { useEntries, useUpdateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
 
 export default function CreateTeamScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const userId = useUserStore((s) => s.user?._id ?? null);
+  const user = useUserStore((s) => s.user);
+  const userId = user?._id ?? null;
+  const hasValidGender = user?.gender === 'male' || user?.gender === 'female';
+
+  useEffect(() => {
+    if (userId && !hasValidGender) {
+      Alert.alert(t('team.genderRequiredTitle'), t('team.genderRequired'), [{ text: t('common.ok'), onPress: () => router.replace('/profile/edit') }]);
+    }
+  }, [hasValidGender, userId, router, t]);
+
   const createTeam = useCreateTeam();
   const updateEntry = useUpdateEntry();
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
@@ -26,15 +37,15 @@ export default function CreateTeamScreen() {
 
   const handleCreate = () => {
     if (userHasTeam) {
-      Alert.alert('Already in a team', 'You can only be in one team per tournament.');
+      Alert.alert(t('common.error'), t('team.alreadyInTeam'));
       return;
     }
     if (!teamName.trim()) {
-      Alert.alert('Missing name', 'Please enter a team name.');
+      Alert.alert(t('common.error'), t('team.missingName'));
       return;
     }
     if (!id || !userId) {
-      Alert.alert('Error', 'Missing tournament or user.');
+      Alert.alert(t('common.error'), 'Missing tournament or user.');
       return;
     }
 
@@ -64,15 +75,19 @@ export default function CreateTeamScreen() {
     );
   };
 
+  if (userId && !hasValidGender) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Create team</Text>
+      <Text style={styles.title}>{t('team.createTeam')}</Text>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Team name</Text>
+        <Text style={styles.label}>{t('team.teamName')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Team Alpha"
+          placeholder={t('team.teamNamePlaceholder')}
           placeholderTextColor={Colors.textMuted}
           value={teamName}
           onChangeText={setTeamName}
@@ -80,18 +95,18 @@ export default function CreateTeamScreen() {
       </View>
 
       <View style={styles.players}>
-        <Text style={styles.label}>Players (2)</Text>
+        <Text style={styles.label}>{t('team.players')}</Text>
         <View style={styles.playerRow}>
-          <Avatar firstName="You" lastName="" gender="other" size="md" />
-          <Text style={styles.playerLabel}>You (creator)</Text>
+          <Avatar firstName={user?.firstName ?? t('common.you')} lastName={user?.lastName ?? ''} gender={user?.gender} size="md" />
+          <Text style={styles.playerLabel}>{t('team.youCreator')}</Text>
         </View>
         <View style={styles.slot}>
-          <Text style={styles.slotText}>Open slot — invite a partner</Text>
+          <Text style={styles.slotText}>{t('team.openSlotInvite')}</Text>
         </View>
       </View>
 
       <Button
-        title="Create team"
+        title={t('team.createTeam')}
         onPress={handleCreate}
         disabled={createTeam.isPending || userHasTeam}
         fullWidth

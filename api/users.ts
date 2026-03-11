@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: phone || '',
-        gender: gender === 'male' || gender === 'female' ? gender : 'other',
+        gender: gender === 'male' || gender === 'female' ? gender : undefined,
         authProvider,
         createdAt: now,
         updatedAt: now,
@@ -78,6 +78,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       // Explicitly ensure displayName is applied (client sends it; some parsers can drop it)
       if ('displayName' in body) update.displayName = body.displayName ?? '';
+      // Only accept male/female for gender; ignore 'other' or invalid values
+      if ('gender' in body && body.gender !== 'male' && body.gender !== 'female') {
+        delete update.gender;
+      }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }

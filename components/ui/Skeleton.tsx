@@ -5,7 +5,7 @@ import Colors from '@/constants/Colors';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 type SkeletonProps = {
-  width?: number | string;
+  width?: ViewStyle['width'];
   height?: number;
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;

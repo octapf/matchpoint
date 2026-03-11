@@ -2,7 +2,7 @@
  * Matchpoint data types
  */
 
-export type Gender = 'male' | 'female' | 'other';
+export type Gender = 'male' | 'female';
 
 export interface User {
   _id: string;
@@ -22,7 +22,10 @@ export type TournamentStatus = 'open' | 'full' | 'cancelled';
 export interface Tournament {
   _id: string;
   name: string;
-  date: string;
+  /** @deprecated Use startDate. Kept for backward compat. */
+  date?: string;
+  startDate: string;
+  endDate: string;
   location: string;
   description?: string;
   maxTeams: number;

@@ -17,7 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const corsRes = withCors(res);
   const webClientId = process.env.GOOGLE_CLIENT_ID;
   const androidClientId = process.env.GOOGLE_ANDROID_CLIENT_ID;
-  const audiences = [webClientId, androidClientId].filter(Boolean);
+  const audiences = [webClientId, androidClientId].filter(
+    (audience): audience is string => typeof audience === 'string' && audience.length > 0
+  );
   if (audiences.length === 0) {
     return corsRes.status(500).json({ error: 'Google auth not configured' });
   }
@@ -39,8 +41,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const email = payload.email;
     const firstName = payload.given_name || payload.name?.split(' ')[0] || '';
     const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
-    // Google OAuth does not provide gender in standard claims; default to 'other'
-    const gender = payload.gender === 'male' || payload.gender === 'female' ? payload.gender : 'other';
 
     const db = await getDb();
     const col = db.collection('users');
@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (user) {
       await col.updateOne(
         { _id: user._id },
-        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName, gender: user.gender || gender } }
+        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName } }
       );
       user = await col.findOne({ _id: user._id });
     } else {
@@ -59,7 +59,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: '',
-        gender,
         authProvider: 'google',
         createdAt: now,
         updatedAt: now,

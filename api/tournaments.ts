@@ -24,20 +24,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (organizerId && typeof organizerId === 'string') filter.organizerIds = { $in: [organizerId] };
       if (inviteLink && typeof inviteLink === 'string') filter.inviteLink = inviteLink;
 
-      const docs = await col.find(filter).sort({ date: 1 }).toArray();
+      const docs = await col.find(filter).sort({ startDate: 1, date: 1 }).toArray();
       return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
     }
 
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { name, date, location, description, maxTeams, inviteLink, organizerIds } = body;
-      if (!name || !date || !location || !maxTeams || !inviteLink || !organizerIds?.length) {
+      const { name, date, startDate, endDate, location, description, maxTeams, inviteLink, organizerIds } = body;
+      const sDate = startDate || date;
+      const eDate = endDate || date || sDate;
+      if (!name || !sDate || !location || !maxTeams || !inviteLink || !organizerIds?.length) {
         return corsRes.status(400).json({ error: 'Missing required fields' });
+      }
+      if (eDate < sDate) {
+        return corsRes.status(400).json({ error: 'End date must be on or after start date' });
       }
       const now = new Date().toISOString();
       const doc = {
         name,
-        date,
+        date: sDate,
+        startDate: sDate,
+        endDate: eDate,
         location,
         description: description || '',
         maxTeams: Number(maxTeams),

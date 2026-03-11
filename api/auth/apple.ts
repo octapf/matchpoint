@@ -56,7 +56,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: '',
-        gender: 'other',
         authProvider: 'apple',
         createdAt: now,
         updatedAt: now,

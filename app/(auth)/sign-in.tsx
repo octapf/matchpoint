@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Platform, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -11,6 +12,7 @@ import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
 
 export default function SignInScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const setUser = useUserStore((s) => s.setUser);
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,7 @@ export default function SignInScreen() {
 
   async function handleGooglePress() {
     if (!config.google.isConfigured) {
-      Alert.alert('Not configured', 'Google sign-in is not configured. Add EXPO_PUBLIC_GOOGLE_CLIENT_ID to .env');
+      Alert.alert(t('common.error'), 'Google sign-in is not configured. Add EXPO_PUBLIC_GOOGLE_CLIENT_ID to .env');
       return;
     }
     setLoading(true);
@@ -47,7 +49,7 @@ export default function SignInScreen() {
         Alert.alert('Error', 'Could not get token from Google');
       }
     } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Google sign-in failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Google sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -62,7 +64,7 @@ export default function SignInScreen() {
         ],
       });
       if (!credential.identityToken) {
-        Alert.alert('Error', 'Apple did not return an identity token');
+        Alert.alert(t('common.error'), 'Apple did not return an identity token');
         return;
       }
       setLoading(true);
@@ -75,7 +77,7 @@ export default function SignInScreen() {
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e?.code === 'ERR_REQUEST_CANCELED') return;
-      Alert.alert('Error', err instanceof Error ? err.message : 'Apple sign-in failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Apple sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -88,15 +90,13 @@ export default function SignInScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.logo}>Matchpoint</Text>
-        <Text style={styles.subtitle}>
-          Sign in is only available in the app. Install Matchpoint from the Play Store to get started.
-        </Text>
+        <Text style={styles.subtitle}>{t('auth.webSignInOnly')}</Text>
         <Button
-          title="Get Matchpoint on Play Store"
+          title={t('auth.getOnPlayStore')}
           onPress={() => Linking.openURL(PLAY_STORE_URL)}
           fullWidth
         />
-        <Text style={styles.footer}>© 2026 Miralab</Text>
+        <Text style={styles.footer}>{t('footer.copyright')}</Text>
       </View>
     );
   }
@@ -104,11 +104,11 @@ export default function SignInScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.logo}>Matchpoint</Text>
-      <Text style={styles.subtitle}>Sign in to join tournaments</Text>
+      <Text style={styles.subtitle}>{t('auth.signInToJoin')}</Text>
 
       <View style={styles.buttons}>
         <Button
-          title={loading ? 'Signing in...' : 'Continue with Google'}
+          title={loading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
           onPress={handleGooglePress}
           disabled={loading}
           variant="primary"
@@ -118,7 +118,7 @@ export default function SignInScreen() {
           <>
             <View style={styles.spacer} />
             <Button
-              title="Continue with Apple"
+              title={t('auth.continueWithApple')}
               onPress={handleApplePress}
               disabled={loading}
               variant="secondary"
@@ -128,7 +128,7 @@ export default function SignInScreen() {
         )}
       </View>
 
-      <Text style={styles.footer}>© 2026 Miralab</Text>
+      <Text style={styles.footer}>{t('footer.copyright')}</Text>
     </View>
   );
 }

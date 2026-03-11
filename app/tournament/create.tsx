@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { useCreateTournament } from '@/lib/hooks/useTournaments';
 import { useUserStore } from '@/store/useUserStore';
 
@@ -11,28 +13,35 @@ function generateInviteToken() {
 }
 
 export default function CreateTournamentScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const userId = useUserStore((s) => s.user?._id ?? null);
   const createTournament = useCreateTournament();
 
   const [name, setName] = useState('');
-  const [date, setDate] = useState('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
   const [description, setDescription] = useState('');
 
   const handleCreate = () => {
-    if (!name.trim() || !date.trim() || !location.trim()) {
-      Alert.alert('Missing fields', 'Please fill in name, date, and location.');
+    if (!name.trim() || !startDate || !location.trim()) {
+      Alert.alert(t('common.error'), t('tournaments.missingFields'));
+      return;
+    }
+    const end = endDate || startDate;
+    if (end < startDate) {
+      Alert.alert(t('common.error'), t('tournaments.invalidDates'));
       return;
     }
     const max = parseInt(maxTeams, 10) || 16;
     if (max < 2 || max > 64) {
-      Alert.alert('Invalid max teams', 'Max teams must be between 2 and 64.');
+      Alert.alert(t('common.error'), t('tournaments.invalidMaxTeams'));
       return;
     }
     if (!userId) {
-      Alert.alert('Error', 'You must be signed in to create a tournament.');
+      Alert.alert(t('common.error'), t('tournaments.mustBeSignedIn'));
       return;
     }
 
@@ -40,7 +49,9 @@ export default function CreateTournamentScreen() {
     createTournament.mutate(
       {
         name: name.trim(),
-        date: date.trim(),
+        date: startDate,
+        startDate,
+        endDate: end,
         location: location.trim(),
         maxTeams: max,
         description: description.trim() || undefined,
@@ -60,43 +71,48 @@ export default function CreateTournamentScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Create tournament</Text>
+      <Text style={styles.title}>{t('tournaments.createTitle')}</Text>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Name</Text>
+        <Text style={styles.label}>{t('tournaments.name')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Summer Beach Cup"
+          placeholder={t('tournaments.namePlaceholder')}
           placeholderTextColor={Colors.textMuted}
           value={name}
           onChangeText={setName}
         />
       </View>
+      <DatePickerField
+        label={t('tournaments.startDate')}
+        value={startDate}
+        onChange={(d) => {
+          setStartDate(d);
+          if (endDate && endDate < d) setEndDate(d);
+        }}
+        minDate={new Date()}
+      />
+      <DatePickerField
+        label="End date (optional, same day if empty)"
+        value={endDate}
+        onChange={setEndDate}
+        minDate={startDate ? new Date(startDate + 'T12:00:00') : new Date()}
+      />
       <View style={styles.field}>
-        <Text style={styles.label}>Date</Text>
+        <Text style={styles.label}>{t('tournaments.location')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Jul 15, 2026"
-          placeholderTextColor={Colors.textMuted}
-          value={date}
-          onChangeText={setDate}
-        />
-      </View>
-      <View style={styles.field}>
-        <Text style={styles.label}>Location</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Barceloneta Beach"
+          placeholder={t('tournaments.locationPlaceholder')}
           placeholderTextColor={Colors.textMuted}
           value={location}
           onChangeText={setLocation}
         />
       </View>
       <View style={styles.field}>
-        <Text style={styles.label}>Max teams</Text>
+        <Text style={styles.label}>{t('tournaments.maxTeams')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="16"
+          placeholder={t('tournaments.maxTeamsPlaceholder')}
           placeholderTextColor={Colors.textMuted}
           keyboardType="number-pad"
           value={maxTeams}
@@ -117,7 +133,7 @@ export default function CreateTournamentScreen() {
       </View>
 
       <Button
-        title="Create"
+        title={t('common.create')}
         onPress={handleCreate}
         disabled={createTournament.isPending}
         fullWidth
