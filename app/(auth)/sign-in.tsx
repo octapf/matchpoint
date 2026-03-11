@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -16,10 +16,12 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: config.google.clientId,
-      offlineAccess: false,
-    });
+    if (Platform.OS !== 'web') {
+      GoogleSignin.configure({
+        webClientId: config.google.clientId,
+        offlineAccess: false,
+      });
+    }
   }, []);
 
   async function handleGooglePress() {
@@ -77,6 +79,26 @@ export default function SignInScreen() {
     } finally {
       setLoading(false);
     }
+  }
+
+  const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
+
+  // Web: Google/Apple Sign-In not supported — show "Open in app"
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.logo}>Matchpoint</Text>
+        <Text style={styles.subtitle}>
+          Sign in is only available in the app. Install Matchpoint from the Play Store to get started.
+        </Text>
+        <Button
+          title="Get Matchpoint on Play Store"
+          onPress={() => Linking.openURL(PLAY_STORE_URL)}
+          fullWidth
+        />
+        <Text style={styles.footer}>© 2026 Miralab</Text>
+      </View>
+    );
   }
 
   return (

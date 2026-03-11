@@ -1,12 +1,15 @@
 {
   "version": 2,
-  "buildCommand": null,
-  "outputDirectory": null,
+  "buildCommand": "npx expo export -p web",
+  "outputDirectory": "dist",
   "framework": null,
   "functions": {
     "api/**/*.ts": {
       "memory": 1024,
       "maxDuration": 10
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/" }
+  ]
 }

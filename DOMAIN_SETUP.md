@@ -4,6 +4,17 @@ Según el plan del proyecto, estos son los pasos pendientes en **matchpoint.mira
 
 ---
 
+## 0. Si ves 404 DEPLOYMENT_NOT_FOUND
+
+El dominio llega a Vercel pero no encuentra el deployment. Verificá:
+
+1. **Vercel Dashboard** → Tu proyecto Matchpoint → **Settings** → **Domains**
+2. Añadí `matchpoint.miralab.ar` si no está
+3. **DNS:** CNAME `matchpoint` → `cname.vercel-dns.com` (Vercel te muestra el valor exacto)
+4. **Producción:** Hacé un deploy y asegurate de que el dominio apunte a la última versión
+
+---
+
 ## 1. Crear el subdominio
 
 En el DNS de miralab.ar, agregar un registro para el subdominio:

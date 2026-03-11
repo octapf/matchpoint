@@ -50,8 +50,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      const result = await col.deleteOne({ _id: oid });
-      if (result.deletedCount === 0) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const doc = await col.findOne({ _id: oid });
+      if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
+      await db.collection('entries').deleteMany({ tournamentId: id });
+      await db.collection('teams').deleteMany({ tournamentId: id });
+      await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();
     }
 

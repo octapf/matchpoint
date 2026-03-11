@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { tournamentsApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import type { Tournament } from '@/types';
@@ -67,6 +68,19 @@ export function useCreateTournament() {
     mutationFn: (doc: Record<string, unknown>) => tournamentsApi.insertOne(doc) as Promise<Tournament>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+    },
+  });
+}
+
+export function useDeleteTournament() {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return useMutation({
+    mutationFn: (id: string) => tournamentsApi.deleteOne(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      router.replace('/(tabs)');
     },
   });
 }
