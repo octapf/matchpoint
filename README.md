@@ -8,7 +8,7 @@ Beach volleyball tournament app for Android. Create tournaments, invite players,
 
 ## Overview
 
-Matchpoint lets organizers run invite-only beach volleyball tournaments. Players join via access links, create or join 2-person teams, and organizers manage the full lifecycle. The app targets the Play Store as a professional, simple MVP.
+Matchpoint lets organizers run invite-only beach volleyball tournaments. Players join via access links, create or join 2-person teams, and organizers manage the full lifecycle. The app targets the Play Store as a professional, simple MVP. Invite links also work in the browser (web fallback with Play Store CTA).
 
 ---
 
