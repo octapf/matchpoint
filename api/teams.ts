@@ -33,6 +33,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !name || !playerIds?.length || !createdBy) {
         return corsRes.status(400).json({ error: 'Missing required fields' });
       }
+      const playerIdSet = new Set(Array.isArray(playerIds) ? playerIds : [playerIds]);
+      const existing = await col.findOne({
+        tournamentId,
+        playerIds: { $in: Array.from(playerIdSet) },
+      });
+      if (existing) {
+        return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
+      }
       const now = new Date().toISOString();
       const doc = {
         tournamentId,

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { config } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { useTournament } from '@/lib/hooks/useTournaments';
+import { useTournament, useDeleteTournament } from '@/lib/hooks/useTournaments';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
@@ -30,8 +30,10 @@ export default function TournamentDetailScreen() {
   const { data: entries = [], isLoading: loadingEntries } = useEntries(id ? { tournamentId: id } : undefined);
 
   const createEntry = useCreateEntry();
+  const deleteTournament = useDeleteTournament();
 
   const hasJoined = entries.some((e) => e.userId === userId);
+  const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
   const isLoading = loadingTournament;
   const isError = errorTournament;
 
@@ -69,6 +71,21 @@ export default function TournamentDetailScreen() {
 
   const teamsCount = teams.length;
   const isOrganizer = tournament.organizerIds?.includes(userId ?? '');
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete tournament',
+      `Are you sure you want to delete "${tournament.name}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteTournament.mutate(id),
+        },
+      ]
+    );
+  };
 
   const handleShareInvite = () => {
     const url = config.invite.getUrl(tournament.inviteLink);
@@ -126,13 +143,24 @@ export default function TournamentDetailScreen() {
       </View>
 
       <View style={styles.actions}>
-        {isOrganizer && tournament.inviteLink && (
-          <Button
-            title="Share invite link"
-            variant="secondary"
-            onPress={handleShareInvite}
-            fullWidth
-          />
+        {isOrganizer && (
+          <>
+            {tournament.inviteLink && (
+              <Button
+                title="Share invite link"
+                variant="secondary"
+                onPress={handleShareInvite}
+                fullWidth
+              />
+            )}
+            <Button
+              title="Delete tournament"
+              variant="outline"
+              onPress={handleDelete}
+              disabled={deleteTournament.isPending}
+              fullWidth
+            />
+          </>
         )}
         {!hasJoined && (
           <Button
@@ -148,12 +176,17 @@ export default function TournamentDetailScreen() {
         {hasJoined && (
           <Text style={styles.joinedBadge}>You've joined this tournament</Text>
         )}
-        <Button
-          title="Create team"
-          variant="secondary"
-          onPress={() => router.push(`/tournament/${id}/team/create`)}
-          fullWidth
-        />
+        {!userHasTeam && hasJoined && (
+          <Button
+            title="Create team"
+            variant="secondary"
+            onPress={() => router.push(`/tournament/${id}/team/create`)}
+            fullWidth
+          />
+        )}
+        {userHasTeam && (
+          <Text style={styles.joinedBadge}>You're already in a team</Text>
+        )}
       </View>
     </ScrollView>
   );

@@ -5,6 +5,7 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useCreateTeam } from '@/lib/hooks/useTeams';
+import { useTeams } from '@/lib/hooks/useTeams';
 import { useUserStore } from '@/store/useUserStore';
 
 export default function CreateTeamScreen() {
@@ -12,10 +13,16 @@ export default function CreateTeamScreen() {
   const router = useRouter();
   const userId = useUserStore((s) => s.user?._id ?? null);
   const createTeam = useCreateTeam();
+  const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
+  const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
   const [teamName, setTeamName] = useState('');
 
   const handleCreate = () => {
+    if (userHasTeam) {
+      Alert.alert('Already in a team', 'You can only be in one team per tournament.');
+      return;
+    }
     if (!teamName.trim()) {
       Alert.alert('Missing name', 'Please enter a team name.');
       return;
@@ -72,7 +79,7 @@ export default function CreateTeamScreen() {
       <Button
         title="Create team"
         onPress={handleCreate}
-        disabled={createTeam.isPending}
+        disabled={createTeam.isPending || userHasTeam}
         fullWidth
       />
     </View>

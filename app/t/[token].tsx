@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,9 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useTournamentByToken } from '@/lib/hooks/useTournaments';
 import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
+import { config } from '@/lib/config';
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
 
 export default function JoinViaLinkScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -56,6 +59,29 @@ export default function JoinViaLinkScreen() {
         <Text style={styles.title}>Invalid link</Text>
         <Text style={styles.subtitle}>This tournament link may be expired or invalid.</Text>
         <Button title="Go back" onPress={() => router.back()} fullWidth />
+      </View>
+    );
+  }
+
+  // On web: Google Sign-In not supported — show "Open in app" message
+  if (Platform.OS === 'web') {
+    const inviteUrl = config.invite.getUrl(tournament.inviteLink);
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Join Tournament</Text>
+        <Text style={styles.tournamentName}>{tournament.name}</Text>
+        <Text style={styles.subtitle}>
+          Open this link in the Matchpoint app to join the tournament. Install the app from the Play Store if you
+          don't have it yet.
+        </Text>
+        <Button
+          title="Get Matchpoint on Play Store"
+          onPress={() => Linking.openURL(PLAY_STORE_URL)}
+          fullWidth
+        />
+        <Text style={styles.webHint}>
+          Or copy this link and open it on your phone: {inviteUrl}
+        </Text>
       </View>
     );
   }
@@ -111,5 +137,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textMuted,
     marginBottom: 32,
+  },
+  webHint: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginTop: 24,
+    textAlign: 'center',
   },
 });

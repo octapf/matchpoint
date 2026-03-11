@@ -12,6 +12,18 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
+        {/* Open Graph / WhatsApp share preview */}
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="Matchpoint - Beach Volleyball Tournaments" />
+        <meta property="og:description" content="Join tournaments, form teams, and compete. By Miralab." />
+        <meta property="og:image" content={`${process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar'}/og-image.png`} />
+        <meta property="og:image:width" content="512" />
+        <meta property="og:image:height" content="512" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Matchpoint - Beach Volleyball Tournaments" />
+        <meta name="twitter:description" content="Join tournaments, form teams, and compete. By Miralab." />
+        <meta name="twitter:image" content={`${process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar'}/og-image.png`} />
+
         {/* 
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native. 
           However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.

@@ -1,12 +1,14 @@
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { View } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
@@ -39,12 +41,13 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded || Platform.OS === 'web') {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
 
-  if (!loaded) {
+  // On web, don't block on font loading - useFonts can hang and cause blank screen
+  if (!loaded && Platform.OS !== 'web') {
     return null;
   }
 
@@ -53,9 +56,10 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const Wrapper = Platform.OS === 'web' ? View : GestureHandlerRootView;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <Wrapper style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <Stack screenOptions={{ headerShown: false }}>
@@ -70,6 +74,6 @@ function RootLayoutNav() {
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>
-    </GestureHandlerRootView>
+    </Wrapper>
   );
 }
