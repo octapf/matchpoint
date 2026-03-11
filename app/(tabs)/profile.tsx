@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
+import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import type { Gender } from '@/types';
 
 function formatGender(g?: Gender): string {
@@ -56,10 +57,14 @@ export default function ProfileScreen() {
             gender={user.gender || 'other'}
             size="lg"
           />
-          <Text style={styles.name}>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}</Text>
+          <Text style={styles.name}>{getUserDisplayName(user) || '—'}</Text>
           <Text style={styles.email}>{user.email || '—'}</Text>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.label}>Display name</Text>
+          <Text style={styles.value}>{user.displayName || '—'}</Text>
+        </View>
         <View style={styles.section}>
           <Text style={styles.label}>First name</Text>
           <Text style={styles.value}>{user.firstName || '—'}</Text>
@@ -71,6 +76,10 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.label}>Gender</Text>
           <Text style={styles.value}>{formatGender(user.gender)}</Text>
+        </View>
+
+        <View style={styles.editSection}>
+          <Button title="Edit profile" onPress={() => router.push('/profile/edit')} variant="outline" fullWidth />
         </View>
 
         <Text style={styles.footer}>Matchpoint by Miralab</Text>
@@ -173,6 +182,10 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 16,
     color: Colors.text,
+  },
+  editSection: {
+    marginTop: 24,
+    marginBottom: 8,
   },
   spacer: {
     height: 12,

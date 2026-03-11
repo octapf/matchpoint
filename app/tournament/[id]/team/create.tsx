@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useCreateTeam } from '@/lib/hooks/useTeams';
 import { useTeams } from '@/lib/hooks/useTeams';
+import { useEntries, useUpdateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
 
 export default function CreateTeamScreen() {
@@ -13,7 +14,12 @@ export default function CreateTeamScreen() {
   const router = useRouter();
   const userId = useUserStore((s) => s.user?._id ?? null);
   const createTeam = useCreateTeam();
+  const updateEntry = useUpdateEntry();
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
+  const { data: entries = [] } = useEntries(
+    id && userId ? { tournamentId: id, userId } : undefined,
+    { enabled: !!id && !!userId }
+  );
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
   const [teamName, setTeamName] = useState('');
@@ -40,8 +46,16 @@ export default function CreateTeamScreen() {
         createdBy: userId,
       },
       {
-        onSuccess: () => {
-          router.back();
+        onSuccess: (team) => {
+          const myEntry = entries.find((e) => e.tournamentId === id && e.userId === userId);
+          if (myEntry?._id && team?._id) {
+            updateEntry.mutate(
+              { id: myEntry._id, update: { teamId: team._id } },
+              { onSettled: () => router.back() }
+            );
+          } else {
+            router.back();
+          }
         },
         onError: (err) => {
           Alert.alert('Error', err instanceof Error ? err.message : 'Failed to create team');

@@ -9,7 +9,10 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useTournament, useDeleteTournament } from '@/lib/hooks/useTournaments';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
+import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
+import { getUserDisplayName } from '@/lib/utils/userDisplay';
+import type { Team } from '@/types';
 
 function formatDate(dateStr: string) {
   try {
@@ -18,6 +21,45 @@ function formatDate(dateStr: string) {
   } catch {
     return dateStr;
   }
+}
+
+function TeamCard({
+  team,
+  userMap,
+  currentUserId,
+}: {
+  team: Team;
+  userMap: Record<string, { _id: string; firstName: string; lastName?: string; displayName?: string; gender?: string }>;
+  currentUserId: string | null;
+}) {
+  return (
+    <View style={styles.teamCard}>
+      <Text style={styles.teamName}>{team.name}</Text>
+      <View style={styles.players}>
+        {[0, 1].map((i) => {
+          const pid = team.playerIds?.[i];
+          const user = pid ? userMap[pid] : null;
+          const displayName = user ? getUserDisplayName(user) : null;
+          const isYou = pid === currentUserId;
+          return pid ? (
+            <View key={i} style={styles.player}>
+              <Avatar
+                firstName={user?.firstName ?? ''}
+                lastName={user?.lastName ?? ''}
+                gender={(user?.gender as 'male' | 'female' | 'other') ?? 'other'}
+                size="sm"
+              />
+              <Text style={[styles.playerName, isYou && styles.playerNameHighlight]}>{displayName || 'Player'}</Text>
+            </View>
+          ) : (
+            <View key={i} style={styles.slot}>
+              <Text style={styles.slotText}>Open slot</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 export default function TournamentDetailScreen() {
@@ -31,6 +73,10 @@ export default function TournamentDetailScreen() {
 
   const createEntry = useCreateEntry();
   const deleteTournament = useDeleteTournament();
+
+  const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
+  const { data: users = [] } = useUsers([...new Set(allPlayerIds)]);
+  const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
   const hasJoined = entries.some((e) => e.userId === userId);
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
@@ -121,23 +167,7 @@ export default function TournamentDetailScreen() {
           <Text style={styles.emptyText}>No teams yet</Text>
         ) : (
           teams.map((team) => (
-            <View key={team._id} style={styles.teamCard}>
-              <Text style={styles.teamName}>{team.name}</Text>
-              <View style={styles.players}>
-                {[0, 1].map((i) =>
-                  team.playerIds[i] ? (
-                    <View key={i} style={styles.player}>
-                      <Avatar firstName="Player" lastName="" gender="other" size="sm" />
-                      <Text style={styles.playerName}>Player {i + 1}</Text>
-                    </View>
-                  ) : (
-                    <View key={i} style={styles.slot}>
-                      <Text style={styles.slotText}>Open slot</Text>
-                    </View>
-                  )
-                )}
-              </View>
-            </View>
+            <TeamCard key={team._id} team={team} userMap={userMap} currentUserId={userId} />
           ))
         )}
       </View>
@@ -214,6 +244,7 @@ const styles = StyleSheet.create({
   players: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   player: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   playerName: { fontSize: 14, color: Colors.text },
+  playerNameHighlight: { color: Colors.yellow, fontWeight: '600' },
   slot: { paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Colors.surfaceLight, borderRadius: 8 },
   slotText: { fontSize: 14, color: Colors.textMuted },
   actions: { gap: 12 },

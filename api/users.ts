@@ -18,7 +18,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const col = db.collection('users');
 
     if (req.method === 'GET') {
-      const { id, email } = req.query;
+      const { id, email, ids } = req.query;
+      if (ids && typeof ids === 'string') {
+        const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
+        const validIds = idList.filter((s) => ObjectId.isValid(s));
+        if (validIds.length === 0) return corsRes.status(200).json([]);
+        const docs = await col.find({ _id: { $in: validIds.map((s) => new ObjectId(s)) } }).toArray();
+        return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+      }
       if (id && typeof id === 'string' && ObjectId.isValid(id)) {
         const doc = await col.findOne({ _id: new ObjectId(id) });
         if (!doc) return corsRes.status(404).json({ error: 'User not found' });
@@ -29,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!doc) return corsRes.status(404).json({ error: 'User not found' });
         return corsRes.status(200).json(serializeDoc(doc as Record<string, unknown>));
       }
-      return corsRes.status(400).json({ error: 'Provide id or email' });
+      return corsRes.status(400).json({ error: 'Provide id, email, or ids' });
     }
 
     if (req.method === 'POST') {
@@ -48,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: phone || '',
-        gender: gender || '',
+        gender: gender === 'male' || gender === 'female' ? gender : 'other',
         authProvider,
         createdAt: now,
         updatedAt: now,
@@ -64,11 +71,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Invalid user ID' });
       }
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const allowed = ['firstName', 'lastName', 'phone', 'gender'];
+      const allowed = ['firstName', 'lastName', 'displayName', 'phone', 'gender'];
       const update: Record<string, unknown> = {};
       for (const k of allowed) {
         if (body[k] !== undefined) update[k] = body[k];
       }
+      // Explicitly ensure displayName is applied (client sends it; some parsers can drop it)
+      if ('displayName' in body) update.displayName = body.displayName ?? '';
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
