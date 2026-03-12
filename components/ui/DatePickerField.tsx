@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, Pressable, Modal } from 'react-native';
 import Colors from '@/constants/Colors';
+import { useTranslation } from '@/lib/i18n';
 import { formatTournamentDate, toISODate } from '@/lib/utils/dateFormat';
 
 type DatePickerFieldProps = {
@@ -27,8 +28,10 @@ export function DatePickerField({
   label = 'Date',
   minDate = new Date(),
 }: DatePickerFieldProps) {
+  const { t, i18n } = useTranslation();
   const [show, setShow] = useState(false);
-  const displayValue = value ? formatTournamentDate(value) : 'Select date';
+  const locale = i18n.locale || 'en';
+  const displayValue = value ? formatTournamentDate(value, locale) : t('common.selectDate');
 
   const d = value ? new Date(value + 'T12:00:00') : new Date(minDate);
   const [viewYear, setViewYear] = useState(d.getFullYear());
@@ -50,6 +53,13 @@ export function DatePickerField({
   const cells: (number | null)[] = [];
   for (let i = 0; i < startPad; i++) cells.push(null);
   for (let i = 1; i <= days; i++) cells.push(i);
+
+  const localizedMonths = MONTHS.map((_, idx) =>
+    new Date(2026, idx, 1).toLocaleDateString(locale, { month: 'short' })
+  );
+  const localizedWeekdays = WEEKDAYS.map((_, idx) =>
+    new Date(2026, 0, idx + 4).toLocaleDateString(locale, { weekday: 'short' })
+  );
 
   const canPrev = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
   const canNext = viewYear < minYear + 3;
@@ -100,9 +110,9 @@ export function DatePickerField({
           <Pressable style={styles.modalBackdrop} onPress={() => setShow(false)} />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select date</Text>
+              <Text style={styles.modalTitle}>{t('common.selectDate')}</Text>
               <Pressable onPress={() => setShow(false)}>
-                <Text style={styles.modalDone}>Done</Text>
+                <Text style={styles.modalDone}>{t('common.done')}</Text>
               </Pressable>
             </View>
 
@@ -117,7 +127,7 @@ export function DatePickerField({
               >
                 <Text style={[styles.navBtnText, !canPrev && styles.navBtnTextDisabled]}>‹</Text>
               </Pressable>
-              <Text style={styles.navTitle}>{MONTHS[viewMonth]} {viewYear}</Text>
+              <Text style={styles.navTitle}>{localizedMonths[viewMonth]} {viewYear}</Text>
               <Pressable
                 style={[styles.navBtn, !canNext && styles.navBtnDisabled]}
                 onPress={() => {
@@ -131,7 +141,7 @@ export function DatePickerField({
             </View>
 
             <View style={styles.weekdays}>
-              {WEEKDAYS.map((w) => (
+              {localizedWeekdays.map((w) => (
                 <Text key={w} style={styles.weekday}>{w}</Text>
               ))}
             </View>

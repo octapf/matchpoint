@@ -49,7 +49,7 @@ function TeamCard({
             </View>
           ) : (
             <View key={i} style={styles.slot}>
-              <Text style={styles.slotText}>Open slot</Text>
+              <Text style={styles.slotText}>{t('tournamentDetail.openSlot')}</Text>
             </View>
           );
         })}
@@ -204,11 +204,11 @@ export default function TournamentDetailScreen() {
           />
         )}
         {hasJoined && (
-          <Text style={styles.joinedBadge}>You've joined this tournament</Text>
+          <Text style={styles.joinedBadge}>{t('tournamentDetail.joinedBadge')}</Text>
         )}
         {!userHasTeam && hasJoined && canEnroll && (
           <Button
-            title="Create team"
+            title={t('tournamentDetail.createTeam')}
             variant="secondary"
             onPress={() => router.push(`/tournament/${id}/team/create`)}
             fullWidth

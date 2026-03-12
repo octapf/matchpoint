@@ -63,7 +63,7 @@ export default function CreateTournamentScreen() {
           router.replace(`/tournament/${data._id}`);
         },
         onError: (err) => {
-          Alert.alert('Error', err instanceof Error ? err.message : 'Failed to create tournament');
+          Alert.alert(t('common.error'), err instanceof Error ? err.message : t('tournaments.failedToCreate'));
         },
       }
     );
@@ -93,7 +93,7 @@ export default function CreateTournamentScreen() {
         minDate={new Date()}
       />
       <DatePickerField
-        label="End date (optional, same day if empty)"
+        label={t('tournaments.endDate')}
         value={endDate}
         onChange={setEndDate}
         minDate={startDate ? new Date(startDate + 'T12:00:00') : new Date()}
@@ -120,10 +120,10 @@ export default function CreateTournamentScreen() {
         />
       </View>
       <View style={styles.field}>
-        <Text style={styles.label}>Description (optional)</Text>
+        <Text style={styles.label}>{t('tournaments.description')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Add details..."
+          placeholder={t('tournaments.descriptionPlaceholder')}
           placeholderTextColor={Colors.textMuted}
           multiline
           numberOfLines={3}

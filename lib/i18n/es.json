@@ -10,7 +10,9 @@
     "team": "Equipo",
     "player": "Jugador",
     "you": "Tú",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "selectDate": "Seleccionar fecha",
+    "done": "Listo"
   },
   "tabs": {
     "tournaments": "Torneos",
@@ -25,7 +27,12 @@
     "continueWithApple": "Continuar con Apple",
     "signInToJoin": "Inicia sesión para unirte a torneos",
     "webSignInOnly": "Iniciar sesión solo está disponible en la app. Instala Matchpoint desde Play Store para empezar.",
-    "getOnPlayStore": "Obtener Matchpoint en Play Store"
+    "getOnPlayStore": "Obtener Matchpoint en Play Store",
+    "googleNotConfigured": "Google sign-in no está configurado. Añade EXPO_PUBLIC_GOOGLE_CLIENT_ID en .env",
+    "googleTokenMissing": "No se pudo obtener token de Google",
+    "googleSignInFailed": "Falló el inicio de sesión con Google",
+    "appleTokenMissing": "Apple no devolvió un token de identidad",
+    "appleSignInFailed": "Falló el inicio de sesión con Apple"
   },
   "profile": {
     "editProfile": "Editar perfil",
@@ -95,7 +102,8 @@
     "missingName": "Introduce un nombre de equipo.",
     "genderRequiredTitle": "Género requerido",
     "genderRequired": "Debes configurar tu género en el perfil para crear un equipo.",
-    "failedToCreate": "Error al crear equipo"
+    "failedToCreate": "Error al crear equipo",
+    "missingTournamentOrUser": "Falta torneo o usuario."
   },
   "entries": {
     "lookingForPartner": "Buscando compañero",

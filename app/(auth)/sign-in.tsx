@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Platform, Alert, Linking } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Button } from '@/components/ui/Button';
@@ -14,8 +14,10 @@ import type { User } from '@/types';
 export default function SignInScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const setUser = useUserStore((s) => s.setUser);
   const [loading, setLoading] = useState(false);
+  const nextRoute = typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/(tabs)';
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -28,7 +30,7 @@ export default function SignInScreen() {
 
   async function handleGooglePress() {
     if (!config.google.isConfigured) {
-      Alert.alert(t('common.error'), 'Google sign-in is not configured. Add EXPO_PUBLIC_GOOGLE_CLIENT_ID to .env');
+      Alert.alert(t('common.error'), t('auth.googleNotConfigured'));
       return;
     }
     setLoading(true);
@@ -44,12 +46,12 @@ export default function SignInScreen() {
       if (result.type === 'success' && result.data?.idToken) {
         const user = (await authApi.signInWithGoogle(result.data.idToken)) as User;
         setUser(user);
-        router.replace('/(tabs)');
+        router.replace(nextRoute as never);
       } else {
-        Alert.alert('Error', 'Could not get token from Google');
+        Alert.alert(t('common.error'), t('auth.googleTokenMissing'));
       }
     } catch (err) {
-      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Google sign-in failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.googleSignInFailed'));
     } finally {
       setLoading(false);
     }
@@ -64,7 +66,7 @@ export default function SignInScreen() {
         ],
       });
       if (!credential.identityToken) {
-        Alert.alert(t('common.error'), 'Apple did not return an identity token');
+        Alert.alert(t('common.error'), t('auth.appleTokenMissing'));
         return;
       }
       setLoading(true);
@@ -73,11 +75,11 @@ export default function SignInScreen() {
         lastName: credential.fullName?.familyName ?? undefined,
       })) as User;
       setUser(user);
-      router.replace('/(tabs)');
+      router.replace(nextRoute as never);
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e?.code === 'ERR_REQUEST_CANCELED') return;
-      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Apple sign-in failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.appleSignInFailed'));
     } finally {
       setLoading(false);
     }
