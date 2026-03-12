@@ -45,7 +45,7 @@ export default function CreateTeamScreen() {
       return;
     }
     if (!id || !userId) {
-      Alert.alert(t('common.error'), 'Missing tournament or user.');
+      Alert.alert(t('common.error'), t('team.missingTournamentOrUser'));
       return;
     }
 
@@ -69,7 +69,7 @@ export default function CreateTeamScreen() {
           }
         },
         onError: (err) => {
-          Alert.alert('Error', err instanceof Error ? err.message : 'Failed to create team');
+          Alert.alert(t('common.error'), err instanceof Error ? err.message : t('team.failedToCreate'));
         },
       }
     );

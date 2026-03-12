@@ -60,6 +60,13 @@ export default function JoinViaLinkScreen() {
     if (tournamentId) router.replace(`/tournament/${tournamentId}`);
   };
 
+  const handleSignIn = () => {
+    router.replace({
+      pathname: '/(auth)/sign-in',
+      params: token ? { redirect: `/t/${token}` } : undefined,
+    });
+  };
+
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -77,6 +84,29 @@ export default function JoinViaLinkScreen() {
         <Text style={styles.title}>{t('inviteLink.invalidLink')}</Text>
         <Text style={styles.subtitle}>{t('inviteLink.invalidLinkSubtitle')}</Text>
         <Button title={t('inviteLink.goBack')} onPress={() => router.back()} fullWidth />
+      </View>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
+        <Text style={styles.tournamentName}>{tournament.name}</Text>
+        <Text style={styles.subtitle}>{t('auth.signInToJoin')}</Text>
+        <Button title={t('auth.signIn')} onPress={handleSignIn} fullWidth />
+        <Button
+          title={t('inviteLink.viewTournament')}
+          onPress={handleViewOnly}
+          variant="secondary"
+          fullWidth
+        />
+        <Button
+          title={t('common.cancel')}
+          onPress={() => router.back()}
+          variant="outline"
+          fullWidth
+        />
       </View>
     );
   }

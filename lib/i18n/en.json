@@ -10,7 +10,9 @@
     "team": "Team",
     "player": "Player",
     "you": "You",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "selectDate": "Select date",
+    "done": "Done"
   },
   "tabs": {
     "tournaments": "Tournaments",
@@ -25,7 +27,12 @@
     "continueWithApple": "Continue with Apple",
     "signInToJoin": "Sign in to join tournaments",
     "webSignInOnly": "Sign in is only available in the app. Install Matchpoint from the Play Store to get started.",
-    "getOnPlayStore": "Get Matchpoint on Play Store"
+    "getOnPlayStore": "Get Matchpoint on Play Store",
+    "googleNotConfigured": "Google sign-in is not configured. Add EXPO_PUBLIC_GOOGLE_CLIENT_ID to .env",
+    "googleTokenMissing": "Could not get token from Google",
+    "googleSignInFailed": "Google sign-in failed",
+    "appleTokenMissing": "Apple did not return an identity token",
+    "appleSignInFailed": "Apple sign-in failed"
   },
   "profile": {
     "editProfile": "Edit profile",
@@ -95,7 +102,8 @@
     "missingName": "Please enter a team name.",
     "genderRequiredTitle": "Gender required",
     "genderRequired": "You need to set your gender in your profile to create a team.",
-    "failedToCreate": "Failed to create team"
+    "failedToCreate": "Failed to create team",
+    "missingTournamentOrUser": "Missing tournament or user."
   },
   "entries": {
     "lookingForPartner": "Looking for partner",
