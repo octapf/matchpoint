@@ -23,7 +23,13 @@
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "911980711702-s71t94rbfbjrh31du857v6rkeieidpq4.apps.googleusercontent.com"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://matchpoint-neon-delta.vercel.app",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "911980711702-2uoiec7qjhdqumf7ia1noa3u000qpklr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "911980711702-s71t94rbfbjrh31du857v6rkeieidpq4.apps.googleusercontent.com"
+      }
+    }
   },
   "submit": {
     "production": {}
