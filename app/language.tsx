@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { LANGUAGES, i18n, useTranslation } from '@/lib/i18n';
@@ -7,10 +8,10 @@ import type { Language } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { useUserStore } from '@/store/useUserStore';
 
-const LANGUAGE_FLAG_IMAGES: Record<Language, string> = {
-  en: 'https://flagcdn.com/w160/gb.png',
-  es: 'https://flagcdn.com/w160/es.png',
-  it: 'https://flagcdn.com/w160/it.png',
+const LANGUAGE_FLAG_IMAGES: Record<Language, ImageSourcePropType> = {
+  en: require('../assets/images/flags/gb.png'),
+  es: require('../assets/images/flags/es.png'),
+  it: require('../assets/images/flags/it.png'),
 };
 
 export default function LanguageScreen() {
@@ -39,7 +40,7 @@ export default function LanguageScreen() {
             style={({ pressed }) => [styles.flagButton, pressed && styles.flagButtonPressed]}
           >
             <Image
-              source={{ uri: LANGUAGE_FLAG_IMAGES[lang] }}
+              source={LANGUAGE_FLAG_IMAGES[lang]}
               style={styles.flagImage}
               resizeMode="cover"
             />
