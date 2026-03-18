@@ -59,7 +59,11 @@
     "checkYourEmail": "Revisa tu email",
     "resetEmailSent": "Si ese email está registrado, recibirás un enlace en breve.",
     "resetInstructions": "Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña.",
-    "backToSignIn": "Volver al inicio de sesión"
+    "backToSignIn": "Volver al inicio de sesión",
+    "orSignInWith": "O inicia sesión con",
+    "register": "Regístrate",
+    "recoverPassword": "Recuperar contraseña",
+    "termsAndConditions": "Términos y condiciones"
   },
   "profile": {
     "editProfile": "Editar perfil",

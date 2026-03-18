@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, Platform, Alert, Linking, Image, Pressable, TextInput, KeyboardAvoidingView, ScrollView } from 'react-native';
-import { useLocalSearchParams, useRouter, Link } from 'expo-router';
+import {
+  View, Text, StyleSheet, Platform, Alert, Linking,
+  Image, Pressable, TextInput, KeyboardAvoidingView, ScrollView,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { Button } from '@/components/ui/Button';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { config } from '@/lib/config';
 import { authApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
-
-type AuthTab = 'google' | 'email';
 
 export default function SignInScreen() {
   const { t } = useTranslation();
@@ -19,7 +20,6 @@ export default function SignInScreen() {
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const setUser = useUserStore((s) => s.setUser);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<AuthTab>('google');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -110,9 +110,11 @@ export default function SignInScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        <Text style={styles.logo}>Matchpoint</Text>
+        <Text style={styles.logoText}>Matchpoint</Text>
         <Text style={styles.subtitle}>{t('auth.webSignInOnly')}</Text>
-        <Button title={t('auth.getOnPlayStore')} onPress={() => Linking.openURL(PLAY_STORE_URL)} fullWidth />
+        <Pressable style={styles.primaryButton} onPress={() => Linking.openURL(PLAY_STORE_URL)}>
+          <Text style={styles.primaryButtonText}>{t('auth.getOnPlayStore')}</Text>
+        </Pressable>
         <Text style={styles.footer}>{t('footer.copyright')}</Text>
       </View>
     );
@@ -121,99 +123,113 @@ export default function SignInScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Image
-          source={require('@/assets/images/matchpoint-icon-512.png')}
-          style={styles.logoImage}
-          resizeMode="contain"
-        />
-        <Text style={styles.logo}>Matchpoint</Text>
-        <Text style={styles.subtitle}>{t('auth.signInToJoin')}</Text>
 
-        {/* Tabs */}
-        <View style={styles.tabs}>
-          <Pressable style={[styles.tab, tab === 'google' && styles.tabActive]} onPress={() => setTab('google')}>
-            <Text style={[styles.tabText, tab === 'google' && styles.tabTextActive]}>Google</Text>
+        {/* Logo */}
+        <View style={styles.logoSection}>
+          <Image
+            source={require('@/assets/images/matchpoint-icon-512.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.logoText}>Matchpoint</Text>
+        </View>
+
+        {/* Email / password form */}
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder={t('auth.emailOrUsername')}
+            placeholderTextColor={Colors.textMuted}
+            value={identifier}
+            onChangeText={setIdentifier}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            returnKeyType="next"
+          />
+
+          <View style={styles.passwordWrapper}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder={t('auth.password')}
+              placeholderTextColor={Colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              returnKeyType="done"
+              onSubmitEditing={handleEmailLogin}
+            />
+            <Pressable style={styles.eyeBtn} onPress={() => setShowPassword(v => !v)}>
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={Colors.textMuted}
+              />
+            </Pressable>
+          </View>
+
+          <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
+            <Text style={styles.forgotText}>{t('auth.recoverPassword')}</Text>
           </Pressable>
-          <Pressable style={[styles.tab, tab === 'email' && styles.tabActive]} onPress={() => setTab('email')}>
-            <Text style={[styles.tabText, tab === 'email' && styles.tabTextActive]}>Email</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.primaryButton, (pressed || loading) && styles.primaryButtonPressed]}
+            onPress={handleEmailLogin}
+            disabled={loading}
+          >
+            <Text style={styles.primaryButtonText}>
+              {loading ? t('auth.signingIn') : t('auth.signIn')}
+            </Text>
           </Pressable>
         </View>
 
-        <View style={styles.buttons}>
-          {tab === 'google' ? (
-            <>
-              <Pressable
-                style={({ pressed }) => [styles.googleButton, pressed && styles.googleButtonPressed, loading && styles.googleButtonDisabled]}
-                onPress={handleGooglePress}
-                disabled={loading}
-              >
-                <Image source={require('@/assets/images/google-logo-transparent.png')} style={styles.googleLogo} />
-                <Text style={styles.googleButtonText}>
-                  {loading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
-                </Text>
-              </Pressable>
+        {/* Divider */}
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>{t('auth.orSignInWith')}</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
-              {Platform.OS === 'ios' && (
-                <Button
-                  title={t('auth.continueWithApple')}
-                  onPress={handleApplePress}
-                  disabled={loading}
-                  variant="secondary"
-                  fullWidth
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.emailOrUsername')}
-                placeholderTextColor={Colors.textMuted}
-                value={identifier}
-                onChangeText={setIdentifier}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                returnKeyType="next"
-              />
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder={t('auth.password')}
-                  placeholderTextColor={Colors.textMuted}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  returnKeyType="done"
-                  onSubmitEditing={handleEmailLogin}
-                />
-                <Pressable style={styles.eyeButton} onPress={() => setShowPassword(v => !v)}>
-                  <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
-                </Pressable>
-              </View>
+        {/* Social buttons */}
+        <View style={styles.socialSection}>
+          <Pressable
+            style={({ pressed }) => [styles.googleButton, (pressed || loading) && styles.googleButtonPressed]}
+            onPress={handleGooglePress}
+            disabled={loading}
+          >
+            <Image
+              source={require('@/assets/images/google-logo-transparent.png')}
+              style={styles.googleLogo}
+            />
+            <Text style={styles.googleButtonText}>
+              {loading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
+            </Text>
+          </Pressable>
 
-              <Button
-                title={loading ? t('auth.signingIn') : t('auth.signIn')}
-                onPress={handleEmailLogin}
-                disabled={loading}
-                variant="primary"
-                fullWidth
-              />
-
-              <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
-                <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
-              </Pressable>
-            </>
+          {Platform.OS === 'ios' && (
+            <Pressable
+              style={({ pressed }) => [styles.googleButton, pressed && styles.googleButtonPressed]}
+              onPress={handleApplePress}
+              disabled={loading}
+            >
+              <Ionicons name="logo-apple" size={22} color="#e3e3e3" />
+              <Text style={styles.googleButtonText}>{t('auth.continueWithApple')}</Text>
+            </Pressable>
           )}
         </View>
 
-        <View style={styles.signupRow}>
-          <Text style={styles.signupText}>{t('auth.noAccount')} </Text>
-          <Link href="/(auth)/sign-up">
-            <Text style={styles.signupLink}>{t('auth.signUp')}</Text>
-          </Link>
-        </View>
+        {/* Sign up */}
+        <Pressable
+          style={({ pressed }) => [styles.outlineButton, pressed && styles.outlineButtonPressed]}
+          onPress={() => router.push('/(auth)/sign-up')}
+        >
+          <Text style={styles.outlineButtonText}>{t('auth.register')}</Text>
+        </Pressable>
 
-        <Text style={styles.footer}>{t('footer.copyright')}</Text>
+        {/* Terms */}
+        <Pressable onPress={() => Linking.openURL('https://www.miralab.ar/es/matchpoint/privacy')}>
+          <Text style={styles.termsText}>{t('auth.termsAndConditions')}</Text>
+        </Pressable>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -223,54 +239,94 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     backgroundColor: Colors.background,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 40,
     justifyContent: 'center',
   },
-  logoImage: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-    marginBottom: 16,
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: 36,
   },
-  logo: {
-    fontSize: 36,
+  logoImage: {
+    width: 90,
+    height: 90,
+    marginBottom: 12,
+  },
+  logoText: {
+    fontSize: 34,
     fontWeight: '700',
     color: Colors.yellow,
-    textAlign: 'center',
-    marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 32,
+  form: {
+    gap: 14,
+    marginBottom: 28,
   },
-  tabs: {
-    flexDirection: 'row',
+  input: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    padding: 4,
-    marginBottom: 24,
+    height: 52,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: Colors.text,
   },
-  tab: {
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 16,
+  },
+  passwordInput: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+    fontSize: 15,
+    color: Colors.text,
+  },
+  eyeBtn: {
+    paddingLeft: 8,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  tabActive: {
-    backgroundColor: Colors.yellow,
-  },
-  tabText: {
+  forgotText: {
+    color: Colors.yellow,
+    textAlign: 'center',
     fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textSecondary,
+    fontWeight: '500',
   },
-  tabTextActive: {
+  primaryButton: {
+    backgroundColor: Colors.yellow,
+    borderRadius: 50,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  primaryButtonPressed: {
+    opacity: 0.8,
+  },
+  primaryButtonText: {
     color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
   },
-  buttons: {
-    gap: 14,
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.surfaceLight,
+  },
+  dividerText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+  },
+  socialSection: {
+    gap: 12,
+    marginBottom: 16,
   },
   googleButton: {
     flexDirection: 'row',
@@ -284,49 +340,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#8e918f',
   },
-  googleButtonPressed: { backgroundColor: '#1e1e1e' },
-  googleButtonDisabled: { opacity: 0.6 },
-  googleLogo: { width: 22, height: 22, resizeMode: 'contain' },
-  googleButtonText: { color: '#e3e3e3', fontSize: 15, fontWeight: '600', letterSpacing: 0.25 },
-  input: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    height: 52,
-    paddingHorizontal: 16,
+  googleButtonPressed: {
+    backgroundColor: '#1e1e1e',
+  },
+  googleLogo: {
+    width: 22,
+    height: 22,
+    resizeMode: 'contain',
+  },
+  googleButtonText: {
+    color: '#e3e3e3',
     fontSize: 15,
-    color: Colors.text,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
+    fontWeight: '600',
+    letterSpacing: 0.25,
   },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  eyeButton: {
+  outlineButton: {
+    borderRadius: 50,
     height: 52,
-    width: 48,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.text,
+    marginBottom: 24,
   },
-  eyeText: { fontSize: 18 },
-  forgotText: {
+  outlineButtonPressed: {
+    opacity: 0.7,
+  },
+  outlineButtonText: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  termsText: {
     color: Colors.yellow,
     textAlign: 'center',
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: 13,
   },
-  signupRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 32,
+  subtitle: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 32,
   },
-  signupText: { color: Colors.textSecondary, fontSize: 14 },
-  signupLink: { color: Colors.yellow, fontSize: 14, fontWeight: '600' },
   footer: {
     fontSize: 12,
     color: Colors.textMuted,
