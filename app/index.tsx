@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
+import { useRouter, usePathname } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
@@ -14,6 +14,7 @@ export default function SplashScreen() {
   const hasHydratedLanguage = useLanguageStore((s) => s._hasHydrated);
   const hasSelectedLanguage = useLanguageStore((s) => s.hasSelectedLanguage);
 
+  const pathname = usePathname();
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(12)).current;
 
@@ -26,6 +27,8 @@ export default function SplashScreen() {
 
   useEffect(() => {
     if (!hasHydratedUser || !hasHydratedLanguage) return;
+    // On web, only redirect if we're actually on the index route
+    if (Platform.OS === 'web' && pathname !== '/') return;
     const timeoutId = setTimeout(() => {
       if (!hasSelectedLanguage) {
         router.replace('/language');
