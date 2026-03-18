@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Pressable, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
 
 export default function ResetPasswordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -49,10 +51,20 @@ export default function ResetPasswordScreen() {
       <View style={styles.container}>
         <Text style={styles.emoji}>✅</Text>
         <Text style={styles.heading}>Contraseña actualizada</Text>
-        <Text style={styles.subtitle}>Ya podés iniciar sesión con tu nueva contraseña.</Text>
-        <Pressable style={styles.button} onPress={() => router.replace('/(auth)/sign-in')}>
-          <Text style={styles.buttonText}>Ir al inicio de sesión</Text>
-        </Pressable>
+        <Text style={styles.subtitle}>
+          {Platform.OS === 'web'
+            ? 'Abrí Matchpoint en tu teléfono para iniciar sesión con tu nueva contraseña.'
+            : 'Ya podés iniciar sesión con tu nueva contraseña.'}
+        </Text>
+        {Platform.OS === 'web' ? (
+          <Pressable style={styles.button} onPress={() => Linking.openURL(PLAY_STORE_URL)}>
+            <Text style={styles.buttonText}>Abrir Matchpoint en Play Store</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={styles.button} onPress={() => router.replace('/(auth)/sign-in')}>
+            <Text style={styles.buttonText}>Ir al inicio de sesión</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
