@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { authApi } from '@/lib/api';
 
 export default function ResetPasswordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -30,7 +29,13 @@ export default function ResetPasswordScreen() {
     }
     setLoading(true);
     try {
-      await authApi.resetPassword(token as string, password);
+      const res = await fetch('/api/auth/email?action=reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
       setDone(true);
     } catch {
       setError('El link expiró o es inválido. Pedí uno nuevo.');
