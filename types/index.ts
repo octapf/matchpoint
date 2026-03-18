@@ -7,12 +7,13 @@ export type Gender = 'male' | 'female';
 export interface User {
   _id: string;
   email: string;
+  username?: string;
   firstName: string;
   lastName: string;
   displayName?: string;
   phone?: string;
   gender?: Gender;
-  authProvider: 'google' | 'apple';
+  authProvider: 'google' | 'apple' | 'email';
   createdAt: string;
   updatedAt: string;
 }

@@ -124,6 +124,36 @@ export const authApi = {
         lastName: user?.lastName,
       }),
     }),
+
+  signUp: (data: {
+    email: string;
+    username: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+  }) =>
+    apiRequest<unknown>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  login: (identifier: string, password: string) =>
+    apiRequest<unknown>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, password }),
+    }),
+
+  forgotPassword: (email: string) =>
+    apiRequest<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    apiRequest<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
 };
 
 // Users

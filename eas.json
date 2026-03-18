@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 3.0.0"
+    "version": ">= 3.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -24,6 +25,7 @@
       }
     },
     "production": {
+      "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://matchpoint-neon-delta.vercel.app",
         "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "911980711702-2uoiec7qjhdqumf7ia1noa3u000qpklr.apps.googleusercontent.com",
