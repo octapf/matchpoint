@@ -53,12 +53,20 @@ export default function ResetPasswordScreen() {
         <Text style={styles.heading}>Contraseña actualizada</Text>
         <Text style={styles.subtitle}>
           {Platform.OS === 'web'
-            ? 'Abrí Matchpoint en tu teléfono para iniciar sesión con tu nueva contraseña.'
+            ? 'Tu contraseña fue actualizada. Abrí la app para iniciar sesión.'
             : 'Ya podés iniciar sesión con tu nueva contraseña.'}
         </Text>
         {Platform.OS === 'web' ? (
-          <Pressable style={styles.button} onPress={() => Linking.openURL(PLAY_STORE_URL)}>
-            <Text style={styles.buttonText}>Abrir Matchpoint en Play Store</Text>
+          <Pressable
+            style={styles.button}
+            onPress={() => {
+              // Try deep link first; if app not installed, fall back to Play Store
+              Linking.openURL('com.miralab.matchpoint://sign-in').catch(() =>
+                Linking.openURL(PLAY_STORE_URL)
+              );
+            }}
+          >
+            <Text style={styles.buttonText}>Abrir Matchpoint</Text>
           </Pressable>
         ) : (
           <Pressable style={styles.button} onPress={() => router.replace('/(auth)/sign-in')}>
