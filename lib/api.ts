@@ -132,25 +132,25 @@ export const authApi = {
     firstName: string;
     lastName: string;
   }) =>
-    apiRequest<unknown>('/api/auth/signup', {
+    apiRequest<unknown>('/api/auth/email?action=signup', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   login: (identifier: string, password: string) =>
-    apiRequest<unknown>('/api/auth/login', {
+    apiRequest<unknown>('/api/auth/email?action=login', {
       method: 'POST',
       body: JSON.stringify({ identifier, password }),
     }),
 
   forgotPassword: (email: string) =>
-    apiRequest<{ message: string }>('/api/auth/forgot-password', {
+    apiRequest<{ message: string }>('/api/auth/email?action=forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
 
   resetPassword: (token: string, password: string) =>
-    apiRequest<{ message: string }>('/api/auth/reset-password', {
+    apiRequest<{ message: string }>('/api/auth/email?action=reset-password', {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     }),
