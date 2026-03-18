@@ -126,10 +126,11 @@ export default function SignInScreen() {
 
         {/* Logo */}
         <View style={styles.logoSection}>
-          <View style={styles.mpRow}>
-            <Text style={styles.mpM}>M</Text>
-            <Text style={styles.mpP}>P</Text>
-          </View>
+          <Image
+            source={require('@/assets/images/matchpoint-icon-512.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <View style={styles.wordmarkRow}>
             <Text style={styles.wordmarkMatch}>MATCH</Text>
             <Text style={styles.wordmarkPoint}>POINT</Text>
@@ -249,25 +250,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 36,
   },
-  mpRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 8,
-  },
-  mpM: {
-    fontSize: 88,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    color: Colors.yellow,
-    lineHeight: 96,
-  },
-  mpP: {
-    fontSize: 88,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    color: Colors.violet,
-    lineHeight: 96,
-    marginLeft: -8,
+  logoImage: {
+    width: 160,
+    height: 80,
+    marginBottom: 10,
   },
   wordmarkRow: {
     flexDirection: 'row',
