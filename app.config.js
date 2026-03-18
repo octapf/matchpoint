@@ -6,7 +6,7 @@ const iosUrlScheme = `com.googleusercontent.apps.${clientIdPart}`;
 
 module.exports = {
   expo: {
-    name: 'matchpoint',
+    name: 'Matchpoint',
     slug: 'matchpoint',
     version: '1.0.0',
     orientation: 'portrait',
@@ -16,7 +16,7 @@ module.exports = {
     splash: {
       image: './assets/images/splash-icon.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#2b2b33',
     },
     ios: {
       supportsTablet: true,
@@ -36,9 +36,8 @@ module.exports = {
         },
       ],
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
+        backgroundColor: '#2b2b33',
         foregroundImage: './assets/images/android-icon-foreground.png',
-        backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
       predictiveBackGestureEnabled: false,
