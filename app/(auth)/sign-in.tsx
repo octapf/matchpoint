@@ -131,11 +131,10 @@ export default function SignInScreen() {
             style={styles.logoImage}
             resizeMode="contain"
           />
-          <Image
-            source={require('@/assets/images/matchpoint-wordmark.png')}
-            style={styles.wordmark}
-            resizeMode="contain"
-          />
+          <View style={styles.wordmarkRow}>
+            <Text style={styles.wordmarkMatch}>MATCH</Text>
+            <Text style={styles.wordmarkPoint}>POINT</Text>
+          </View>
         </View>
 
         {/* Email / password form */}
@@ -256,9 +255,23 @@ const styles = StyleSheet.create({
     height: 90,
     marginBottom: 12,
   },
-  wordmark: {
-    width: 260,
-    height: 40,
+  wordmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  wordmarkMatch: {
+    fontSize: 32,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    color: Colors.yellow,
+    letterSpacing: -0.5,
+  },
+  wordmarkPoint: {
+    fontSize: 32,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    color: Colors.violet,
+    letterSpacing: -0.5,
   },
   logoText: {
     fontSize: 34,
