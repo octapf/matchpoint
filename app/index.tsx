@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
@@ -13,6 +13,16 @@ export default function SplashScreen() {
   const hasHydratedUser = useUserStore((s) => s._hasHydrated);
   const hasHydratedLanguage = useLanguageStore((s) => s._hasHydrated);
   const hasSelectedLanguage = useLanguageStore((s) => s.hasSelectedLanguage);
+
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 600, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   useEffect(() => {
     if (!hasHydratedUser || !hasHydratedLanguage) return;
@@ -32,8 +42,13 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>Matchpoint</Text>
-      <Text style={styles.tagline}>{t('splash.tagline')}</Text>
+      <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+        <View style={styles.wordmarkRow}>
+          <Text style={styles.wordmarkMatch}>MATCH</Text>
+          <Text style={styles.wordmarkPoint}>POINT</Text>
+        </View>
+        <Text style={styles.slogan}>Play it as it is.</Text>
+      </Animated.View>
       <Text style={styles.copyright}>{t('footer.copyright')}</Text>
     </View>
   );
@@ -47,20 +62,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  logo: {
-    fontSize: 42,
-    fontWeight: '700',
-    color: Colors.yellow,
-    marginBottom: 8,
+  wordmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
-  tagline: {
-    fontSize: 18,
+  wordmarkMatch: {
+    fontSize: 48,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    color: Colors.yellow,
+    letterSpacing: -1,
+  },
+  wordmarkPoint: {
+    fontSize: 48,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    color: Colors.violet,
+    letterSpacing: -1,
+  },
+  slogan: {
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginBottom: 48,
+    fontStyle: 'italic',
+    marginTop: -6,
+    letterSpacing: 0.3,
+    textAlign: 'right',
   },
   copyright: {
-    fontSize: 12,
-    color: Colors.textMuted,
+    fontSize: 11,
+    color: Colors.textSecondary,
     position: 'absolute',
     bottom: 48,
   },
