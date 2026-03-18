@@ -126,14 +126,12 @@ export default function SignInScreen() {
 
         {/* Logo */}
         <View style={styles.logoSection}>
-          <Image
-            source={require('@/assets/images/matchpoint-icon-512.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-          <View style={styles.wordmarkRow}>
-            <Text style={styles.wordmarkMatch}>MATCH</Text>
-            <Text style={styles.wordmarkPoint}>POINT</Text>
+          <View>
+            <View style={styles.wordmarkRow}>
+              <Text style={styles.wordmarkMatch}>MATCH</Text>
+              <Text style={styles.wordmarkPoint}>POINT</Text>
+            </View>
+            <Text style={styles.slogan}>Play it as it is.</Text>
           </View>
         </View>
 
@@ -233,6 +231,8 @@ export default function SignInScreen() {
           <Text style={styles.termsText}>{t('auth.termsAndConditions')}</Text>
         </Pressable>
 
+        <Text style={styles.copyright}>© 2026 Miralab</Text>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -251,8 +251,8 @@ const styles = StyleSheet.create({
     marginBottom: 36,
   },
   logoImage: {
-    width: 160,
-    height: 80,
+    width: 120,
+    height: 60,
     marginBottom: 10,
   },
   wordmarkRow: {
@@ -260,18 +260,18 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   wordmarkMatch: {
-    fontSize: 32,
+    fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
     color: Colors.yellow,
-    letterSpacing: -0.5,
+    letterSpacing: -1,
   },
   wordmarkPoint: {
-    fontSize: 32,
+    fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
     color: Colors.violet,
-    letterSpacing: -0.5,
+    letterSpacing: -1,
   },
   logoText: {
     fontSize: 34,
@@ -402,6 +402,20 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
+  },
+  slogan: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: -6,
+    letterSpacing: 0.3,
+    textAlign: 'right',
+  },
+  copyright: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 16,
   },
   footer: {
     fontSize: 12,
