@@ -6,6 +6,14 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
 
+function validatePassword(password: string): string | null {
+  if (password.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
+  if (!/[A-Z]/.test(password)) return 'La contraseña debe tener al menos una mayúscula';
+  if (!/[a-z]/.test(password)) return 'La contraseña debe tener al menos una minúscula';
+  if (!/[0-9]/.test(password)) return 'La contraseña debe tener al menos un número';
+  return null;
+}
+
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
   const { _id, passwordHash, ...rest } = doc;
@@ -18,9 +26,8 @@ async function handleSignup(body: Record<string, unknown>, res: VercelResponse) 
   if (!email || !username || !password || !firstName || !lastName) {
     return res.status(400).json({ error: 'All fields are required' });
   }
-  if (typeof password !== 'string' || password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
+  const pwError = validatePassword(password);
+  if (pwError) return res.status(400).json({ error: pwError });
 
   const db = await getDb();
   const col = db.collection('users');
@@ -150,9 +157,8 @@ async function handleResetPassword(body: Record<string, unknown>, res: VercelRes
   if (!token || !password) {
     return res.status(400).json({ error: 'Token and password are required' });
   }
-  if (typeof password !== 'string' || password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
+  const pwError = validatePassword(password);
+  if (pwError) return res.status(400).json({ error: pwError });
 
   const secret = process.env.JWT_SECRET || 'matchpoint-reset-secret';
   let payload: { userId: string; email: string };

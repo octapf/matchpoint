@@ -37,8 +37,8 @@ export default function SignUpScreen() {
       Alert.alert(t('common.error'), t('auth.passwordsMismatch'));
       return;
     }
-    if (password.length < 6) {
-      Alert.alert(t('common.error'), t('auth.passwordTooShort'));
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      Alert.alert(t('common.error'), 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.');
       return;
     }
 

@@ -17,8 +17,8 @@ export default function ResetPasswordScreen() {
 
   async function handleSubmit() {
     setError('');
-    if (!password || password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('Mínimo 8 caracteres, una mayúscula, una minúscula y un número.');
       return;
     }
     if (password !== confirm) {
