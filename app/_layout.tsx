@@ -93,6 +93,7 @@ function RootLayoutNav() {
         <Stack.Screen name="tournament/[id]/team/create" />
         <Stack.Screen name="t/[token]" />
         <Stack.Screen name="profile/edit" options={{ headerShown: true, title: t('profile.editProfile') }} />
+        <Stack.Screen name="profile/change-password" options={{ headerShown: true, title: t('profile.changePassword') }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
         </ThemeProvider>

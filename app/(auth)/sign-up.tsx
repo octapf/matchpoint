@@ -33,6 +33,15 @@ export default function SignUpScreen() {
       Alert.alert(t('common.error'), t('auth.fillAllFields'));
       return;
     }
+    const emailErr = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Email inválido' : null;
+    if (emailErr) {
+      Alert.alert(t('common.error'), emailErr);
+      return;
+    }
+    if (username.length < 3 || !/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
+      Alert.alert(t('common.error'), 'Usuario: 3-24 caracteres, solo letras, números y guión bajo.');
+      return;
+    }
     if (password !== confirmPassword) {
       Alert.alert(t('common.error'), t('auth.passwordsMismatch'));
       return;
@@ -45,7 +54,7 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       const user = (await authApi.signUp({ firstName, lastName, username, email, password })) as User;
-      setUser(user);
+      setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
       router.replace('/(tabs)');
     } catch (err) {
       Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.signUpFailed'));

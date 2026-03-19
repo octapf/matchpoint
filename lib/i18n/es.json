@@ -67,6 +67,7 @@
   },
   "profile": {
     "editProfile": "Editar perfil",
+    "changePassword": "Cambiar contraseña",
     "deleteAccount": "Eliminar cuenta",
     "deleteAccountConfirm": "Esto se implementará pronto. Contacta con soporte por ahora.",
     "displayName": "Nombre para mostrar",

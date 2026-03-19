@@ -16,6 +16,8 @@ export interface User {
   authProvider: 'google' | 'apple' | 'email';
   createdAt: string;
   updatedAt: string;
+  /** Client-only: when the session expires (ms since epoch) */
+  sessionExpiresAt?: number;
 }
 
 export type TournamentStatus = 'open' | 'full' | 'cancelled';

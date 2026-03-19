@@ -154,6 +154,12 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     }),
+
+  changePassword: (userId: string, currentPassword: string, newPassword: string) =>
+    apiRequest<{ message: string }>('/api/auth/email?action=change-password', {
+      method: 'POST',
+      body: JSON.stringify({ userId, currentPassword, newPassword }),
+    }),
 };
 
 // Users
