@@ -18,6 +18,10 @@ export default function ForgotPasswordScreen() {
       Alert.alert(t('common.error'), t('auth.emailRequired'));
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      Alert.alert(t('common.error'), 'Email inválido');
+      return;
+    }
     setLoading(true);
     try {
       await authApi.forgotPassword(email.trim().toLowerCase());

@@ -27,14 +27,20 @@ export default function SplashScreen() {
 
   useEffect(() => {
     if (!hasHydratedUser || !hasHydratedLanguage) return;
-    // On web, only redirect if we're actually on the index route
-    if (Platform.OS === 'web' && pathname !== '/') return;
+    // On web, don't redirect if we're on a specific route
+    if (Platform.OS === 'web' && pathname !== '/' && pathname !== '') return;
+    // Session expiry: if user has sessionExpiresAt and it's past, sign out
+    const u = useUserStore.getState().user as { sessionExpiresAt?: number } | null;
+    if (u?.sessionExpiresAt && Date.now() > u.sessionExpiresAt) {
+      useUserStore.getState().signOut();
+    }
     const timeoutId = setTimeout(() => {
       if (!hasSelectedLanguage) {
         router.replace('/language');
         return;
       }
-      if (user) {
+      const currentUser = useUserStore.getState().user;
+      if (currentUser) {
         router.replace('/(tabs)');
       } else {
         router.replace('/(auth)/sign-in');

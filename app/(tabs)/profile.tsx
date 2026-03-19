@@ -106,6 +106,9 @@ export default function ProfileScreen() {
 
         <View style={styles.editSection}>
           <Button title={t('profile.editProfile')} onPress={() => router.push('/profile/edit')} variant="outline" fullWidth />
+          {user.authProvider === 'email' && (
+            <Button title={t('profile.changePassword')} onPress={() => router.push('/profile/change-password' as never)} variant="outline" fullWidth />
+          )}
         </View>
 
         <View style={styles.buttonsSection}>

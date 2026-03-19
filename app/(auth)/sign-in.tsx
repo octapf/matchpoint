@@ -48,7 +48,7 @@ export default function SignInScreen() {
       if (result.type === 'cancelled') { setLoading(false); return; }
       if (result.type === 'success' && result.data?.idToken) {
         const user = (await authApi.signInWithGoogle(result.data.idToken)) as User;
-        setUser(user);
+        setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
         router.replace(nextRoute as never);
       } else {
         Alert.alert(t('common.error'), t('auth.googleTokenMissing'));
@@ -77,7 +77,7 @@ export default function SignInScreen() {
         firstName: credential.fullName?.givenName ?? undefined,
         lastName: credential.fullName?.familyName ?? undefined,
       })) as User;
-      setUser(user);
+      setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
       router.replace(nextRoute as never);
     } catch (err: unknown) {
       const e = err as { code?: string };

@@ -67,6 +67,7 @@
   },
   "profile": {
     "editProfile": "Edit profile",
+    "changePassword": "Change password",
     "deleteAccount": "Delete account",
     "deleteAccountConfirm": "This will be implemented soon. Contact support for now.",
     "displayName": "Display name",
