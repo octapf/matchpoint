@@ -11,6 +11,7 @@
     "api:dev": "npx vercel dev"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/native": "^7.1.28",
     "@tanstack/react-query": "^5.90.21",
