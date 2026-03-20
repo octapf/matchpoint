@@ -42,3 +42,7 @@ yarn-error.*
 /android
 
 .vercel
+
+# Google Play service account JSON (EAS submit) — nunca subir a Git
+credentials/
+!credentials/README.md
