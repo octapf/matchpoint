@@ -8,7 +8,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "api:dev": "npx vercel dev"
+    "api:dev": "npx vercel dev",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

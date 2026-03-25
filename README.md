@@ -1,71 +1,90 @@
 # Matchpoint
 
-Beach volleyball tournament app for Android. Create tournaments, invite players, form teams, and manage entries — all with social login (Google & Apple).
+Beach volleyball tournament app for **Android** (Play Store). Organizers create invite-only tournaments; players join via links, form **2-person teams**, and manage entries. Includes **Google**, **Apple**, and **email** authentication.
 
 **By [Miralab](https://miralab.ar)**
 
----
-
-## Overview
-
-Matchpoint lets organizers run invite-only beach volleyball tournaments. Players join via access links, create or join 2-person teams, and organizers manage the full lifecycle. The app targets the Play Store as a professional, simple MVP. Invite links also work in the browser (web fallback with Play Store CTA).
+[![CI](https://github.com/octapf/matchpoint/actions/workflows/ci.yml/badge.svg)](https://github.com/octapf/matchpoint/actions/workflows/ci.yml)
 
 ---
 
-## Tech Stack
+## Who this documentation is for
+
+| Audience | What to read first |
+|----------|-------------------|
+| **Recruiters / hiring managers** | This README: problem, stack, and that CI is green. |
+| **Engineers cloning the repo** | [docs/SETUP.md](docs/SETUP.md), then [docs/EXPO_AND_VERCEL.md](docs/EXPO_AND_VERCEL.md) if anything fails. |
+
+**Portfolio tip:** A strong public repo shows a **clear product sentence**, **runnable steps**, **automated checks**, and **honest docs**. Depth lives in `docs/` so the README stays scannable.
+
+---
+
+## Problem and approach
+
+Tournament organizers need a simple way to run **invite-only** beach volleyball events: share a link, cap teams, and track who joined and who is **looking for a partner**. Matchpoint keeps that flow on mobile with a small Vercel + MongoDB backend.
+
+---
+
+## Features (high level)
+
+- Tournaments with date range, capacity, status, and **organizer** roles  
+- **Invite links** (`/t/{token}`) with web fallback where configured  
+- **Entries** and **teams** (2 players)  
+- **i18n:** English, Spanish, Italian  
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph client [Expo app]
+    RN[React Native]
+    RQ[TanStack Query]
+  end
+  subgraph host [Vercel]
+    API[Serverless API]
+  end
+  DB[(MongoDB Atlas)]
+  RN --> RQ
+  RQ --> API
+  API --> DB
+```
 
 | Layer | Stack |
-|-------|-------|
-| **Mobile** | Expo (React Native), Expo Router, NativeWind (Tailwind) |
-| **State** | Zustand, React Query |
-| **Auth** | Google OAuth, Apple Sign-In |
-| **Backend** | Vercel serverless API |
-| **Database** | MongoDB Atlas |
+|-------|--------|
+| **Mobile** | Expo 55, React Native, Expo Router, NativeWind |
+| **State** | Zustand, TanStack Query |
+| **Auth** | Google, Apple, email (JWT + verification flows on API) |
+| **Backend** | Vercel serverless (`api/`) |
+| **Database** | MongoDB (`matchpoint` DB) |
+
+**Why these choices:** short ADR — [docs/adr/001-stack-and-hosting.md](docs/adr/001-stack-and-hosting.md).
 
 ---
 
 ## Prerequisites
 
-- Node.js 18+
-- npm or pnpm
-- [Expo CLI](https://docs.expo.dev/get-started/installation/)
-- [EAS CLI](https://docs.expo.dev/build/setup/) (for Android builds)
-- MongoDB Atlas cluster
-- Google Cloud OAuth credentials (Web + Android client for Android sign-in)
-- Apple Developer account (for Apple Sign-In on iOS)
+- Node.js **18+** (CI uses **20**)
+- npm
+- [Expo / EAS](https://docs.expo.dev/) for builds
+- MongoDB Atlas + Vercel for the API
+- Google (and Apple for iOS) OAuth setup as in [docs/SECRETS.md](docs/SECRETS.md)
 
 ---
 
-## Setup
+## Quick start
 
-1. **Clone and install**
+```bash
+git clone https://github.com/octapf/matchpoint.git
+cd matchpoint
+npm install
+cp .env.example .env   # fill EXPO_PUBLIC_* — see docs/SECRETS.md
+npm run verify
+npm run start
+```
 
-   ```bash
-   git clone https://github.com/octapf/matchpoint.git
-   cd matchpoint
-   npm install
-   ```
-
-2. **Environment variables**
-
-   Copy `.env.example` to `.env` and fill in:
-
-   - `EXPO_PUBLIC_API_URL` — Vercel API URL (e.g. `https://matchpoint-xxx.vercel.app`)
-   - `EXPO_PUBLIC_GOOGLE_CLIENT_ID` — Google OAuth Web client ID
-   - `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` — Google OAuth Android client ID (for Android sign-in)
-
-3. **Backend (Vercel)**
-
-   - Deploy API: `api/` to Vercel
-   - Add env vars: `MONGODB_URI`, `GOOGLE_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID`
-
-4. **Run locally**
-
-   ```bash
-   npm run start
-   ```
-
-   Then press `a` for Android or `w` for web.
+**Full setup** (API, device, builds): **[docs/SETUP.md](docs/SETUP.md)**.
 
 ---
 
@@ -73,21 +92,43 @@ Matchpoint lets organizers run invite-only beach volleyball tournaments. Players
 
 | Command | Description |
 |---------|-------------|
-| `npm run start` | Start Expo dev server |
-| `npm run android` | Start with Android |
-| `npm run ios` | Start with iOS |
-| `npm run web` | Start with web |
-| `npm run api:dev` | Run Vercel API locally |
+| `npm run start` | Expo dev server |
+| `npm run start:tunnel` | Dev server with tunnel |
+| `npm run android` | `expo run:android` |
+| `npm run ios` | `expo run:ios` |
+| `npm run web` | Web |
+| `npm run api:dev` | Vercel dev for `/api` |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run verify` | Same as CI (typecheck) |
 
 ---
 
-## Building for Android
+## Documentation map
+
+| Doc | Content |
+|-----|---------|
+| [docs/README.md](docs/README.md) | Index of all guides |
+| [docs/SETUP.md](docs/SETUP.md) | Install, env, run, EAS |
+| [docs/SECRETS.md](docs/SECRETS.md) | Env vars (no secret values) |
+| [docs/EXPO_AND_VERCEL.md](docs/EXPO_AND_VERCEL.md) | Expo Go vs dev build, API URL |
+| [docs/MAINTENANCE.md](docs/MAINTENANCE.md) | When to update docs |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | PRs and local verify |
+| [VERCEL_DEPLOY.md](VERCEL_DEPLOY.md) | Deploy API |
+| [MONGODB_SETUP.md](MONGODB_SETUP.md) | Atlas |
+| [DOMAIN_SETUP.md](DOMAIN_SETUP.md) | Domain / app links |
+| [CONNECT-DEVICE.md](CONNECT-DEVICE.md) | USB / tunnel / `expo run:android` |
+
+---
+
+## Building and release
+
+EAS profiles are in `eas.json`. Example:
 
 ```bash
 npx eas build --profile development --platform android
 ```
 
-See `eas.json` for build profiles. Use the development build for testing Google Sign-In with your OAuth clients.
+Play submission uses a **service account JSON** path in `eas.json`; keep that file under `./credentials/` (gitignored). See [credentials/README.md](credentials/README.md).
 
 ---
 
