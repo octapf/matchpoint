@@ -57,8 +57,11 @@ export const tournamentsApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string) =>
-    apiRequest<void>(`/api/tournaments/${id}`, { method: 'DELETE' }),
+  deleteOne: (id: string, actingUserId: string) =>
+    apiRequest<void>(`/api/tournaments/${id}`, {
+      method: 'DELETE',
+      params: { actingUserId },
+    }),
 };
 
 // Entries
@@ -80,8 +83,8 @@ export const entriesApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string) =>
-    apiRequest<void>(`/api/entries/${id}`, { method: 'DELETE' }),
+  deleteOne: (id: string, actingUserId: string) =>
+    apiRequest<void>(`/api/entries/${id}`, { method: 'DELETE', params: { actingUserId } }),
 };
 
 // Teams
@@ -103,8 +106,8 @@ export const teamsApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string) =>
-    apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE' }),
+  deleteOne: (id: string, actingUserId: string) =>
+    apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE', params: { actingUserId } }),
 };
 
 // Auth

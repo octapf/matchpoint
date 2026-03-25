@@ -100,12 +100,25 @@ export function useCreateTournament() {
   });
 }
 
+export function useUpdateTournament() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) =>
+      tournamentsApi.updateOne(id, body) as Promise<Tournament>,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', data._id] });
+    },
+  });
+}
+
 export function useDeleteTournament() {
   const queryClient = useQueryClient();
   const router = useRouter();
   return useMutation({
-    mutationFn: (id: string) => tournamentsApi.deleteOne(id),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, actingUserId }: { id: string; actingUserId: string }) =>
+      tournamentsApi.deleteOne(id, actingUserId),
+    onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
       router.replace('/(tabs)');

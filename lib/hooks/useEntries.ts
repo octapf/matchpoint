@@ -52,3 +52,24 @@ export function useUpdateEntry() {
     },
   });
 }
+
+export function useDeleteEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      actingUserId,
+      tournamentId,
+    }: {
+      id: string;
+      actingUserId: string;
+      tournamentId: string;
+    }) => entriesApi.deleteOne(id, actingUserId),
+    onSuccess: (_, { tournamentId }) => {
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+    },
+  });
+}

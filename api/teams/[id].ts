@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
+import { isTournamentOrganizer } from '../lib/organizer';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -50,6 +51,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
+      const actingUserId = req.query.actingUserId as string | undefined;
+      if (!actingUserId || typeof actingUserId !== 'string') {
+        return corsRes.status(400).json({ error: 'actingUserId is required' });
+      }
+      const team = await col.findOne({ _id: oid });
+      if (!team) return corsRes.status(404).json({ error: 'Team not found' });
+      const tournamentId = team.tournamentId as string;
+      if (!ObjectId.isValid(tournamentId)) {
+        return corsRes.status(400).json({ error: 'Invalid tournament on team' });
+      }
+      const tournamentsCol = db.collection('tournaments');
+      const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
+      if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      if (!isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId)) {
+        return corsRes.status(403).json({ error: 'Only organizers can remove a team' });
+      }
+
+      const teamIdStr = id;
+      const now = new Date().toISOString();
+      await db.collection('entries').updateMany(
+        { teamId: teamIdStr },
+        {
+          $set: {
+            teamId: null,
+            status: 'joined',
+            lookingForPartner: true,
+            updatedAt: now,
+          },
+        }
+      );
       const result = await col.deleteOne({ _id: oid });
       if (result.deletedCount === 0) return corsRes.status(404).json({ error: 'Team not found' });
       return corsRes.status(204).end();

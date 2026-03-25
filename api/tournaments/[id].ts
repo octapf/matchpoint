@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
+import { isTournamentOrganizer } from '../lib/organizer';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -31,6 +32,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const actingUserId = body.actingUserId as string | undefined;
+      if (!actingUserId || typeof actingUserId !== 'string') {
+        return corsRes.status(400).json({ error: 'actingUserId is required' });
+      }
+      const current = await col.findOne({ _id: oid });
+      if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const cur = current as Record<string, unknown>;
+      if (!isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId)) {
+        return corsRes.status(403).json({ error: 'Only organizers can update this tournament' });
+      }
+
       const allowed = ['name', 'date', 'startDate', 'endDate', 'location', 'description', 'maxTeams', 'status', 'organizerIds'];
       const update: Record<string, unknown> = {};
       for (const k of allowed) {
@@ -39,6 +51,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
+
+      const prevOrganizers = (cur.organizerIds as string[]) ?? [];
+      if (update.organizerIds !== undefined) {
+        const nextOrganizers = update.organizerIds as string[];
+        if (!Array.isArray(nextOrganizers) || nextOrganizers.length === 0) {
+          return corsRes.status(400).json({ error: 'At least one organizer is required' });
+        }
+        const entriesCol = db.collection('entries');
+        const entryUserIds = new Set(
+          (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
+        );
+        for (const uid of nextOrganizers) {
+          if (prevOrganizers.includes(uid)) continue;
+          if (!entryUserIds.has(uid)) {
+            return corsRes.status(400).json({
+              error: 'New organizers must be players who joined this tournament',
+            });
+          }
+        }
+      }
+
       update.updatedAt = new Date().toISOString();
       const result = await col.findOneAndUpdate(
         { _id: oid },
@@ -50,8 +83,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
+      const actingUserId = req.query.actingUserId as string | undefined;
+      if (!actingUserId || typeof actingUserId !== 'string') {
+        return corsRes.status(400).json({ error: 'actingUserId is required' });
+      }
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
+      if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId)) {
+        return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
+      }
       await db.collection('entries').deleteMany({ tournamentId: id });
       await db.collection('teams').deleteMany({ tournamentId: id });
       await col.deleteOne({ _id: oid });

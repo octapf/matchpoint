@@ -123,7 +123,18 @@
     "inviteTitle": "Invitar al torneo",
     "inviteMessage": "Únete a %{name} en Matchpoint: %{url}",
     "couldNotShare": "No se pudo compartir",
-    "failedToLoad": "Error al cargar torneo"
+    "failedToLoad": "Error al cargar torneo",
+    "playersSection": "Jugadores",
+    "organizerBadge": "Organizador",
+    "makeOrganizer": "Hacer co-organizador",
+    "makeOrganizerConfirm": "¿Añadir a %{name} como organizador del torneo?",
+    "removePlayer": "Quitar",
+    "removePlayerConfirm": "¿Quitar a %{name} de este torneo?",
+    "removeTeam": "Disolver equipo",
+    "removeTeamConfirm": "¿Disolver \"%{name}\"? Los dos jugadores quedan libres.",
+    "leaveTournament": "Salir del torneo",
+    "leaveTournamentConfirm": "¿Salir de este torneo? Puedes volver con el enlace de invitación si sigue abierto.",
+    "organizerActionFailed": "No se pudo completar la acción."
   },
   "team": {
     "createTeam": "Crear equipo",

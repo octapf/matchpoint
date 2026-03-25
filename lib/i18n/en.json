@@ -123,7 +123,18 @@
     "inviteTitle": "Invite to tournament",
     "inviteMessage": "Join %{name} on Matchpoint: %{url}",
     "couldNotShare": "Could not share",
-    "failedToLoad": "Failed to load tournament"
+    "failedToLoad": "Failed to load tournament",
+    "playersSection": "Players",
+    "organizerBadge": "Organizer",
+    "makeOrganizer": "Make co-organizer",
+    "makeOrganizerConfirm": "Add %{name} as a tournament organizer?",
+    "removePlayer": "Remove",
+    "removePlayerConfirm": "Remove %{name} from this tournament?",
+    "removeTeam": "Dissolve team",
+    "removeTeamConfirm": "Dissolve \"%{name}\"? Both players become free agents.",
+    "leaveTournament": "Leave tournament",
+    "leaveTournamentConfirm": "Leave this tournament? You can rejoin with the invite link if it is still open.",
+    "organizerActionFailed": "Could not complete this action."
   },
   "team": {
     "createTeam": "Create team",

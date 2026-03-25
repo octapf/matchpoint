@@ -1,6 +1,6 @@
 import React, { useLayoutEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Share, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type { Gender, User } from '@/types';
 import Colors from '@/constants/Colors';
@@ -8,25 +8,31 @@ import { Button } from '@/components/ui/Button';
 import { config } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { useTournament, useDeleteTournament } from '@/lib/hooks/useTournaments';
-import { useTeams } from '@/lib/hooks/useTeams';
-import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
+import { useTournament, useDeleteTournament, useUpdateTournament } from '@/lib/hooks/useTournaments';
+import { useTeams, useDeleteTeam } from '@/lib/hooks/useTeams';
+import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
-import type { Team } from '@/types';
+import type { Team, Entry } from '@/types';
 
 function TeamCard({
   team,
   userMap,
   currentUserId,
   t,
+  isOrganizer,
+  onRemoveTeam,
+  removeTeamPending,
 }: {
   team: Team;
   userMap: Record<string, User>;
   currentUserId: string | null;
   t: (key: string, options?: Record<string, string | number>) => string;
+  isOrganizer?: boolean;
+  onRemoveTeam?: () => void;
+  removeTeamPending?: boolean;
 }) {
   return (
     <View style={styles.teamCard}>
@@ -54,6 +60,15 @@ function TeamCard({
           );
         })}
       </View>
+      {isOrganizer && onRemoveTeam ? (
+        <Button
+          title={t('tournamentDetail.removeTeam')}
+          variant="outline"
+          onPress={onRemoveTeam}
+          disabled={removeTeamPending}
+          fullWidth
+        />
+      ) : null}
     </View>
   );
 }
@@ -84,9 +99,14 @@ export default function TournamentDetailScreen() {
 
   const createEntry = useCreateEntry();
   const deleteTournament = useDeleteTournament();
+  const updateTournament = useUpdateTournament();
+  const deleteEntry = useDeleteEntry();
+  const deleteTeam = useDeleteTeam();
 
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
-  const { data: users = [] } = useUsers([...new Set(allPlayerIds)]);
+  const entryUserIds = entries.map((e) => e.userId);
+  const combinedUserIds = [...new Set([...allPlayerIds, ...entryUserIds])];
+  const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
   const hasJoined = entries.some((e) => e.userId === userId);
@@ -135,6 +155,7 @@ export default function TournamentDetailScreen() {
   const isOrganizer = tournament.organizerIds?.includes(userId ?? '');
 
   const handleDelete = () => {
+    if (!userId || !id) return;
     Alert.alert(
       t('tournamentDetail.deleteTournament'),
       t('tournamentDetail.deleteConfirm', { name: tournament.name }),
@@ -143,11 +164,110 @@ export default function TournamentDetailScreen() {
         {
           text: t('common.delete'),
           style: 'destructive',
-          onPress: () => deleteTournament.mutate(id),
+          onPress: () => deleteTournament.mutate({ id, actingUserId: userId }),
         },
       ]
     );
   };
+
+  const promoteOrganizer = (targetUserId: string, displayName: string) => {
+    if (!userId || !id) return;
+    Alert.alert(t('tournamentDetail.makeOrganizer'), t('tournamentDetail.makeOrganizerConfirm', { name: displayName }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.ok'),
+        onPress: () => {
+          const next = [...new Set([...(tournament.organizerIds ?? []), targetUserId])];
+          updateTournament.mutate(
+            { id, actingUserId: userId, organizerIds: next },
+            {
+              onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+            }
+          );
+        },
+      },
+    ]);
+  };
+
+  const confirmRemovePlayer = (entry: Entry, displayName: string) => {
+    if (!userId || !id) return;
+    Alert.alert(
+      t('tournamentDetail.removePlayer'),
+      t('tournamentDetail.removePlayerConfirm', { name: displayName }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () =>
+            deleteEntry.mutate(
+              { id: entry._id, actingUserId: userId, tournamentId: id },
+              {
+                onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+              }
+            ),
+        },
+      ]
+    );
+  };
+
+  const confirmLeave = () => {
+    if (!userId || !id) return;
+    const ownEntry = entries.find((e) => e.userId === userId);
+    if (!ownEntry) return;
+    Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('tournamentDetail.leaveTournament'),
+        style: 'destructive',
+            onPress: () =>
+          deleteEntry.mutate(
+            { id: ownEntry._id, actingUserId: userId, tournamentId: id },
+            {
+              onError: (err: unknown) =>
+                Alert.alert(
+                  t('common.error'),
+                  err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
+                ),
+            }
+          ),
+      },
+    ]);
+  };
+
+  const confirmRemoveTeam = (team: Team) => {
+    if (!userId || !id) return;
+    Alert.alert(
+      t('tournamentDetail.removeTeam'),
+      t('tournamentDetail.removeTeamConfirm', { name: team.name }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () =>
+            deleteTeam.mutate(
+              { id: team._id, actingUserId: userId, tournamentId: id },
+              {
+                onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+              }
+            ),
+        },
+      ]
+    );
+  };
+
+  const organizerIds = tournament.organizerIds ?? [];
+  const dateLabel = tournament.date || tournament.startDate;
+
+  const sortedEntries = [...entries].sort((a, b) => {
+    const na = getUserDisplayName(userMap[a.userId]) || '';
+    const nb = getUserDisplayName(userMap[b.userId]) || '';
+    return na.localeCompare(nb);
+  });
+
+  const mutationBusy =
+    deleteEntry.isPending || updateTournament.isPending || deleteTeam.isPending || deleteTournament.isPending;
 
   const handleShareInvite = () => {
     const url = config.invite.getUrl(tournament.inviteLink);
@@ -162,12 +282,62 @@ export default function TournamentDetailScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>{tournament.name}</Text>
-        <Text style={styles.date}>{formatTournamentDate(tournament.date)}</Text>
+        <Text style={styles.date}>{formatTournamentDate(dateLabel)}</Text>
         <Text style={styles.location}>{tournament.location}</Text>
         <Text style={styles.spots}>
           {t('tournamentDetail.teamsCount', { count: teamsCount, max: tournament.maxTeams ?? 16 })}
         </Text>
       </View>
+
+      {sortedEntries.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('tournamentDetail.playersSection')}</Text>
+          {sortedEntries.map((entry) => {
+            const u = userMap[entry.userId];
+            const displayName = getUserDisplayName(u) || t('common.player');
+            const isOrg = organizerIds.includes(entry.userId);
+            const isSelf = entry.userId === userId;
+            return (
+              <View key={entry._id} style={styles.playerRow}>
+                <View style={styles.playerRowMain}>
+                  <Avatar
+                    firstName={u?.firstName ?? ''}
+                    lastName={u?.lastName ?? ''}
+                    gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
+                    size="sm"
+                  />
+                  <View style={styles.playerRowText}>
+                    <Text style={styles.playerRowName}>{displayName}</Text>
+                    {isOrg ? (
+                      <Text style={styles.orgBadge}>{t('tournamentDetail.organizerBadge')}</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={styles.playerRowActions}>
+                  {isOrganizer && !isSelf && !isOrg ? (
+                    <Pressable
+                      onPress={() => promoteOrganizer(entry.userId, displayName)}
+                      disabled={mutationBusy}
+                    >
+                      <Text style={styles.linkBtn}>{t('tournamentDetail.makeOrganizer')}</Text>
+                    </Pressable>
+                  ) : null}
+                  {isOrganizer && !isSelf ? (
+                    <Pressable onPress={() => confirmRemovePlayer(entry, displayName)} disabled={mutationBusy}>
+                      <Text style={styles.linkBtnDanger}>{t('tournamentDetail.removePlayer')}</Text>
+                    </Pressable>
+                  ) : null}
+                  {isSelf && hasJoined ? (
+                    <Pressable onPress={confirmLeave} disabled={mutationBusy}>
+                      <Text style={styles.linkBtnDanger}>{t('tournamentDetail.leaveTournament')}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('tournamentDetail.teams')}</Text>
@@ -183,7 +353,16 @@ export default function TournamentDetailScreen() {
           <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
         ) : (
           teams.map((team) => (
-            <TeamCard key={team._id} team={team} userMap={userMap} currentUserId={userId} t={t} />
+            <TeamCard
+              key={team._id}
+              team={team}
+              userMap={userMap}
+              currentUserId={userId}
+              t={t}
+              isOrganizer={isOrganizer}
+              onRemoveTeam={isOrganizer ? () => confirmRemoveTeam(team) : undefined}
+              removeTeamPending={deleteTeam.isPending}
+            />
           ))
         )}
       </View>
@@ -269,4 +448,22 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: Colors.textMuted, fontStyle: 'italic' },
   joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
+  playerRow: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  playerRowMain: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  playerRowText: { flex: 1, minWidth: 0 },
+  playerRowName: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  orgBadge: {
+    fontSize: 11,
+    color: Colors.yellow,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  playerRowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 10 },
+  linkBtn: { fontSize: 14, color: Colors.yellow, fontWeight: '600' },
+  linkBtnDanger: { fontSize: 14, color: '#f87171', fontWeight: '600' },
 });

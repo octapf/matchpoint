@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
+import { isTournamentOrganizer } from '../lib/organizer';
+import { removePlayerFromTournament } from '../lib/tournamentPlayerRemoval';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -50,8 +52,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      const result = await col.deleteOne({ _id: oid });
-      if (result.deletedCount === 0) return corsRes.status(404).json({ error: 'Entry not found' });
+      const actingUserId = req.query.actingUserId as string | undefined;
+      if (!actingUserId || typeof actingUserId !== 'string') {
+        return corsRes.status(400).json({ error: 'actingUserId is required' });
+      }
+      const entry = await col.findOne({ _id: oid });
+      if (!entry) return corsRes.status(404).json({ error: 'Entry not found' });
+      const tournamentId = entry.tournamentId as string;
+      const entryUserId = entry.userId as string;
+
+      const tournamentsCol = db.collection('tournaments');
+      const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
+      if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+
+      const selfRemove = entryUserId === actingUserId;
+      const organizerKick = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
+      if (!selfRemove && !organizerKick) {
+        return corsRes.status(403).json({ error: 'Not allowed to remove this entry' });
+      }
+
+      if (selfRemove) {
+        const orgs = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
+        if (orgs.includes(entryUserId)) {
+          const next = orgs.filter((o) => o !== entryUserId);
+          if (next.length === 0) {
+            return corsRes.status(400).json({
+              error: 'Promote another organizer before you leave the tournament',
+            });
+          }
+          await tournamentsCol.updateOne(
+            { _id: new ObjectId(tournamentId) },
+            { $pull: { organizerIds: entryUserId }, $set: { updatedAt: new Date().toISOString() } } as never
+          );
+        }
+      }
+
+      await removePlayerFromTournament(db, tournamentId, entryUserId);
       return corsRes.status(204).end();
     }
 
