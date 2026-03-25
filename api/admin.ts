@@ -1,6 +1,6 @@
 /**
  * Single admin handler for Vercel Hobby (max 12 serverless functions per deployment).
- * GET /api/admin?type=stats|tournaments
+ * GET /api/admin?type=stats|tournaments|users
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
@@ -48,7 +48,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
     }
 
-    return corsRes.status(400).json({ error: 'Invalid or missing type (stats|tournaments)' });
+    if (type === 'users') {
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
+      const docs = await db
+        .collection('users')
+        .find(
+          {},
+          {
+            projection: { passwordHash: 0 },
+          }
+        )
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .toArray();
+      return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+    }
+
+    return corsRes.status(400).json({ error: 'Invalid or missing type (stats|tournaments|users)' });
   } catch (err) {
     console.error(err);
     return corsRes.status(500).json({ error: 'Internal server error' });

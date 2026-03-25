@@ -216,4 +216,12 @@ export const adminApi = {
         ...(params?.limit ? { limit: params.limit } : {}),
       },
     }),
+
+  users: (params?: { limit?: string }) =>
+    apiRequest<unknown[]>('/api/admin', {
+      params: {
+        type: 'users',
+        ...(params?.limit ? { limit: params.limit } : {}),
+      },
+    }),
 };
