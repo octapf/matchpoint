@@ -202,14 +202,18 @@ export const usersApi = {
     apiRequest<void>(`/api/users?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
-/** Admin API (Bearer + admin role on server). */
+/** Admin API (Bearer + admin role on server). Single /api/admin route (Vercel Hobby function limit). */
 export const adminApi = {
-  stats: () => apiRequest<{ users: number; tournaments: number; entries: number; teams: number }>('/api/admin/stats'),
-  tournaments: (params?: { limit?: string }) =>
-    apiRequest<unknown[]>(
-      '/api/admin/tournaments',
-      params && Object.keys(params).length > 0
-        ? { params: params as Record<string, string> }
-        : {}
+  stats: () =>
+    apiRequest<{ users: number; tournaments: number; entries: number; teams: number }>(
+      '/api/admin',
+      { params: { type: 'stats' } }
     ),
+  tournaments: (params?: { limit?: string }) =>
+    apiRequest<unknown[]>('/api/admin', {
+      params: {
+        type: 'tournaments',
+        ...(params?.limit ? { limit: params.limit } : {}),
+      },
+    }),
 };
