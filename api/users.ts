@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from './lib/mongodb';
-import { withCors } from './lib/cors';
-import { getSessionUserId, isUserAdmin } from './lib/auth';
+import { getDb } from '../server/lib/mongodb';
+import { withCors } from '../server/lib/cors';
+import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;

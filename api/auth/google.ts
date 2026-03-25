@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { OAuth2Client } from 'google-auth-library';
-import { getDb } from '../lib/mongodb';
-import { withCors } from '../lib/cors';
-import { issueSessionAndUser } from '../lib/authResponse';
+import { getDb } from '../../server/lib/mongodb';
+import { withCors } from '../../server/lib/cors';
+import { issueSessionAndUser } from '../../server/lib/authResponse';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(res).end();

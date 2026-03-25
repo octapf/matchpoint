@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../lib/mongodb';
-import { withCors } from '../lib/cors';
-import { requireAuth } from '../lib/auth';
+import { getDb } from '../../server/lib/mongodb';
+import { withCors } from '../../server/lib/cors';
+import { requireAuth } from '../../server/lib/auth';
 
 function serializeUser(doc: Record<string, unknown> | null) {
   if (!doc) return null;

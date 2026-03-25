@@ -4,9 +4,9 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../lib/mongodb';
-import { withCors } from '../lib/cors';
-import { issueSessionAndUser } from '../lib/authResponse';
+import { getDb } from '../../server/lib/mongodb';
+import { withCors } from '../../server/lib/cors';
+import { issueSessionAndUser } from '../../server/lib/authResponse';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,24}$/;

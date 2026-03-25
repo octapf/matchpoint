@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../lib/mongodb';
-import { withCors } from '../lib/cors';
-import { isTournamentOrganizer } from '../lib/organizer';
-import { resolveActorUserId } from '../lib/auth';
+import { getDb } from '../../server/lib/mongodb';
+import { withCors } from '../../server/lib/cors';
+import { isTournamentOrganizer } from '../../server/lib/organizer';
+import { resolveActorUserId } from '../../server/lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
