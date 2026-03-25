@@ -18,11 +18,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const col = db.collection('tournaments');
 
     if (req.method === 'GET') {
+      const q = req.query;
+      const status = typeof q.status === 'string' ? q.status : undefined;
+      const organizerId = typeof q.organizerId === 'string' ? q.organizerId : undefined;
+      const inviteRaw = q.inviteLink;
+      const inviteLink =
+        typeof inviteRaw === 'string' ? inviteRaw : Array.isArray(inviteRaw) ? inviteRaw[0] : undefined;
+
+      const hasStatus = !!status;
+      const hasOrg = !!organizerId;
+      const hasInvite = typeof inviteLink === 'string' && inviteLink.length > 0;
+
+      // Exact invite token: one document only (avoids wrong row when sort/duplicates differ from sharer's tournament).
+      if (hasInvite && !hasStatus && !hasOrg) {
+        const doc = await col.findOne({ inviteLink: inviteLink.trim() });
+        return corsRes.status(200).json(doc ? [serializeDoc(doc as Record<string, unknown>)] : []);
+      }
+
       const filter: Record<string, unknown> = {};
-      const { status, organizerId, inviteLink } = req.query;
-      if (status && typeof status === 'string') filter.status = status;
-      if (organizerId && typeof organizerId === 'string') filter.organizerIds = { $in: [organizerId] };
-      if (inviteLink && typeof inviteLink === 'string') filter.inviteLink = inviteLink;
+      if (hasStatus) filter.status = status;
+      if (hasOrg) filter.organizerIds = { $in: [organizerId] };
+      if (hasInvite) filter.inviteLink = inviteLink.trim();
 
       const docs = await col.find(filter).sort({ startDate: 1, date: 1 }).toArray();
       return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));

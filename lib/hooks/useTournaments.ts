@@ -71,22 +71,25 @@ export function useTournament(id: string | undefined) {
   });
 }
 
-/** Resolve tournament by ID (ObjectId) or invite link token */
+/** Resolve tournament by invite link token (path /t/{inviteLink}). Always match inviteLink first; ObjectId fallback last. */
 export function useTournamentByToken(token: string | undefined) {
   return useQuery({
     queryKey: ['tournamentByToken', token],
     queryFn: async () => {
       if (!token) return null;
+      const trimmed = token.trim();
+      if (!trimmed) return null;
       if (!config.api.isConfigured) {
-        return { ...MOCK_TOURNAMENT, _id: token, inviteLink: token };
+        return { ...MOCK_TOURNAMENT, _id: trimmed, inviteLink: trimmed };
       }
-      if (/^[a-f0-9]{24}$/i.test(token)) {
-        return tournamentsApi.findOne(token) as Promise<Tournament>;
+      const byInvite = (await tournamentsApi.find({ inviteLink: trimmed })) as Tournament[];
+      if (byInvite.length > 0) return byInvite[0]!;
+      if (/^[a-f0-9]{24}$/i.test(trimmed)) {
+        return tournamentsApi.findOne(trimmed) as Promise<Tournament>;
       }
-      const list = (await tournamentsApi.find({ inviteLink: token })) as Tournament[];
-      return list[0] ?? null;
+      return null;
     },
-    enabled: !!token,
+    enabled: !!token?.trim(),
   });
 }
 
