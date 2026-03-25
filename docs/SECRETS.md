@@ -30,7 +30,8 @@ Set in **Vercel** → Project → **Settings** → **Environment Variables** (pe
 | `GOOGLE_ANDROID_CLIENT_ID` | Optional; Android token verification on backend |
 | `APPLE_CLIENT_ID` | Sign in with Apple (bundle/service ID as configured in Apple Developer) |
 | `APP_URL` | Public base URL for email links (verify, reset password) |
-| `JWT_SECRET` | **Required in production** for email verification and password-reset tokens |
+| `JWT_SECRET` | **Required in production** for email verification, password-reset tokens, and **session JWT** (`accessToken`) |
+| `ADMIN_EMAILS` | comma-separated emails; on login, matching users get `role: 'admin'` in MongoDB (Vercel env) |
 | `EMAIL_USER` / `EMAIL_PASS` | SMTP (e.g. Zoho); if missing, email flows may skip sending |
 
 See [VERCEL_DEPLOY.md](../VERCEL_DEPLOY.md) for deploy steps.

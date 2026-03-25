@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from './lib/mongodb';
 import { withCors } from './lib/cors';
+import { getSessionUserId, isUserAdmin } from './lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -70,6 +71,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!id || typeof id !== 'string' || !ObjectId.isValid(id)) {
         return corsRes.status(400).json({ error: 'Invalid user ID' });
       }
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      const actor = await col.findOne({ _id: new ObjectId(actorId) });
+      if (!actor) return corsRes.status(401).json({ error: 'Invalid session' });
+      const selfDelete = actorId === id;
+      const admin = isUserAdmin(actor as { role?: string; email?: string });
+      if (!selfDelete && !admin) {
+        return corsRes.status(403).json({ error: 'Forbidden' });
+      }
+
       const oid = new ObjectId(id);
       const existing = await col.findOne({ _id: oid });
       if (!existing) return corsRes.status(404).json({ error: 'User not found' });

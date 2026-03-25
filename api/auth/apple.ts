@@ -3,12 +3,7 @@ import verifyAppleToken from 'verify-apple-id-token';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
-
-function serializeDoc(doc: Record<string, unknown> | null) {
-  if (!doc) return null;
-  const { _id, ...rest } = doc;
-  return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
-}
+import { issueSessionAndUser } from '../lib/authResponse';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(res).end();
@@ -63,7 +58,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user = await col.findOne({ _id: result.insertedId });
     }
 
-    return corsRes.status(200).json(serializeDoc(user as Record<string, unknown>));
+    const { user: u, accessToken } = await issueSessionAndUser(db, String(user!._id), email);
+    return corsRes.status(200).json({ ...u, accessToken });
   } catch (err) {
     console.error('Apple auth error:', err);
     return corsRes.status(401).json({ error: 'Authentication failed' });

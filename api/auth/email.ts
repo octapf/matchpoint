@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
+import { issueSessionAndUser } from '../lib/authResponse';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,24}$/;
@@ -102,9 +103,6 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
     updatedAt: now,
   });
 
-  const user = await col.findOne({ _id: result.insertedId });
-  const created = user as Record<string, unknown>;
-
   // Send verification email
   const appUrl = process.env.APP_URL || 'https://matchpoint-neon-delta.vercel.app';
   const verifyToken = jwt.sign(
@@ -131,7 +129,8 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
     });
   }
 
-  return res.status(201).json(serializeDoc(created));
+  const { user, accessToken } = await issueSessionAndUser(db, result.insertedId.toString(), email.toLowerCase());
+  return res.status(201).json({ ...user, accessToken });
 }
 
 async function handleLogin(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
@@ -166,10 +165,9 @@ async function handleLogin(req: VercelRequest, body: Record<string, unknown>, re
   const now = new Date().toISOString();
   const sessionExpiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
   await col.updateOne({ _id: user._id }, { $set: { updatedAt: now, lastLoginAt: now } });
-  const updated = await col.findOne({ _id: user._id });
-  const serialized = serializeDoc(updated as Record<string, unknown>) as Record<string, unknown>;
-  if (serialized) serialized.sessionExpiresAt = sessionExpiresAt;
-  return res.status(200).json(serialized);
+  const emailStr = user.email as string | undefined;
+  const { user: u, accessToken } = await issueSessionAndUser(db, String(user._id), emailStr);
+  return res.status(200).json({ ...u, accessToken, sessionExpiresAt });
 }
 
 async function handleForgotPassword(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {

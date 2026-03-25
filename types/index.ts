@@ -4,6 +4,8 @@
 
 export type Gender = 'male' | 'female';
 
+export type UserRole = 'user' | 'admin';
+
 export interface User {
   _id: string;
   email: string;
@@ -14,6 +16,8 @@ export interface User {
   phone?: string;
   gender?: Gender;
   authProvider: 'google' | 'apple' | 'email';
+  /** Set server-side or via ADMIN_EMAILS bootstrap */
+  role?: UserRole;
   createdAt: string;
   updatedAt: string;
   /** Client-only: when the session expires (ms since epoch) */

@@ -19,6 +19,14 @@
     "myEntries": "Le mie iscrizioni",
     "profile": "Profilo"
   },
+  "admin": {
+    "title": "Admin",
+    "users": "Utenti",
+    "tournaments": "Tornei",
+    "entries": "Iscrizioni",
+    "teams": "Squadre",
+    "recentTournamentsListed": "Tornei recenti (max 100): %{count}"
+  },
   "auth": {
     "signIn": "Accedi",
     "signUp": "Registrati",
@@ -83,7 +91,8 @@
     "firstNamePlaceholder": "Il tuo nome",
     "lastNamePlaceholder": "Il tuo cognome",
     "displayNamePlaceholder": "es. Tavo, Re della spiaggia",
-    "matchpointBy": "Matchpoint by Miralab"
+    "matchpointBy": "Matchpoint by Miralab",
+    "openAdmin": "Pannello admin"
   },
   "tournaments": {
     "create": "Crea torneo",

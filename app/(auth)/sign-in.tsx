@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { config } from '@/lib/config';
 import { authApi } from '@/lib/api';
+import { parseAuthPayload } from '@/lib/authClient';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
 
@@ -18,7 +19,7 @@ export default function SignInScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
-  const setUser = useUserStore((s) => s.setUser);
+  const setSession = useUserStore((s) => s.setSession);
   const [loading, setLoading] = useState(false);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -47,8 +48,12 @@ export default function SignInScreen() {
       const result = await GoogleSignin.signIn();
       if (result.type === 'cancelled') { setLoading(false); return; }
       if (result.type === 'success' && result.data?.idToken) {
-        const user = (await authApi.signInWithGoogle(result.data.idToken)) as User;
-        setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+        const raw = (await authApi.signInWithGoogle(result.data.idToken)) as Record<string, unknown>;
+        const { user, accessToken } = parseAuthPayload(raw);
+        setSession({
+          user: { ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 },
+          accessToken,
+        });
         router.replace(nextRoute as never);
       } else {
         Alert.alert(t('common.error'), t('auth.googleTokenMissing'));
@@ -73,11 +78,15 @@ export default function SignInScreen() {
         return;
       }
       setLoading(true);
-      const user = (await authApi.signInWithApple(credential.identityToken, {
+      const raw = (await authApi.signInWithApple(credential.identityToken, {
         firstName: credential.fullName?.givenName ?? undefined,
         lastName: credential.fullName?.familyName ?? undefined,
-      })) as User;
-      setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+      })) as Record<string, unknown>;
+      const { user, accessToken } = parseAuthPayload(raw);
+      setSession({
+        user: { ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 },
+        accessToken,
+      });
       router.replace(nextRoute as never);
     } catch (err: unknown) {
       const e = err as { code?: string };
@@ -95,8 +104,9 @@ export default function SignInScreen() {
     }
     setLoading(true);
     try {
-      const user = (await authApi.login(identifier.trim(), password)) as User;
-      setUser(user);
+      const raw = (await authApi.login(identifier.trim(), password)) as Record<string, unknown>;
+      const { user, accessToken } = parseAuthPayload(raw);
+      setSession({ user: user as User, accessToken });
       router.replace(nextRoute as never);
     } catch (err) {
       Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.loginFailed'));

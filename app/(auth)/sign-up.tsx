@@ -5,13 +5,14 @@ import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import { authApi } from '@/lib/api';
+import { parseAuthPayload } from '@/lib/authClient';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
 
 export default function SignUpScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const setUser = useUserStore((s) => s.setUser);
+  const setSession = useUserStore((s) => s.setSession);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
@@ -53,8 +54,15 @@ export default function SignUpScreen() {
 
     setLoading(true);
     try {
-      const user = (await authApi.signUp({ firstName, lastName, username, email, password })) as User;
-      setUser({ ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+      const raw = (await authApi.signUp({ firstName, lastName, username, email, password })) as Record<
+        string,
+        unknown
+      >;
+      const { user, accessToken } = parseAuthPayload(raw);
+      setSession({
+        user: { ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 } as User,
+        accessToken,
+      });
       router.replace('/(tabs)');
     } catch (err) {
       Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.signUpFailed'));

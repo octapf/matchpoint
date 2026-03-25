@@ -10,6 +10,10 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import type { Gender } from '@/types';
+
+function isAdminUser(role: string | undefined): boolean {
+  return role === 'admin';
+}
 import { LANGUAGES } from '@/lib/i18n';
 import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
@@ -135,6 +139,16 @@ export default function ProfileScreen() {
           {user.authProvider === 'email' && (
             <Button title={t('profile.changePassword')} onPress={() => router.push('/profile/change-password' as never)} variant="outline" fullWidth />
           )}
+          {isAdminUser(user.role) ? (
+            <View style={styles.spacer}>
+              <Button
+                title={t('profile.openAdmin')}
+                variant="secondary"
+                onPress={() => router.push('/admin' as never)}
+                fullWidth
+              />
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.buttonsSection}>

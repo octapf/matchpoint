@@ -39,7 +39,12 @@ export default function SplashScreen() {
         router.replace('/language');
         return;
       }
-      const currentUser = useUserStore.getState().user;
+      const { user: currentUser, accessToken } = useUserStore.getState();
+      if (currentUser && !accessToken) {
+        useUserStore.getState().signOut();
+        router.replace('/(auth)/sign-in');
+        return;
+      }
       if (currentUser) {
         router.replace('/(tabs)');
       } else {

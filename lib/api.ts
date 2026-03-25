@@ -4,6 +4,7 @@
  */
 
 import { config } from './config';
+import { useUserStore } from '@/store/useUserStore';
 
 const baseUrl = config.api.baseUrl;
 
@@ -24,12 +25,18 @@ function apiRequest<T>(
     url += (path.includes('?') ? '&' : '?') + search;
   }
 
+  const token = useUserStore.getState().accessToken;
+  const headers = new Headers(fetchOptions.headers);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   return fetch(url, {
     ...fetchOptions,
-    headers: {
-      'Content-Type': 'application/json',
-      ...fetchOptions.headers,
-    },
+    headers,
   }).then(async (res) => {
     if (res.status === 204) return undefined as T;
     const data = await res.json();
@@ -163,6 +170,9 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ userId, currentPassword, newPassword }),
     }),
+
+  /** Current user from Bearer session (requires accessToken in store). */
+  me: () => apiRequest<unknown>('/api/auth/me'),
 };
 
 // Users
@@ -190,4 +200,16 @@ export const usersApi = {
 
   deleteOne: (id: string) =>
     apiRequest<void>(`/api/users?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};
+
+/** Admin API (Bearer + admin role on server). */
+export const adminApi = {
+  stats: () => apiRequest<{ users: number; tournaments: number; entries: number; teams: number }>('/api/admin/stats'),
+  tournaments: (params?: { limit?: string }) =>
+    apiRequest<unknown[]>(
+      '/api/admin/tournaments',
+      params && Object.keys(params).length > 0
+        ? { params: params as Record<string, string> }
+        : {}
+    ),
 };

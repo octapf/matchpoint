@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../lib/mongodb';
 import { withCors } from '../lib/cors';
 import { isTournamentOrganizer } from '../lib/organizer';
+import { resolveActorUserId } from '../lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -51,9 +52,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      const actingUserId = req.query.actingUserId as string | undefined;
-      if (!actingUserId || typeof actingUserId !== 'string') {
-        return corsRes.status(400).json({ error: 'actingUserId is required' });
+      const actingUserId = resolveActorUserId(req);
+      if (!actingUserId) {
+        return corsRes.status(401).json({ error: 'Sign in required or pass actingUserId' });
       }
       const team = await col.findOne({ _id: oid });
       if (!team) return corsRes.status(404).json({ error: 'Team not found' });

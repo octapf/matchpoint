@@ -19,6 +19,14 @@
     "myEntries": "My Entries",
     "profile": "Profile"
   },
+  "admin": {
+    "title": "Admin",
+    "users": "Users",
+    "tournaments": "Tournaments",
+    "entries": "Entries",
+    "teams": "Teams",
+    "recentTournamentsListed": "Recent tournaments fetched (max 100): %{count}"
+  },
   "auth": {
     "signIn": "Sign in",
     "signUp": "Sign up",
@@ -83,7 +91,8 @@
     "firstNamePlaceholder": "Your first name",
     "lastNamePlaceholder": "Your last name",
     "displayNamePlaceholder": "e.g. Tavo, Beach King",
-    "matchpointBy": "Matchpoint by Miralab"
+    "matchpointBy": "Matchpoint by Miralab",
+    "openAdmin": "Admin dashboard"
   },
   "tournaments": {
     "create": "Create tournament",

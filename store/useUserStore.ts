@@ -27,8 +27,12 @@ const secureStorage =
 
 interface UserState {
   user: User | null;
+  /** JWT from /api auth; sent as Authorization Bearer on API calls */
+  accessToken: string | null;
   _hasHydrated: boolean;
   setUser: (user: User | null) => void;
+  setAccessToken: (token: string | null) => void;
+  setSession: (payload: { user: User; accessToken: string }) => void;
   signOut: () => void;
 }
 
@@ -36,14 +40,17 @@ export const useUserStore = create<UserState>()(
   persist(
     (set) => ({
       user: null,
+      accessToken: null,
       _hasHydrated: false,
       setUser: (user) => set({ user }),
-      signOut: () => set({ user: null }),
+      setAccessToken: (accessToken) => set({ accessToken }),
+      setSession: ({ user, accessToken }) => set({ user, accessToken }),
+      signOut: () => set({ user: null, accessToken: null }),
     }),
     {
       name: 'matchpoint-user',
       storage: createJSONStorage(() => secureStorage),
-      partialize: (state) => ({ user: state.user }),
+      partialize: (state) => ({ user: state.user, accessToken: state.accessToken }),
       onRehydrateStorage: () => () => {
         useUserStore.setState({ _hasHydrated: true });
       },
