@@ -8,7 +8,8 @@ export type UserRole = 'user' | 'admin';
 
 export interface User {
   _id: string;
-  email: string;
+  /** Omitted in peer/public API responses (GET /api/users batch for other players). */
+  email?: string;
   username?: string;
   firstName: string;
   lastName: string;

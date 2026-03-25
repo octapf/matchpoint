@@ -6,8 +6,16 @@ import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { _id, ...rest } = doc;
+  const { _id, passwordHash: _ph, ...rest } = doc;
   return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
+}
+
+/** Peers / non-admins: no email, phone, or role (avoid leaking PII and admin status). */
+function toPublicUser(doc: Record<string, unknown>) {
+  const s = serializeDoc(doc);
+  if (!s) return null;
+  const { email: _e, phone: _p, role: _r, ...pub } = s as Record<string, unknown>;
+  return pub;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -19,24 +27,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const col = db.collection('users');
 
     if (req.method === 'GET') {
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      if (!ObjectId.isValid(actorId)) {
+        return corsRes.status(401).json({ error: 'Invalid session' });
+      }
+      const actor = await col.findOne({ _id: new ObjectId(actorId) });
+      if (!actor) return corsRes.status(401).json({ error: 'Invalid session' });
+      const admin = isUserAdmin(actor as { role?: string; email?: string });
+
       const { id, email, ids } = req.query;
+
       if (ids && typeof ids === 'string') {
         const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
         const validIds = idList.filter((s) => ObjectId.isValid(s));
         if (validIds.length === 0) return corsRes.status(200).json([]);
         const docs = await col.find({ _id: { $in: validIds.map((s) => new ObjectId(s)) } }).toArray();
-        return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+        if (admin) {
+          return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+        }
+        return corsRes.status(200).json(
+          docs.map((d) => {
+            const plain = d as Record<string, unknown>;
+            const sid = (plain._id as ObjectId).toString();
+            if (sid === actorId) return serializeDoc(plain);
+            return toPublicUser(plain);
+          })
+        );
       }
+
       if (id && typeof id === 'string' && ObjectId.isValid(id)) {
         const doc = await col.findOne({ _id: new ObjectId(id) });
         if (!doc) return corsRes.status(404).json({ error: 'User not found' });
-        return corsRes.status(200).json(serializeDoc(doc as Record<string, unknown>));
+        const plain = doc as Record<string, unknown>;
+        if (admin || id === actorId) {
+          return corsRes.status(200).json(serializeDoc(plain));
+        }
+        return corsRes.status(200).json(toPublicUser(plain));
       }
+
       if (email && typeof email === 'string') {
+        if (!admin) {
+          return corsRes.status(403).json({ error: 'Forbidden' });
+        }
         const doc = await col.findOne({ email });
         if (!doc) return corsRes.status(404).json({ error: 'User not found' });
         return corsRes.status(200).json(serializeDoc(doc as Record<string, unknown>));
       }
+
       return corsRes.status(400).json({ error: 'Provide id, email, or ids' });
     }
 
