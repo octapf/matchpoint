@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Platform, Linking, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,13 +9,24 @@ import { useTournamentByToken } from '@/lib/hooks/useTournaments';
 import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
 import { config } from '@/lib/config';
+import i18n from '@/lib/i18n';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
 
 export default function JoinViaLinkScreen() {
   const { t } = useTranslation();
-  const { token } = useLocalSearchParams<{ token: string }>();
+  const { token, lang: langParam } = useLocalSearchParams<{ token: string; lang?: string | string[] }>();
   const router = useRouter();
+  const langQuery = Array.isArray(langParam) ? langParam[0] : langParam;
+
+  useLayoutEffect(() => {
+    if (langQuery === 'en' || langQuery === 'es' || langQuery === 'it') {
+      i18n.locale = langQuery;
+    }
+    if (typeof document !== 'undefined' && (langQuery === 'en' || langQuery === 'es' || langQuery === 'it')) {
+      document.documentElement.lang = langQuery;
+    }
+  }, [langQuery]);
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const canEnroll = user?.gender === 'male' || user?.gender === 'female';
@@ -90,7 +101,13 @@ export default function JoinViaLinkScreen() {
 
   // Web browser: must run before !userId — otherwise guests see native sign-in UI (Google doesn't work on web).
   if (Platform.OS === 'web') {
-    const inviteUrl = config.invite.getUrl(tournament.inviteLink);
+    const shareLang: 'en' | 'es' | 'it' =
+      langQuery === 'en' || langQuery === 'es' || langQuery === 'it'
+        ? langQuery
+        : i18n.locale === 'es' || i18n.locale === 'it'
+          ? i18n.locale
+          : 'en';
+    const inviteUrl = config.invite.getUrl(tournament.inviteLink, shareLang);
     return (
       <View style={styles.container}>
         <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>

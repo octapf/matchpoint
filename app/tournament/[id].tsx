@@ -13,6 +13,8 @@ import { useTeams, useDeleteTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
+import { useLanguageStore } from '@/store/useLanguageStore';
+import i18n from '@/lib/i18n';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Team, Entry } from '@/types';
@@ -61,13 +63,15 @@ function TeamCard({
         })}
       </View>
       {isOrganizer && onRemoveTeam ? (
-        <Button
-          title={t('tournamentDetail.removeTeam')}
-          variant="outline"
-          onPress={onRemoveTeam}
-          disabled={removeTeamPending}
-          fullWidth
-        />
+        <View style={styles.teamCardFooter}>
+          <Button
+            title={t('tournamentDetail.removeTeam')}
+            variant="outline"
+            onPress={onRemoveTeam}
+            disabled={removeTeamPending}
+            fullWidth
+          />
+        </View>
       ) : null}
     </View>
   );
@@ -91,6 +95,7 @@ export default function TournamentDetailScreen() {
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
+  const storedLanguage = useLanguageStore((s) => s.language);
   const canEnroll = hasValidGender(user?.gender);
 
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
@@ -270,7 +275,13 @@ export default function TournamentDetailScreen() {
     deleteEntry.isPending || updateTournament.isPending || deleteTeam.isPending || deleteTournament.isPending;
 
   const handleShareInvite = () => {
-    const url = config.invite.getUrl(tournament.inviteLink);
+    const lang: 'en' | 'es' | 'it' =
+      storedLanguage === 'en' || storedLanguage === 'es' || storedLanguage === 'it'
+        ? storedLanguage
+        : i18n.locale === 'es' || i18n.locale === 'it'
+          ? i18n.locale
+          : 'en';
+    const url = config.invite.getUrl(tournament.inviteLink, lang);
     Share.share({
       message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
       url,
@@ -438,6 +449,7 @@ const styles = StyleSheet.create({
   },
   teamName: { fontSize: 16, fontWeight: '600', color: Colors.text, marginBottom: 12 },
   players: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  teamCardFooter: { marginTop: 16 },
   player: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   playerName: { fontSize: 14, color: Colors.text },
   playerNameHighlight: { color: Colors.yellow, fontWeight: '600' },

@@ -17,8 +17,6 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta property="og:title" content="Matchpoint - Beach Volleyball Tournaments" />
         <meta property="og:description" content="Join tournaments, form teams, and compete. By Miralab." />
         <meta property="og:image" content={`${process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar'}/og-image.png`} />
-        <meta property="og:image:width" content="512" />
-        <meta property="og:image:height" content="512" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Matchpoint - Beach Volleyball Tournaments" />
         <meta name="twitter:description" content="Join tournaments, form teams, and compete. By Miralab." />

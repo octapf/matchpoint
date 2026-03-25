@@ -20,7 +20,13 @@ export const config = {
   },
   invite: {
     baseUrl: INVITE_BASE_URL,
-    /** Full URL for sharing: https://matchpoint.miralab.ar/t/{token} */
-    getUrl: (token: string) => `${INVITE_BASE_URL}/t/${token}`,
+    /** Full URL for sharing; pass lang so web invite page matches sharer's UI (see ?lang= on /t/[token]). */
+    getUrl: (token: string, lang?: 'en' | 'es' | 'it') => {
+      const path = `${INVITE_BASE_URL}/t/${encodeURIComponent(token)}`;
+      if (lang === 'en' || lang === 'es' || lang === 'it') {
+        return `${path}?lang=${lang}`;
+      }
+      return path;
+    },
   },
 };

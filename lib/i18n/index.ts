@@ -27,10 +27,35 @@ const getDeviceLocale = (): Language => {
   return 'en';
 };
 
+/** Web: invite links carry ?lang=; persist store uses localStorage — both before browser default. */
+function getInitialLocale(): Language {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    try {
+      if (window.location.pathname.startsWith('/t/')) {
+        const l = new URLSearchParams(window.location.search).get('lang');
+        if (l === 'en' || l === 'es' || l === 'it') return l;
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      const raw = window.localStorage.getItem('matchpoint-language');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { state?: { language?: string | null } };
+        const lang = parsed?.state?.language;
+        if (lang === 'en' || lang === 'es' || lang === 'it') return lang;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return getDeviceLocale();
+}
+
 const translations = { en, es, it };
 export const i18n = new I18n(translations);
 i18n.defaultLocale = 'en';
-i18n.locale = getDeviceLocale();
+i18n.locale = getInitialLocale();
 
 type TranslateFn = (key: string, options?: Record<string, string | number>) => string;
 

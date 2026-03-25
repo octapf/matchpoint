@@ -9,6 +9,9 @@
     }
   },
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/" }
+    {
+      "source": "/((?!api/)(?!.*\\.[a-zA-Z0-9]{2,6}$).*)",
+      "destination": "/"
+    }
   ]
 }

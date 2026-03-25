@@ -63,9 +63,18 @@ function RootLayoutNav() {
   const hasHydrated = useLanguageStore((s) => s._hasHydrated);
 
   useEffect(() => {
-    if (hasHydrated && language) {
-      i18n.locale = language;
+    if (!hasHydrated || !language) return;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        if (window.location.pathname.startsWith('/t/')) {
+          const l = new URLSearchParams(window.location.search).get('lang');
+          if (l === 'en' || l === 'es' || l === 'it') return;
+        }
+      } catch {
+        /* ignore */
+      }
     }
+    i18n.locale = language;
   }, [hasHydrated, language]);
 
   const Wrapper = Platform.OS === 'web' ? View : GestureHandlerRootView;
