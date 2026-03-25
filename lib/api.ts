@@ -184,4 +184,7 @@ export const usersApi = {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),
+
+  deleteOne: (id: string) =>
+    apiRequest<void>(`/api/users?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

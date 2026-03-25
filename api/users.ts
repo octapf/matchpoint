@@ -65,6 +65,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return corsRes.status(201).json(serializeDoc(inserted as Record<string, unknown>));
     }
 
+    if (req.method === 'DELETE') {
+      const { id } = req.query;
+      if (!id || typeof id !== 'string' || !ObjectId.isValid(id)) {
+        return corsRes.status(400).json({ error: 'Invalid user ID' });
+      }
+      const oid = new ObjectId(id);
+      const existing = await col.findOne({ _id: oid });
+      if (!existing) return corsRes.status(404).json({ error: 'User not found' });
+
+      const entriesCol = db.collection('entries');
+      const teamsCol = db.collection('teams');
+      const tournamentsCol = db.collection('tournaments');
+      const now = new Date().toISOString();
+
+      const teamsWithUser = await teamsCol.find({ playerIds: id }).toArray();
+
+      await entriesCol.deleteMany({ userId: id });
+
+      for (const team of teamsWithUser) {
+        const tid = team._id as ObjectId;
+        const teamIdStr = tid.toString();
+        await teamsCol.deleteOne({ _id: tid });
+        await entriesCol.updateMany(
+          { teamId: teamIdStr },
+          {
+            $set: {
+              teamId: null,
+              status: 'joined',
+              lookingForPartner: true,
+              updatedAt: now,
+            },
+          }
+        );
+      }
+
+      await tournamentsCol.updateMany(
+        { organizerIds: id },
+        { $pull: { organizerIds: id }, $set: { updatedAt: now } } as never
+      );
+      await tournamentsCol.updateMany(
+        { organizerIds: { $size: 0 } },
+        { $set: { status: 'cancelled', updatedAt: now } }
+      );
+
+      const del = await col.deleteOne({ _id: oid });
+      if (del.deletedCount === 0) return corsRes.status(404).json({ error: 'User not found' });
+      return corsRes.status(204).end();
+    }
+
     if (req.method === 'PATCH') {
       const { id } = req.query;
       if (!id || typeof id !== 'string' || !ObjectId.isValid(id)) {

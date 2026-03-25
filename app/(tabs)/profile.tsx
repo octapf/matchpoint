@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,8 @@ import { useLanguageStore } from '@/store/useLanguageStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import type { Gender } from '@/types';
 import { LANGUAGES } from '@/lib/i18n';
+import { usersApi } from '@/lib/api';
+import { config } from '@/lib/config';
 
 function formatGender(t: (k: string) => string, g?: Gender): string {
   if (!g) return '—';
@@ -24,6 +26,7 @@ export default function ProfileScreen() {
   const signOut = useUserStore((s) => s.signOut);
   const language = useLanguageStore((s) => s.language ?? 'en');
   const setLanguage = useLanguageStore((s) => s.setLanguage);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -33,8 +36,31 @@ export default function ProfileScreen() {
     router.replace('/(auth)/sign-in');
   };
 
+  const runDeleteAccount = async () => {
+    if (!user?._id || !config.api.isConfigured) {
+      Alert.alert(t('common.error'), t('profile.deleteAccountFailed'));
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      await usersApi.deleteOne(user._id);
+      try {
+        await GoogleSignin.signOut();
+      } catch (_) {}
+      signOut();
+      router.replace('/(auth)/sign-in');
+    } catch (e) {
+      Alert.alert(t('common.error'), t('profile.deleteAccountFailed'));
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
   const handleDeleteAccount = () => {
-    Alert.alert(t('profile.deleteAccount'), t('profile.deleteAccountConfirm'), [{ text: t('common.ok') }]);
+    Alert.alert(t('profile.deleteAccount'), t('profile.deleteAccountMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => void runDeleteAccount() },
+    ]);
   };
 
   if (!user) {
@@ -112,9 +138,20 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.buttonsSection}>
-          <Button title={t('auth.signOut')} onPress={handleSignOut} fullWidth />
+          <Button
+            title={t('auth.signOut')}
+            onPress={handleSignOut}
+            fullWidth
+            disabled={deletingAccount}
+          />
           <View style={styles.spacer} />
-          <Button title={t('profile.deleteAccount')} onPress={handleDeleteAccount} variant="danger" fullWidth />
+          <Button
+            title={deletingAccount ? t('profile.deleteAccountDeleting') : t('profile.deleteAccount')}
+            onPress={handleDeleteAccount}
+            variant="danger"
+            fullWidth
+            disabled={deletingAccount}
+          />
         </View>
 
         <Text style={styles.footer}>{t('profile.matchpointBy')}</Text>
