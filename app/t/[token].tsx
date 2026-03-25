@@ -88,30 +88,7 @@ export default function JoinViaLinkScreen() {
     );
   }
 
-  if (!userId) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
-        <Text style={styles.tournamentName}>{tournament.name}</Text>
-        <Text style={styles.subtitle}>{t('auth.signInToJoin')}</Text>
-        <Button title={t('auth.signIn')} onPress={handleSignIn} fullWidth />
-        <Button
-          title={t('inviteLink.viewTournament')}
-          onPress={handleViewOnly}
-          variant="secondary"
-          fullWidth
-        />
-        <Button
-          title={t('common.cancel')}
-          onPress={() => router.back()}
-          variant="outline"
-          fullWidth
-        />
-      </View>
-    );
-  }
-
-  // On web: Google Sign-In not supported — show "Open in app" message
+  // Web browser: must run before !userId — otherwise guests see native sign-in UI (Google doesn't work on web).
   if (Platform.OS === 'web') {
     const inviteUrl = config.invite.getUrl(tournament.inviteLink);
     return (
@@ -119,12 +96,35 @@ export default function JoinViaLinkScreen() {
         <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
         <Text style={styles.tournamentName}>{tournament.name}</Text>
         <Text style={styles.subtitle}>{t('inviteLink.webOpenInApp')}</Text>
-        <Button
-          title={t('auth.getOnPlayStore')}
-          onPress={() => Linking.openURL(PLAY_STORE_URL)}
-          fullWidth
-        />
+        <View style={styles.buttonStack}>
+          <Button
+            title={t('auth.getOnPlayStore')}
+            onPress={() => Linking.openURL(PLAY_STORE_URL)}
+            fullWidth
+          />
+          <Button title={t('inviteLink.viewTournament')} onPress={handleViewOnly} variant="secondary" fullWidth />
+        </View>
         <Text style={styles.webHint}>{t('inviteLink.webCopyHint', { url: inviteUrl })}</Text>
+      </View>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
+        <Text style={styles.tournamentName}>{tournament.name}</Text>
+        <Text style={styles.subtitle}>{t('auth.signInToJoin')}</Text>
+        <View style={styles.buttonStack}>
+          <Button title={t('auth.signIn')} onPress={handleSignIn} fullWidth />
+          <Button
+            title={t('inviteLink.viewTournament')}
+            onPress={handleViewOnly}
+            variant="secondary"
+            fullWidth
+          />
+          <Button title={t('common.cancel')} onPress={() => router.back()} variant="outline" fullWidth />
+        </View>
       </View>
     );
   }
@@ -140,20 +140,22 @@ export default function JoinViaLinkScreen() {
             ? t('inviteLink.alreadyJoined')
             : t('inviteLink.invitedToJoin')}
       </Text>
-      {(canEnroll || hasJoined) && (
+      <View style={styles.buttonStack}>
+        {(canEnroll || hasJoined) && (
+          <Button
+            title={hasJoined ? t('inviteLink.viewTournament') : t('tournamentDetail.joinTournament')}
+            onPress={handleJoin}
+            disabled={createEntry.isPending}
+            fullWidth
+          />
+        )}
         <Button
-          title={hasJoined ? t('inviteLink.viewTournament') : t('tournamentDetail.joinTournament')}
-          onPress={handleJoin}
-          disabled={createEntry.isPending}
+          title={t('common.cancel')}
+          onPress={() => router.back()}
+          variant="outline"
           fullWidth
         />
-      )}
-      <Button
-        title={t('common.cancel')}
-        onPress={() => router.back()}
-        variant="outline"
-        fullWidth
-      />
+      </View>
     </View>
   );
 }
@@ -181,6 +183,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.textSecondary,
     marginBottom: 24,
+  },
+  buttonStack: {
+    gap: 12,
+    width: '100%',
   },
   token: {
     fontSize: 14,
