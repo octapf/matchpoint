@@ -24,6 +24,8 @@ module.exports = {
     },
     android: {
       package: 'com.miralab.matchpoint',
+      /** Must stay above the Play Store build to allow `expo run:android` over store installs */
+      versionCode: 100,
       intentFilters: [
         {
           action: 'VIEW',
@@ -31,6 +33,19 @@ module.exports = {
           data: [
             { scheme: 'com.miralab.matchpoint', pathPrefix: '/' },
             { scheme: 'com.miralab.matchpoint', pathPrefix: '/oauthredirect' },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+        /** HTTPS invite links → native app (requires /.well-known/assetlinks.json + matching SHA256). */
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            {
+              scheme: 'https',
+              host: 'matchpoint.miralab.ar',
+              pathPrefix: '/t',
+            },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
@@ -44,7 +59,8 @@ module.exports = {
     },
     web: {
       bundler: 'metro',
-      output: 'single',
+      /** `single` omits app/+html.tsx from exported index.html — no og:image for WhatsApp. Use static for real <head> + SEO. */
+      output: 'static',
       favicon: './assets/images/favicon.png',
     },
     plugins: [

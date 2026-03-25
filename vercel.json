@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npx expo export -p web",
+  "buildCommand": "npx expo export -p web && node scripts/verify-web-og.js",
   "outputDirectory": "dist",
   "framework": null,
   "functions": {
@@ -8,7 +8,27 @@
       "maxDuration": 10
     }
   },
+  "headers": [
+    {
+      "source": "/assetlinks.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/.well-known/assetlinks.json",
+      "destination": "/assetlinks.json"
+    },
     {
       "source": "/((?!api/)(?!.*\\.[a-zA-Z0-9]{2,6}$).*)",
       "destination": "/"

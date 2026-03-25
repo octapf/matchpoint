@@ -28,5 +28,12 @@ export const config = {
       }
       return path;
     },
+    /** Android: opens installed app from Chrome when App Links are not verified yet. */
+    getAndroidIntentUrl: (token: string, lang?: 'en' | 'es' | 'it') => {
+      const host = INVITE_BASE_URL.replace(/^https?:\/\//, '');
+      const qs = lang === 'en' || lang === 'es' || lang === 'it' ? `?lang=${lang}` : '';
+      const path = `/t/${encodeURIComponent(token)}${qs}`;
+      return `intent://${host}${path}#Intent;scheme=https;package=com.miralab.matchpoint;end`;
+    },
   },
 };

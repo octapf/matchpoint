@@ -108,18 +108,31 @@ export default function JoinViaLinkScreen() {
           ? i18n.locale
           : 'en';
     const inviteUrl = config.invite.getUrl(tournament.inviteLink, shareLang);
+    const androidIntentUrl = config.invite.getAndroidIntentUrl(tournament.inviteLink, shareLang);
+    const isAndroidWeb =
+      typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    const openInApp = () => {
+      if (typeof window === 'undefined') return;
+      if (isAndroidWeb) {
+        window.location.href = androidIntentUrl;
+        return;
+      }
+      Linking.openURL(inviteUrl);
+    };
     return (
       <View style={styles.container}>
         <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
         <Text style={styles.tournamentName}>{tournament.name}</Text>
         <Text style={styles.subtitle}>{t('inviteLink.webOpenInApp')}</Text>
         <View style={styles.buttonStack}>
+          <Button title={t('inviteLink.openInApp')} onPress={openInApp} fullWidth />
+          <Button title={t('inviteLink.viewTournament')} onPress={handleViewOnly} variant="secondary" fullWidth />
           <Button
             title={t('auth.getOnPlayStore')}
             onPress={() => Linking.openURL(PLAY_STORE_URL)}
+            variant="outline"
             fullWidth
           />
-          <Button title={t('inviteLink.viewTournament')} onPress={handleViewOnly} variant="secondary" fullWidth />
         </View>
         <Text style={styles.webHint}>{t('inviteLink.webCopyHint', { url: inviteUrl })}</Text>
       </View>

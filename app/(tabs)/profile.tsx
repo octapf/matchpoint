@@ -10,11 +10,11 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import type { Gender } from '@/types';
+import { LANGUAGES } from '@/lib/i18n';
 
 function isAdminUser(role: string | undefined): boolean {
   return role === 'admin';
 }
-import { LANGUAGES } from '@/lib/i18n';
 import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
 
@@ -134,31 +134,25 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.editSection}>
+        <View style={styles.actionsColumn}>
           <Button title={t('profile.editProfile')} onPress={() => router.push('/profile/edit')} variant="outline" fullWidth />
-          {user.authProvider === 'email' && (
+          {user.authProvider === 'email' ? (
             <Button title={t('profile.changePassword')} onPress={() => router.push('/profile/change-password' as never)} variant="outline" fullWidth />
-          )}
-          {isAdminUser(user.role) ? (
-            <View style={styles.spacer}>
-              <Button
-                title={t('profile.openAdmin')}
-                variant="secondary"
-                onPress={() => router.push('/admin' as never)}
-                fullWidth
-              />
-            </View>
           ) : null}
-        </View>
-
-        <View style={styles.buttonsSection}>
+          {isAdminUser(user.role) ? (
+            <Button
+              title={t('profile.openAdmin')}
+              variant="secondary"
+              onPress={() => router.push('/admin' as never)}
+              fullWidth
+            />
+          ) : null}
           <Button
             title={t('auth.signOut')}
             onPress={handleSignOut}
             fullWidth
             disabled={deletingAccount}
           />
-          <View style={styles.spacer} />
           <Button
             title={deletingAccount ? t('profile.deleteAccountDeleting') : t('profile.deleteAccount')}
             onPress={handleDeleteAccount}
@@ -183,9 +177,10 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  buttonsSection: {
+  actionsColumn: {
     marginTop: 24,
     marginBottom: 8,
+    gap: 12,
   },
   centered: {
     justifyContent: 'center',
@@ -227,13 +222,6 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 16,
     color: Colors.text,
-  },
-  editSection: {
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  spacer: {
-    height: 12,
   },
   footer: {
     fontSize: 14,

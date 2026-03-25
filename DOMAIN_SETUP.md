@@ -30,11 +30,13 @@ Apuntar `matchpoint.miralab.ar` al servidor donde vas a alojar los archivos (pue
 
 ## 2. Android App Links — assetlinks.json
 
-Para que al tocar `https://matchpoint.miralab.ar/t/XXXX` se abra la app en Android (si está instalada):
+Para que al tocar `https://matchpoint.miralab.ar/t/XXXX` se abra la app en Android (si está instalada), hace falta **todo** esto:
 
-**Archivo:** `https://matchpoint.miralab.ar/.well-known/assetlinks.json`
+1. **En el repo:** `public/assetlinks.json` (se publica como `/assetlinks.json`). Vercel reescribe `/.well-known/assetlinks.json` → `/assetlinks.json`.
+2. **En la app:** `app.config.js` ya incluye un `intentFilter` HTTPS (`host: matchpoint.miralab.ar`, `pathPrefix: /t`, `autoVerify: true`). Tenés que generar un **nuevo build** de Android (`eas build` o `expo run:android`) para que el manifest del APK/AAB lo incluya.
+3. **SHA256:** tiene que coincidir con la firma que usa Google Play (**App signing key certificate** en Play Console → App integrity). Editá `public/assetlinks.json` y reemplazá el fingerprint. Si el SHA no coincide, Android **no** verifica el dominio y el enlace sigue abriendo el navegador.
 
-**Contenido (ajustar el SHA256):**
+**Contenido de ejemplo** (reemplazá el SHA256):
 
 ```json
 [
@@ -51,7 +53,7 @@ Para que al tocar `https://matchpoint.miralab.ar/t/XXXX` se abra la app en Andro
 ]
 ```
 
-> **SHA256:** Obtené el actual con `npx eas credentials --platform android` y reemplazá el valor. Si tenés más keystores (producción, upload), añadí sus SHA256 en el array.
+> **SHA256:** Obtené el actual con `npx eas credentials --platform android` o desde Play Console (firma de **app signing**, no solo upload). Podés añadir varios fingerprints en el array si usás distintas claves.
 
 ---
 

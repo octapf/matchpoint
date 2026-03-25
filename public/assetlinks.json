@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.miralab.matchpoint",
+      "sha256_cert_fingerprints": [
+        "4A:09:81:D0:60:74:43:50:51:24:E7:8C:EF:49:6A:9B:C2:7F:D9:39:51:0E:E5:E4:B8:35:83:19:AB:36:84:D0"
+      ]
+    }
+  }
+]

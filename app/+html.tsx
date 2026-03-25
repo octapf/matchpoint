@@ -4,7 +4,15 @@ import { ScrollViewStyleReset } from 'expo-router/html';
 // web page during static rendering.
 // The contents of this function only run in Node.js environments and
 // do not have access to the DOM or browser APIs.
+
+function siteOrigin(): string {
+  return (process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar').replace(/\/$/, '');
+}
+
 export default function Root({ children }: { children: React.ReactNode }) {
+  const origin = siteOrigin();
+  const fbAppId = process.env.EXPO_PUBLIC_FB_APP_ID;
+
   return (
     <html lang="en">
       <head>
@@ -14,13 +22,20 @@ export default function Root({ children }: { children: React.ReactNode }) {
 
         {/* Open Graph / WhatsApp share preview */}
         <meta property="og:type" content="website" />
+        <meta property="og:url" content={`${origin}/`} />
+        <meta property="og:site_name" content="Matchpoint" />
         <meta property="og:title" content="Matchpoint - Beach Volleyball Tournaments" />
         <meta property="og:description" content="Join tournaments, form teams, and compete. By Miralab." />
-        <meta property="og:image" content={`${process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar'}/og-image.png`} />
+        <meta property="og:image" content={`${origin}/og-image.png`} />
+        {fbAppId ? <meta property="fb:app_id" content={fbAppId} /> : null}
+        <meta property="og:image:width" content="1024" />
+        <meta property="og:image:height" content="500" />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:alt" content="Matchpoint" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Matchpoint - Beach Volleyball Tournaments" />
         <meta name="twitter:description" content="Join tournaments, form teams, and compete. By Miralab." />
-        <meta name="twitter:image" content={`${process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar'}/og-image.png`} />
+        <meta name="twitter:image" content={`${origin}/og-image.png`} />
 
         {/* 
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native. 
