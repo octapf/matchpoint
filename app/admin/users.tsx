@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -8,8 +8,8 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
 import { adminApi } from '@/lib/api';
@@ -27,6 +27,7 @@ function isUserDoc(x: unknown): x is User {
 
 export default function AdminUsersScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [items, setItems] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,17 +59,11 @@ export default function AdminUsersScreen() {
     }
   }, [load]);
 
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  const showUserDetail = (u: User) => {
-    const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.displayName || '—';
-    Alert.alert(
-      u.email,
-      [name, u.role === 'admin' ? t('admin.roleAdmin') : t('admin.roleUser'), `ID: ${u._id}`].join('\n')
-    );
-  };
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   return (
     <>
@@ -96,7 +91,7 @@ export default function AdminUsersScreen() {
             renderItem={({ item }) => (
               <Pressable
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                onPress={() => showUserDetail(item)}
+                onPress={() => router.push(`/admin/users/${item._id}` as never)}
               >
                 <View style={styles.rowMain}>
                   <Text style={styles.rowTitle} numberOfLines={1}>

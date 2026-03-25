@@ -132,8 +132,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!id || typeof id !== 'string' || !ObjectId.isValid(id)) {
         return corsRes.status(400).json({ error: 'Invalid user ID' });
       }
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      const actor = await col.findOne({ _id: new ObjectId(actorId) });
+      if (!actor) return corsRes.status(401).json({ error: 'Invalid session' });
+      const selfEdit = actorId === id;
+      const admin = isUserAdmin(actor as { role?: string; email?: string });
+      if (!selfEdit && !admin) {
+        return corsRes.status(403).json({ error: 'Forbidden' });
+      }
+
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const allowed = ['firstName', 'lastName', 'displayName', 'phone', 'gender'];
+      if (admin) allowed.push('role');
       const update: Record<string, unknown> = {};
       for (const k of allowed) {
         if (body[k] !== undefined) update[k] = body[k];
@@ -143,6 +156,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Only accept male/female for gender; ignore 'other' or invalid values
       if ('gender' in body && body.gender !== 'male' && body.gender !== 'female') {
         delete update.gender;
+      }
+      if (update.role !== undefined) {
+        const r = update.role;
+        if (r !== 'user' && r !== 'admin') {
+          delete update.role;
+        }
       }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });

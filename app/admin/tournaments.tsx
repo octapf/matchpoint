@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -58,9 +59,11 @@ export default function AdminTournamentsScreen() {
     }
   }, [load]);
 
-  React.useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   return (
     <>
@@ -86,20 +89,28 @@ export default function AdminTournamentsScreen() {
               ) : null
             }
             renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                onPress={() => router.push(`/tournament/${item._id}`)}
-              >
-                <View style={styles.rowMain}>
-                  <Text style={styles.rowTitle} numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.rowMeta} numberOfLines={1}>
-                    {item.startDate ? new Date(item.startDate).toLocaleDateString() : '—'} · {item.status}
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </Pressable>
+              <View style={styles.row}>
+                <Pressable
+                  style={({ pressed }) => [styles.rowLead, pressed && styles.rowPressed]}
+                  onPress={() => router.push(`/tournament/${item._id}`)}
+                >
+                  <View style={styles.rowMain}>
+                    <Text style={styles.rowTitle} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.rowMeta} numberOfLines={1}>
+                      {item.startDate ? new Date(item.startDate).toLocaleDateString() : '—'} · {item.status}
+                    </Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.editBtn, pressed && styles.rowPressed]}
+                  onPress={() => router.push(`/admin/tournament/${item._id}` as never)}
+                >
+                  <Text style={styles.editBtnText}>{t('admin.edit')}</Text>
+                </Pressable>
+              </View>
             )}
           />
         )}
@@ -121,17 +132,37 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 20, paddingBottom: 32 },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     backgroundColor: Colors.surface,
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
     marginBottom: 10,
+    overflow: 'hidden',
+  },
+  rowLead: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingLeft: 16,
+    paddingRight: 8,
+    minWidth: 0,
   },
   rowPressed: { opacity: 0.92 },
   rowMain: { flex: 1, marginRight: 8 },
+  editBtn: {
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
+  },
+  editBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.yellow,
+  },
   rowTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   rowMeta: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
   chevron: { fontSize: 22, color: Colors.textMuted, fontWeight: '300' },

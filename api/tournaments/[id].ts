@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
-import { resolveActorUserId } from '../../server/lib/auth';
+import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -40,7 +40,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const current = await col.findOne({ _id: oid });
       if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
       const cur = current as Record<string, unknown>;
-      if (!isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId)) {
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      const isOrg = isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId);
+      if (!isOrg && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Only organizers can update this tournament' });
       }
 
@@ -59,16 +62,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!Array.isArray(nextOrganizers) || nextOrganizers.length === 0) {
           return corsRes.status(400).json({ error: 'At least one organizer is required' });
         }
-        const entriesCol = db.collection('entries');
-        const entryUserIds = new Set(
-          (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
-        );
-        for (const uid of nextOrganizers) {
-          if (prevOrganizers.includes(uid)) continue;
-          if (!entryUserIds.has(uid)) {
-            return corsRes.status(400).json({
-              error: 'New organizers must be players who joined this tournament',
-            });
+        if (!actorIsAdmin) {
+          const entriesCol = db.collection('entries');
+          const entryUserIds = new Set(
+            (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
+          );
+          for (const uid of nextOrganizers) {
+            if (prevOrganizers.includes(uid)) continue;
+            if (!entryUserIds.has(uid)) {
+              return corsRes.status(400).json({
+                error: 'New organizers must be players who joined this tournament',
+              });
+            }
+          }
+        } else {
+          for (const uid of nextOrganizers) {
+            if (!ObjectId.isValid(uid)) {
+              return corsRes.status(400).json({ error: 'Invalid organizer user id' });
+            }
           }
         }
       }
@@ -90,7 +101,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
-      if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId)) {
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId) && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
       await db.collection('entries').deleteMany({ tournamentId: id });
