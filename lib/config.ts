@@ -7,10 +7,18 @@ const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
 const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
 const INVITE_BASE_URL = process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar';
 
+/** When true, use local tournament/team/entry/user mocks even if EXPO_PUBLIC_API_URL is set. */
+const DEV_MOCK_DATA =
+  process.env.EXPO_PUBLIC_DEV_MOCK_DATA === '1' ||
+  process.env.EXPO_PUBLIC_DEV_MOCK_DATA === 'true';
+
 export const config = {
   api: {
     baseUrl: API_URL,
     isConfigured: !!API_URL,
+  },
+  dev: {
+    mockData: DEV_MOCK_DATA,
   },
   google: {
     clientId: GOOGLE_CLIENT_ID,
@@ -37,3 +45,8 @@ export const config = {
     },
   },
 };
+
+/** Offline mocks when no API URL, or explicit EXPO_PUBLIC_DEV_MOCK_DATA while API stays configured (e.g. OAuth). */
+export function shouldUseDevMocks(): boolean {
+  return !config.api.isConfigured || config.dev.mockData;
+}

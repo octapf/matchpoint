@@ -1,12 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { entriesApi } from '@/lib/api';
-import { config } from '@/lib/config';
+import { shouldUseDevMocks } from '@/lib/config';
+import { MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
 import type { Entry } from '@/types';
-
-const MOCK_ENTRIES: Entry[] = [
-  { _id: '1', tournamentId: '1', userId: 'dev-user-1', teamId: '1', lookingForPartner: false, status: 'in_team', createdAt: '', updatedAt: '' },
-  { _id: '2', tournamentId: '1', userId: 'dev-user-2', teamId: null, lookingForPartner: true, status: 'joined', createdAt: '', updatedAt: '' },
-];
 
 export function useEntries(
   params?: { tournamentId?: string; userId?: string; teamId?: string },
@@ -16,15 +12,16 @@ export function useEntries(
     queryKey: ['entries', params],
     enabled: options?.enabled ?? true,
     queryFn: () =>
-      config.api.isConfigured
-        ? (entriesApi.find(params) as Promise<Entry[]>)
-        : Promise.resolve(
-            MOCK_ENTRIES.filter((e) => {
+      shouldUseDevMocks()
+        ? Promise.resolve(
+            MOCK_DEV_ENTRIES.filter((e) => {
               if (params?.tournamentId && e.tournamentId !== params.tournamentId) return false;
               if (params?.userId && e.userId !== params.userId) return false;
+              if (params?.teamId != null && params.teamId !== '' && e.teamId !== params.teamId) return false;
               return true;
             })
-          ),
+          )
+        : (entriesApi.find(params) as Promise<Entry[]>),
   });
 }
 

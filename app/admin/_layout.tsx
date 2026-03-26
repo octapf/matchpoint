@@ -11,6 +11,7 @@ export default function AdminLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: 'Admin' }} />
+      <Stack.Screen name="seed" options={{ title: 'Dev seed' }} />
     </Stack>
   );
 }

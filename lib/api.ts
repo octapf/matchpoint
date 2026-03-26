@@ -202,6 +202,38 @@ export const usersApi = {
     apiRequest<void>(`/api/users?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
+/** Dev seed users (admin GET devSeedInfo / POST devSeed). */
+export type AdminDevSeedUserRow = {
+  _id: string;
+  email: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+};
+
+export type AdminDevSeedInfo = {
+  exists: boolean;
+  tournamentId: string | null;
+  inviteLink: string;
+  password: string;
+  users: AdminDevSeedUserRow[];
+};
+
+export type AdminDevSeedResult = AdminDevSeedInfo & {
+  alreadyExists: boolean;
+  teamsCount?: number;
+  entriesCount?: number;
+};
+
+export type AdminDevSeedPurgeResult = {
+  removed: {
+    tournament: boolean;
+    teams: number;
+    entries: number;
+    users: number;
+  };
+};
+
 /** Admin API (Bearer + admin role on server). Single /api/admin route (Vercel Hobby function limit). */
 export const adminApi = {
   stats: () =>
@@ -223,5 +255,19 @@ export const adminApi = {
         type: 'users',
         ...(params?.limit ? { limit: params.limit } : {}),
       },
+    }),
+
+  devSeedInfo: () => apiRequest<AdminDevSeedInfo>('/api/admin', { params: { type: 'devSeedInfo' } }),
+
+  runDevSeed: (body: { force?: boolean }) =>
+    apiRequest<AdminDevSeedResult>('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'devSeed', ...body }),
+    }),
+
+  purgeDevSeed: () =>
+    apiRequest<AdminDevSeedPurgeResult>('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'devSeedPurge' }),
     }),
 };

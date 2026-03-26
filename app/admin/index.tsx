@@ -98,6 +98,11 @@ export default function AdminHomeScreen() {
               subtitle={t('admin.browseUsersSub')}
               onPress={() => router.push('/admin/users')}
             />
+            <AdminNavRow
+              title={t('admin.devSeedBrowse')}
+              subtitle={t('admin.devSeedBrowseSub')}
+              onPress={() => router.push('/admin/seed')}
+            />
           </View>
         </>
       ) : loading ? (

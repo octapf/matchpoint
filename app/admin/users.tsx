@@ -82,7 +82,9 @@ export default function AdminUsersScreen() {
             data={items}
             keyExtractor={(row) => row._id}
             contentContainerStyle={styles.listContent}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.yellow} />}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.yellow} />
+            }
             ListEmptyComponent={
               !loading ? (
                 <Text style={styles.muted}>{t('admin.noUsers')}</Text>

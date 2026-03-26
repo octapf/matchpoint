@@ -1,72 +1,29 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { tournamentsApi } from '@/lib/api';
-import { config } from '@/lib/config';
+import { shouldUseDevMocks } from '@/lib/config';
+import { MOCK_DEV_TOURNAMENT } from '@/lib/mocks/devTournamentMocks';
 import type { Tournament } from '@/types';
 
-const MOCK_TOURNAMENTS: Tournament[] = [
-  {
-    _id: '1',
-    name: 'Summer Beach Cup',
-    date: '2026-07-15',
-    startDate: '2026-07-15',
-    endDate: '2026-07-15',
-    location: 'Barceloneta Beach',
-    maxTeams: 16,
-    inviteLink: '',
-    status: 'open',
-    organizerIds: [],
-    createdAt: '',
-    updatedAt: '',
-  },
-  {
-    _id: '2',
-    name: 'Weekend Volley',
-    date: '2026-07-22',
-    startDate: '2026-07-22',
-    endDate: '2026-07-22',
-    location: 'Nova Icària',
-    maxTeams: 16,
-    inviteLink: '',
-    status: 'open',
-    organizerIds: [],
-    createdAt: '',
-    updatedAt: '',
-  },
-];
+const MOCK_TOURNAMENTS: Tournament[] = [MOCK_DEV_TOURNAMENT];
 
 export function useTournaments(params?: { status?: string; organizerId?: string }) {
   return useQuery({
     queryKey: ['tournaments', params],
     queryFn: () =>
-      config.api.isConfigured
-        ? (tournamentsApi.find(params) as Promise<Tournament[]>)
-        : Promise.resolve(MOCK_TOURNAMENTS),
+      shouldUseDevMocks()
+        ? Promise.resolve(MOCK_TOURNAMENTS)
+        : (tournamentsApi.find(params) as Promise<Tournament[]>),
   });
 }
-
-const MOCK_TOURNAMENT: Tournament = {
-  _id: '1',
-  name: 'Summer Beach Cup',
-  date: '2026-07-15',
-  startDate: '2026-07-15',
-  endDate: '2026-07-15',
-  location: 'Barceloneta Beach',
-  maxTeams: 16,
-  inviteLink: '',
-  status: 'open',
-  organizerIds: [],
-  createdAt: '',
-  updatedAt: '',
-};
 
 export function useTournament(id: string | undefined) {
   return useQuery({
     queryKey: ['tournament', id],
     queryFn: () =>
-      config.api.isConfigured && id
-        ? (tournamentsApi.findOne(id) as Promise<Tournament>)
-        : Promise.resolve({ ...MOCK_TOURNAMENT, _id: id || '1' }),
+      shouldUseDevMocks()
+        ? Promise.resolve({ ...MOCK_DEV_TOURNAMENT, _id: id || MOCK_DEV_TOURNAMENT._id })
+        : (tournamentsApi.findOne(id!) as Promise<Tournament>),
     enabled: !!id,
   });
 }
@@ -79,8 +36,8 @@ export function useTournamentByToken(token: string | undefined) {
       if (!token) return null;
       const trimmed = token.trim();
       if (!trimmed) return null;
-      if (!config.api.isConfigured) {
-        return { ...MOCK_TOURNAMENT, _id: trimmed, inviteLink: trimmed };
+      if (shouldUseDevMocks()) {
+        return { ...MOCK_DEV_TOURNAMENT, inviteLink: trimmed };
       }
       const byInvite = (await tournamentsApi.find({ inviteLink: trimmed })) as Tournament[];
       if (byInvite.length > 0) return byInvite[0]!;
