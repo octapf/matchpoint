@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
+import { setClipboardString } from '@/lib/clipboard';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
@@ -26,7 +26,7 @@ function CopyChip({ label, value }: { label: string; value: string }) {
   const [flash, setFlash] = useState(false);
   const onCopy = async () => {
     if (!value) return;
-    await Clipboard.setStringAsync(value);
+    await setClipboardString(value);
     setFlash(true);
     setTimeout(() => setFlash(false), 1200);
   };
@@ -152,7 +152,7 @@ export default function AdminSeedScreen() {
   };
 
   const copyUsername = async (username: string) => {
-    await Clipboard.setStringAsync(username);
+    await setClipboardString(username);
     Alert.alert('', t('admin.devSeedCopied'));
   };
 
