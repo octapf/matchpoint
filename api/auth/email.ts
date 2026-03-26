@@ -7,18 +7,11 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { issueSessionAndUser } from '../../server/lib/authResponse';
+import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,24}$/;
-
 function validateEmail(email: string): string | null {
   if (!EMAIL_REGEX.test(email)) return 'Email inválido';
-  return null;
-}
-
-function validateUsername(username: string): string | null {
-  if (username.length < 3) return 'El usuario debe tener al menos 3 caracteres';
-  if (!USERNAME_REGEX.test(username)) return 'Solo letras, números y guión bajo (3-24 caracteres)';
   return null;
 }
 
@@ -62,15 +55,13 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 }
 
 async function handleSignup(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
-  const { email, username, password, firstName, lastName } = body as Record<string, string>;
+  const { email, password, firstName, lastName } = body as Record<string, string>;
 
-  if (!email || !username || !password || !firstName || !lastName) {
+  if (!email || !password || !firstName || !lastName) {
     return res.status(400).json({ error: 'All fields are required' });
   }
   const emailErr = validateEmail(email);
   if (emailErr) return res.status(400).json({ error: emailErr });
-  const userErr = validateUsername(username);
-  if (userErr) return res.status(400).json({ error: userErr });
   const pwError = validatePassword(password);
   if (pwError) return res.status(400).json({ error: pwError });
 
@@ -80,19 +71,19 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
 
   const col = db.collection('users');
 
-  if (await col.findOne({ email: email.toLowerCase() })) {
+  const emailLower = email.toLowerCase();
+  if (await col.findOne({ email: emailLower })) {
     return res.status(409).json({ error: 'Email already in use' });
   }
-  if (await col.findOne({ username: username.toLowerCase() })) {
-    return res.status(409).json({ error: 'Username already taken' });
-  }
+
+  const username = await allocateUniqueUsernameFromEmail(col, emailLower);
 
   const passwordHash = await bcrypt.hash(password, 12);
   const now = new Date().toISOString();
 
   const result = await col.insertOne({
-    email: email.toLowerCase(),
-    username: username.toLowerCase(),
+    email: emailLower,
+    username,
     firstName,
     lastName,
     passwordHash,

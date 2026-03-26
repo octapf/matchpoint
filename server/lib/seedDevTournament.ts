@@ -18,10 +18,6 @@ const PLAYERS = Array.from({ length: 16 }, (_, i) => ({
   gender: i % 2 === 0 ? 'male' : 'female',
 }));
 
-function seedDisplayName(p: (typeof PLAYERS)[number]): string {
-  return `${p.firstName} ${p.lastName}`;
-}
-
 function canonicalSeedEmail(oneBasedIndex: number): string {
   return `seed.player${String(oneBasedIndex).padStart(2, '0')}@matchpoint.dev`.toLowerCase();
 }
@@ -53,22 +49,22 @@ export async function syncSeedUserNames(db: Db): Promise<void> {
           username: canonicalSeedUsername(num),
           firstName: p.firstName,
           lastName: p.lastName,
-          displayName: seedDisplayName(p),
           updatedAt: now,
         },
+        $unset: { displayName: '' },
       }
     );
   }
 }
 
-const TEAM_SPECS: [string, ...number[]][] = [
-  ['Team Alpha', 0, 1],
-  ['Beach Kings', 2, 3],
-  ['Sand Setters', 4, 5],
-  ['Net Ninjas', 6, 7],
-  ['Spike Squad', 8, 9],
-  ['Need Partner A', 10],
-  ['Need Partner B', 11],
+const TEAM_SPECS: { name: string; groupIndex: number; players: number[] }[] = [
+  { name: 'Team Alpha', groupIndex: 0, players: [0, 1] },
+  { name: 'Beach Kings', groupIndex: 0, players: [2, 3] },
+  { name: 'Sand Setters', groupIndex: 1, players: [4, 5] },
+  { name: 'Net Ninjas', groupIndex: 1, players: [6, 7] },
+  { name: 'Spike Squad', groupIndex: 2, players: [8, 9] },
+  { name: 'Need Partner A', groupIndex: 2, players: [10] },
+  { name: 'Need Partner B', groupIndex: 3, players: [11] },
 ];
 
 const SOLO_LOOKING = [12, 13, 14, 15];
@@ -210,7 +206,6 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
       emailVerified: true,
       firstName: p.firstName,
       lastName: p.lastName,
-      displayName: seedDisplayName(p),
       phone: '',
       gender: p.gender,
       authProvider: 'email',
@@ -230,6 +225,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     location: 'Barceloneta Beach',
     description: 'Seeded data for tournament / team development.',
     maxTeams: 16,
+    groupCount: 4,
     inviteLink: DEV_SEED_INVITE_LINK,
     status: 'open',
     organizerIds: [organizerId],
@@ -242,12 +238,13 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const teamIdByIndex: string[] = [];
 
   for (const spec of TEAM_SPECS) {
-    const [name, ...playerIdxs] = spec;
+    const { name, groupIndex, players: playerIdxs } = spec;
     const playerIds = playerIdxs.map((idx) => userIds[idx]!);
     const createdBy = playerIds[0]!;
     const teamDoc = {
       tournamentId,
       name,
+      groupIndex,
       playerIds,
       createdBy,
       createdAt: now,
@@ -260,8 +257,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   for (let ti = 0; ti < TEAM_SPECS.length; ti++) {
     const spec = TEAM_SPECS[ti]!;
     const teamId = teamIdByIndex[ti]!;
-    const [, ...playerIdxs] = spec;
-    for (const idx of playerIdxs) {
+    for (const idx of spec.players) {
       await entries.insertOne({
         tournamentId,
         userId: userIds[idx]!,
@@ -287,7 +283,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   }
 
   const entryCount =
-    TEAM_SPECS.reduce((acc, s) => acc + (s.length - 1), 0) + SOLO_LOOKING.length;
+    TEAM_SPECS.reduce((acc, s) => acc + s.players.length, 0) + SOLO_LOOKING.length;
   const info = await getDevSeedInfo(db);
 
   return {

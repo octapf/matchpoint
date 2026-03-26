@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { Tabs } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { authApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
@@ -29,30 +29,31 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="feed"
       screenOptions={{
+        tabBarShowLabel: true,
         tabBarActiveTintColor: Colors.tabIconSelected,
         tabBarInactiveTintColor: Colors.tabIconDefault,
         tabBarStyle: { backgroundColor: Colors.surface },
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
         headerStyle: { backgroundColor: Colors.background },
         headerTintColor: Colors.text,
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="feed"
         options={{
-          title: t('tabs.tournaments'),
-          tabBarIcon: ({ color }) => (
-            <SymbolView name={{ ios: 'trophy', android: 'sports_esports', web: 'sports_esports' }} tintColor={color} size={24} />
-          ),
+          title: t('tabs.feed'),
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="entries"
+        name="index"
         options={{
-          title: t('tabs.myEntries'),
-          tabBarIcon: ({ color }) => (
-            <SymbolView name={{ ios: 'person.2', android: 'group', web: 'group' }} tintColor={color} size={24} />
+          title: t('tabs.tournaments'),
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy-outline" size={size} color={color} />
           ),
         }}
       />
@@ -60,8 +61,9 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: t('tabs.profile'),
-          tabBarIcon: ({ color }) => (
-            <SymbolView name={{ ios: 'person.circle', android: 'person', web: 'person' }} tintColor={color} size={24} />
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle-outline" size={size} color={color} />
           ),
         }}
       />

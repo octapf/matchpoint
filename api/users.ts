@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { isValidUsername, normalizeUsername } from '../server/lib/usernameRules';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -10,12 +11,16 @@ function serializeDoc(doc: Record<string, unknown> | null) {
   return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
 }
 
-/** Peers / non-admins: no email, phone, or role (avoid leaking PII and admin status). */
+/** Peers / non-admins: no email, phone, or role (avoid leaking PII and admin status). Phone only if `phoneVisible`. */
 function toPublicUser(doc: Record<string, unknown>) {
   const s = serializeDoc(doc);
   if (!s) return null;
-  const { email: _e, phone: _p, role: _r, ...pub } = s as Record<string, unknown>;
-  return pub;
+  const { email: _e, phone: _p, role: _r, phoneVisible: _pv, ...pub } = s as Record<string, unknown>;
+  const out = { ...pub } as Record<string, unknown>;
+  if (doc.phoneVisible === true && typeof doc.phone === 'string' && doc.phone.trim()) {
+    out.phone = doc.phone.trim();
+  }
+  return out;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -141,7 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const teamIdStr = tid.toString();
         await teamsCol.deleteOne({ _id: tid });
         await entriesCol.updateMany(
-          { teamId: teamIdStr },
+          { $or: [{ teamId: teamIdStr }, { teamId: tid }] },
           {
             $set: {
               teamId: null,
@@ -185,14 +190,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const allowed = ['firstName', 'lastName', 'displayName', 'phone', 'gender'];
+      const allowed = ['firstName', 'lastName', 'phone', 'gender'];
       if (admin) allowed.push('role');
       const update: Record<string, unknown> = {};
+      if (body.username !== undefined) {
+        const normalized = normalizeUsername(String(body.username));
+        if (!isValidUsername(normalized)) {
+          return corsRes.status(400).json({
+            error: 'Username must be 3–24 characters: letters, numbers, underscores only',
+          });
+        }
+        const taken = await col.findOne({
+          username: normalized,
+          _id: { $ne: new ObjectId(id) },
+        });
+        if (taken) {
+          return corsRes.status(409).json({ error: 'Username already taken' });
+        }
+        update.username = normalized;
+      }
       for (const k of allowed) {
         if (body[k] !== undefined) update[k] = body[k];
       }
-      // Explicitly ensure displayName is applied (client sends it; some parsers can drop it)
-      if ('displayName' in body) update.displayName = body.displayName ?? '';
+      if (selfEdit && body.phoneVisible !== undefined) {
+        update.phoneVisible = Boolean(body.phoneVisible);
+      }
       // Only accept male/female for gender; ignore 'other' or invalid values
       if ('gender' in body && body.gender !== 'male' && body.gender !== 'female') {
         delete update.gender;
@@ -207,9 +229,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
       update.updatedAt = new Date().toISOString();
+      const mongoOp: { $set: Record<string, unknown>; $unset?: Record<string, string> } = {
+        $set: update,
+      };
+      if (body.username !== undefined) {
+        mongoOp.$unset = { displayName: '' };
+      }
       const result = await col.findOneAndUpdate(
         { _id: new ObjectId(id) },
-        { $set: update },
+        mongoOp,
         { returnDocument: 'after' }
       );
       if (!result) return corsRes.status(404).json({ error: 'User not found' });

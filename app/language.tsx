@@ -23,7 +23,7 @@ export default function LanguageScreen() {
   const handleSelectLanguage = (lang: Language) => {
     setLanguage(lang);
     i18n.locale = lang;
-    router.replace(user ? '/(tabs)' : '/(auth)/sign-in');
+    router.replace(user ? '/(tabs)/feed' : '/(auth)/sign-in');
   };
 
   return (

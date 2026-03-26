@@ -38,9 +38,24 @@ function apiRequest<T>(
     ...fetchOptions,
     headers,
   }).then(async (res) => {
-    if (res.status === 204) return undefined as T;
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `API error: ${res.status}`);
+    if (res.status === 204 || res.status === 205) return undefined as T;
+    const text = await res.text();
+    if (!text) {
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return undefined as T;
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      throw new Error('Invalid response from server');
+    }
+    const errMsg =
+      typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : undefined;
+    if (!res.ok) throw new Error(errMsg || `API error: ${res.status}`);
     return data as T;
   });
 }
@@ -68,6 +83,12 @@ export const tournamentsApi = {
     apiRequest<void>(`/api/tournaments/${id}`, {
       method: 'DELETE',
       params: { actingUserId },
+    }),
+
+  rebalanceTeams: (id: string, actingUserId: string) =>
+    apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}/rebalance-teams`, {
+      method: 'POST',
+      body: JSON.stringify({ actingUserId }),
     }),
 };
 
@@ -137,7 +158,6 @@ export const authApi = {
 
   signUp: (data: {
     email: string;
-    username: string;
     password: string;
     firstName: string;
     lastName: string;

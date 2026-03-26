@@ -12,10 +12,18 @@ const DEV_MOCK_DATA =
   process.env.EXPO_PUBLIC_DEV_MOCK_DATA === '1' ||
   process.env.EXPO_PUBLIC_DEV_MOCK_DATA === 'true';
 
+const WEATHER_DEFAULT_LAT = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LAT || '41.3851');
+const WEATHER_DEFAULT_LON = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LON || '2.1734');
+
 export const config = {
   api: {
     baseUrl: API_URL,
     isConfigured: !!API_URL,
+  },
+  /** Open-Meteo (no key). Used when location permission is denied or unavailable. */
+  weather: {
+    defaultLat: WEATHER_DEFAULT_LAT,
+    defaultLon: WEATHER_DEFAULT_LON,
   },
   dev: {
     mockData: DEV_MOCK_DATA,

@@ -18,7 +18,6 @@ export default function SignUpScreen() {
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
-    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -29,18 +28,14 @@ export default function SignUpScreen() {
   }
 
   async function handleSignUp() {
-    const { firstName, lastName, username, email, password, confirmPassword } = form;
-    if (!firstName || !lastName || !username || !email || !password) {
+    const { firstName, lastName, email, password, confirmPassword } = form;
+    if (!firstName || !lastName || !email || !password) {
       Alert.alert(t('common.error'), t('auth.fillAllFields'));
       return;
     }
     const emailErr = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'Email inválido' : null;
     if (emailErr) {
       Alert.alert(t('common.error'), emailErr);
-      return;
-    }
-    if (username.length < 3 || !/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
-      Alert.alert(t('common.error'), 'Usuario: 3-24 caracteres, solo letras, números y guión bajo.');
       return;
     }
     if (password !== confirmPassword) {
@@ -54,7 +49,12 @@ export default function SignUpScreen() {
 
     setLoading(true);
     try {
-      const raw = (await authApi.signUp({ firstName, lastName, username, email, password })) as Record<
+      const raw = (await authApi.signUp({
+        firstName,
+        lastName,
+        email,
+        password,
+      })) as Record<
         string,
         unknown
       >;
@@ -63,7 +63,7 @@ export default function SignUpScreen() {
         user: { ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 } as User,
         accessToken,
       });
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/feed');
     } catch (err) {
       Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.signUpFailed'));
     } finally {
@@ -76,6 +76,7 @@ export default function SignUpScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{t('auth.createAccount')}</Text>
         <Text style={styles.subtitle}>{t('auth.joinMatchpoint')}</Text>
+        <Text style={styles.signUpNote}>{t('auth.signUpUsernameFromEmail')}</Text>
 
         <View style={styles.row}>
           <TextInput
@@ -95,15 +96,6 @@ export default function SignUpScreen() {
             autoCapitalize="words"
           />
         </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder={t('auth.username')}
-          placeholderTextColor={Colors.textMuted}
-          value={form.username}
-          onChangeText={set('username')}
-          autoCapitalize="none"
-        />
 
         <TextInput
           style={styles.input}
@@ -179,6 +171,13 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
+  },
+  signUpNote: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 18,
   },
   row: {
     flexDirection: 'row',

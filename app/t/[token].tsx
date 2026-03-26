@@ -43,7 +43,7 @@ export default function JoinViaLinkScreen() {
       Alert.alert(
         t('team.genderRequiredTitle'),
         t('inviteLink.genderRequiredProfile'),
-        [{ text: t('common.ok'), onPress: () => router.replace('/profile/edit') }]
+        [{ text: t('common.ok'), onPress: () => router.replace('/profile/my-data') }]
       );
     }
   }, [userId, canEnroll, hasJoined, tournament, isLoading, router]);
@@ -55,7 +55,7 @@ export default function JoinViaLinkScreen() {
       return;
     }
     if (!canEnroll) {
-      router.replace('/profile/edit');
+      router.replace('/profile/my-data');
       return;
     }
     createEntry.mutate(

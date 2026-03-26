@@ -66,6 +66,13 @@ module.exports = {
     plugins: [
       ['expo-dev-client', { launchMode: 'launcher' }],
       ['expo-router', { origin: 'https://matchpoint.miralab.ar' }],
+      [
+        'expo-location',
+        {
+          locationWhenInUsePermission:
+            'Matchpoint uses your location to show today’s weather on the Feed.',
+        },
+      ],
       'expo-apple-authentication',
       [
         '@react-native-google-signin/google-signin',

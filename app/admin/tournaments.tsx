@@ -12,6 +12,7 @@ import {
 import { useRouter, Stack } from 'expo-router';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
+import { IconButton } from '@/components/ui/IconButton';
 import { adminApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import type { Tournament } from '@/types';
@@ -104,12 +105,14 @@ export default function AdminTournamentsScreen() {
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.editBtn, pressed && styles.rowPressed]}
-                  onPress={() => router.push(`/admin/tournament/${item._id}` as never)}
-                >
-                  <Text style={styles.editBtnText}>{t('admin.edit')}</Text>
-                </Pressable>
+                <View style={styles.editBtn}>
+                  <IconButton
+                    icon="create-outline"
+                    onPress={() => router.push(`/admin/tournament/${item._id}` as never)}
+                    accessibilityLabel={t('admin.edit')}
+                    color={Colors.yellow}
+                  />
+                </View>
               </View>
             )}
           />
@@ -153,15 +156,12 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, marginRight: 8 },
   editBtn: {
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    alignItems: 'center',
+    paddingHorizontal: 8,
     borderLeftWidth: 1,
     borderLeftColor: Colors.surfaceLight,
     backgroundColor: Colors.surface,
-  },
-  editBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.yellow,
+    minWidth: 52,
   },
   rowTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   rowMeta: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },

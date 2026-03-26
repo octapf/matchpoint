@@ -14,6 +14,10 @@ const palette = {
   yellowHover: '#fcd34d',
   violet: '#8b5cf6',
   violetHover: '#a78bfa',
+  /** Same RGB as `violet` (#8b5cf6) — translucent surfaces (e.g. organizer rows) */
+  violetMuted: 'rgba(139, 92, 246, 0.22)',
+  /** Same hue as `violet` — soft borders on violet-tinted UI */
+  violetOutline: 'rgba(139, 92, 246, 0.45)',
   avatarMale: '#93c5fd',
   avatarFemale: '#f9a8d4',
   avatarOther: '#6b7280',

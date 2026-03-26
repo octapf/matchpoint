@@ -4,7 +4,8 @@ import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
-import { resolveActorUserId } from '../../server/lib/auth';
+import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
+import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -66,9 +67,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
 
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+
       const selfRemove = entryUserId === actingUserId;
       const organizerKick = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
-      if (!selfRemove && !organizerKick) {
+      if (!selfRemove && !organizerKick && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Not allowed to remove this entry' });
       }
 
@@ -86,9 +90,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             { $pull: { organizerIds: entryUserId }, $set: { updatedAt: new Date().toISOString() } } as never
           );
         }
+      } else {
+        const orgsKick = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
+        if (orgsKick.includes(entryUserId)) {
+          const nextKick = orgsKick.filter((o) => o !== entryUserId);
+          if (nextKick.length === 0 && !actorIsAdmin) {
+            return corsRes.status(400).json({ error: 'Cannot remove the last organizer' });
+          }
+        }
       }
 
       await removePlayerFromTournament(db, tournamentId, entryUserId);
+      await syncTournamentOpenFullStatus(db, tournamentId);
+
+      if (!selfRemove) {
+        const orgsAfter = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
+        if (orgsAfter.includes(entryUserId)) {
+          const next = orgsAfter.filter((o) => o !== entryUserId);
+          const now = new Date().toISOString();
+          let finalOrgs = next;
+          if (finalOrgs.length === 0 && actorIsAdmin) {
+            finalOrgs = [actingUserId];
+          }
+          await tournamentsCol.updateOne(
+            { _id: new ObjectId(tournamentId) },
+            { $set: { organizerIds: finalOrgs, updatedAt: now } }
+          );
+        }
+      }
+
       return corsRes.status(204).end();
     }
 

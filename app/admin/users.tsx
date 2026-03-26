@@ -94,10 +94,11 @@ export default function AdminUsersScreen() {
               <Pressable
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                 onPress={() => router.push(`/admin/users/${item._id}` as never)}
+                onLongPress={() => router.push(`/profile/${item._id}` as never)}
               >
                 <View style={styles.rowMain}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
-                    {item.displayName || [item.firstName, item.lastName].filter(Boolean).join(' ') || item.email}
+                    {item.username || [item.firstName, item.lastName].filter(Boolean).join(' ') || item.email}
                   </Text>
                   <Text style={styles.rowMeta} numberOfLines={1}>
                     {item.email}

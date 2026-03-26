@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { getDb } from './mongodb';
 import { verifySessionToken } from './sessionToken';
-import { getAdminEmailSet } from './adminBootstrap';
+import { getAdminEmailSet, maybePromoteAdminOnLogin } from './adminBootstrap';
 
 /** Returns user id from Bearer session token, or null if missing/invalid. */
 export function getSessionUserId(req: VercelRequest): string | null {
@@ -20,10 +21,30 @@ export function getBearerToken(req: VercelRequest): string | null {
 }
 
 export function isUserAdmin(user: { role?: string; email?: string }): boolean {
-  if (user.role === 'admin') return true;
+  if (typeof user.role === 'string' && user.role.toLowerCase() === 'admin') return true;
   const email = user.email?.toLowerCase();
   if (email && getAdminEmailSet().has(email)) return true;
   return false;
+}
+
+/**
+ * Load user by id; if their email is in ADMIN_EMAILS, promote role (same as login).
+ * Ensures env-based admins work even before the next sign-in.
+ */
+export async function loadActorUserWithAdminRefresh(
+  db: Db,
+  actingUserId: string
+): Promise<Record<string, unknown> | null> {
+  if (!ObjectId.isValid(actingUserId)) return null;
+  const oid = new ObjectId(actingUserId);
+  let user = await db.collection('users').findOne({ _id: oid });
+  if (!user) return null;
+  const email = (user as { email?: string }).email;
+  if (typeof email === 'string') {
+    await maybePromoteAdminOnLogin(db, email, actingUserId);
+    user = await db.collection('users').findOne({ _id: oid });
+  }
+  return user as Record<string, unknown> | null;
 }
 
 /**
@@ -38,6 +59,7 @@ export function resolveActorUserId(req: VercelRequest, body?: Record<string, unk
   if (body && typeof body.actingUserId === 'string') return body.actingUserId;
   const q = req.query?.actingUserId;
   if (typeof q === 'string') return q;
+  if (Array.isArray(q) && typeof q[0] === 'string') return q[0];
   return null;
 }
 
@@ -62,7 +84,7 @@ export async function requireAdmin(
   const auth = requireAuth(req, res);
   if (!auth) return null;
   const db = await getDb();
-  const user = await db.collection('users').findOne({ _id: new ObjectId(auth.userId) });
+  const user = await loadActorUserWithAdminRefresh(db, auth.userId);
   if (!user || !isUserAdmin(user as { role?: string; email?: string })) {
     res.status(403).json({ error: 'Admin only' });
     return null;

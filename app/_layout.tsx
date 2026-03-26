@@ -102,7 +102,34 @@ function RootLayoutNav() {
         <Stack.Screen name="tournament/create" />
         <Stack.Screen name="tournament/[id]/team/create" />
         <Stack.Screen name="t/[token]" />
-        <Stack.Screen name="profile/edit" options={{ headerShown: true, title: t('profile.editProfile') }} />
+        <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="profile/my-entries"
+          options={{
+            headerShown: true,
+            title: t('tabs.myEntries'),
+            headerTintColor: '#e5e5e5',
+            headerStyle: { backgroundColor: '#1a1a1a' },
+          }}
+        />
+        <Stack.Screen
+          name="profile/my-data"
+          options={{
+            headerShown: true,
+            title: t('profile.myData'),
+            headerTintColor: '#e5e5e5',
+            headerStyle: { backgroundColor: '#1a1a1a' },
+          }}
+        />
+        <Stack.Screen
+          name="profile/[userId]"
+          options={{
+            headerShown: true,
+            title: t('profile.publicProfileTitle'),
+            headerTintColor: '#e5e5e5',
+            headerStyle: { backgroundColor: '#1a1a1a' },
+          }}
+        />
         <Stack.Screen name="profile/change-password" options={{ headerShown: true, title: t('profile.changePassword') }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>

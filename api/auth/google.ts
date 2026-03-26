@@ -3,6 +3,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { issueSessionAndUser } from '../../server/lib/authResponse';
+import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(res).end();
@@ -42,14 +43,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const now = new Date().toISOString();
     if (user) {
-      await col.updateOne(
-        { _id: user._id },
-        { $set: { updatedAt: now, authProvider: 'google', firstName, lastName } }
-      );
+      const patch: Record<string, unknown> = {
+        updatedAt: now,
+        authProvider: 'google',
+        firstName,
+        lastName,
+      };
+      const existingUsername = user.username;
+      if (typeof existingUsername !== 'string' || !existingUsername.trim()) {
+        patch.username = await allocateUniqueUsernameFromEmail(col, email);
+      }
+      await col.updateOne({ _id: user._id }, { $set: patch });
       user = await col.findOne({ _id: user._id });
     } else {
+      const username = await allocateUniqueUsernameFromEmail(col, email);
       const result = await col.insertOne({
         email,
+        username,
         firstName,
         lastName,
         phone: '',

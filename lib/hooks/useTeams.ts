@@ -31,6 +31,21 @@ export function useCreateTeam() {
     mutationFn: (doc: Record<string, unknown>) => teamsApi.insertOne(doc) as Promise<Team>,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
+    },
+  });
+}
+
+export function useUpdateTeam() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, update }: { id: string; update: Record<string, unknown> }) =>
+      teamsApi.updateOne(id, update) as Promise<Team>,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['team', data._id] });
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
     },
   });

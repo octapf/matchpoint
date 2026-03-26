@@ -24,7 +24,7 @@ export default function SignInScreen() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const nextRoute = typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/(tabs)';
+  const nextRoute = typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/(tabs)/feed';
 
   useEffect(() => {
     if (Platform.OS !== 'web') {

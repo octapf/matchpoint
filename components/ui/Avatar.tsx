@@ -8,11 +8,11 @@ type AvatarProps = {
   firstName: string;
   lastName: string;
   gender?: Gender;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
 };
 
-const SIZES = { sm: 32, md: 48, lg: 64 };
-const FONT_SIZES = { sm: 12, md: 18, lg: 24 };
+const SIZES = { xs: 26, sm: 32, md: 48, lg: 64 };
+const FONT_SIZES = { xs: 10, sm: 12, md: 18, lg: 24 };
 
 export function Avatar({ firstName, lastName, gender, size = 'md' }: AvatarProps) {
   const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || '?';

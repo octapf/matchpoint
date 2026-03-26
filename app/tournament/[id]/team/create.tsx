@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useCreateTeam } from '@/lib/hooks/useTeams';
 import { useTeams } from '@/lib/hooks/useTeams';
+import { useTournament } from '@/lib/hooks/useTournaments';
+import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { useEntries, useUpdateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
 
@@ -17,15 +19,19 @@ export default function CreateTeamScreen() {
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const hasValidGender = user?.gender === 'male' || user?.gender === 'female';
+  const openMyProfile = () => {
+    if (userId) router.push(`/profile/${userId}` as never);
+  };
 
   useEffect(() => {
     if (userId && !hasValidGender) {
-      Alert.alert(t('team.genderRequiredTitle'), t('team.genderRequired'), [{ text: t('common.ok'), onPress: () => router.replace('/profile/edit') }]);
+      Alert.alert(t('team.genderRequiredTitle'), t('team.genderRequired'), [{ text: t('common.ok'), onPress: () => router.replace('/profile/my-data') }]);
     }
   }, [hasValidGender, userId, router, t]);
 
   const createTeam = useCreateTeam();
   const updateEntry = useUpdateEntry();
+  const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: entries = [] } = useEntries(
     id && userId ? { tournamentId: id, userId } : undefined,
@@ -34,6 +40,13 @@ export default function CreateTeamScreen() {
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
   const [teamName, setTeamName] = useState('');
+
+  const groupCount = tournament ? normalizeGroupCount(tournament.groupCount) : 4;
+  const vg = tournament
+    ? validateTournamentGroups(tournament.maxTeams, groupCount)
+    : { ok: true, groupCount: 4, teamsPerGroup: 4 };
+  const perGroup = vg.ok ? vg.teamsPerGroup : 4;
+  const groupsConfigInvalid = !!tournament && !vg.ok;
 
   const handleCreate = () => {
     if (userHasTeam) {
@@ -46,6 +59,10 @@ export default function CreateTeamScreen() {
     }
     if (!id || !userId) {
       Alert.alert(t('common.error'), t('team.missingTournamentOrUser'));
+      return;
+    }
+    if (groupsConfigInvalid) {
+      Alert.alert(t('common.error'), t('tournaments.invalidGroups'));
       return;
     }
 
@@ -94,12 +111,23 @@ export default function CreateTeamScreen() {
         />
       </View>
 
+      {groupsConfigInvalid ? (
+        <Text style={styles.groupConfigError}>{t('tournaments.invalidGroups')}</Text>
+      ) : (
+        <Text style={styles.groupAutoHint}>{t('team.groupAutoAssign', { perGroup })}</Text>
+      )}
+
       <View style={styles.players}>
         <Text style={styles.label}>{t('team.players')}</Text>
-        <View style={styles.playerRow}>
+        <Pressable
+          style={styles.playerRow}
+          onPress={openMyProfile}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.viewProfile')}
+        >
           <Avatar firstName={user?.firstName ?? t('common.you')} lastName={user?.lastName ?? ''} gender={user?.gender} size="md" />
           <Text style={styles.playerLabel}>{t('team.youCreator')}</Text>
-        </View>
+        </Pressable>
         <View style={styles.slot}>
           <Text style={styles.slotText}>{t('team.openSlotInvite')}</Text>
         </View>
@@ -108,7 +136,7 @@ export default function CreateTeamScreen() {
       <Button
         title={t('team.createTeam')}
         onPress={handleCreate}
-        disabled={createTeam.isPending || userHasTeam}
+        disabled={createTeam.isPending || userHasTeam || groupsConfigInvalid}
         fullWidth
       />
     </View>
@@ -127,6 +155,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text,
   },
+  groupAutoHint: { fontSize: 13, color: Colors.textMuted, marginBottom: 20, lineHeight: 18 },
+  groupConfigError: { fontSize: 13, color: Colors.danger, marginBottom: 20, lineHeight: 18 },
   players: { marginBottom: 24 },
   playerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   playerLabel: { fontSize: 16, color: Colors.text },

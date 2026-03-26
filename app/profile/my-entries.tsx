@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Avatar } from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -16,30 +16,48 @@ function EntryCard({
   tournamentName,
   teamName,
   userGender,
+  currentUserId,
   t,
 }: {
   entry: Entry;
   tournamentName?: string;
   teamName?: string;
   userGender?: 'male' | 'female';
+  currentUserId: string | null;
   t: (k: string) => string;
 }) {
+  const router = useRouter();
   const hasTeam = !!entry.teamId;
+  const openTournament = () => router.push(`/tournament/${entry.tournamentId}` as never);
+  const openProfile = () => {
+    if (currentUserId) router.push(`/profile/${currentUserId}` as never);
+  };
 
   return (
-    <Link href={`/tournament/${entry.tournamentId}`} asChild>
-      <Pressable style={styles.card}>
+    <View style={styles.card}>
+      <Pressable onPress={openTournament} accessibilityRole="button">
         <Text style={styles.cardTitle}>{tournamentName ?? t('common.tournament')}</Text>
-        {hasTeam ? (
-          <View style={styles.teamRow}>
-            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="sm" />
-            <Text style={styles.teamName}>{teamName ?? t('common.team')}</Text>
-          </View>
-        ) : (
-          <Text style={styles.looking}>{t('entries.lookingForPartner')}</Text>
-        )}
       </Pressable>
-    </Link>
+      {hasTeam ? (
+        <View style={styles.teamRow}>
+          <Pressable
+            onPress={openProfile}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.viewProfile')}
+          >
+            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="sm" />
+          </Pressable>
+          <Pressable onPress={openTournament} style={styles.teamNamePress} accessibilityRole="button">
+            <Text style={styles.teamName}>{teamName ?? t('common.team')}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable onPress={openTournament} accessibilityRole="button">
+          <Text style={styles.looking}>{t('entries.lookingForPartner')}</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -100,6 +118,7 @@ function EntryCardWithData({ entry, t }: { entry: Entry; t: (k: string) => strin
       tournamentName={tournament?.name}
       teamName={team?.name}
       userGender={userGender}
+      currentUserId={user?._id ?? null}
       t={t}
     />
   );
@@ -115,6 +134,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 32,
   },
   card: {
     backgroundColor: Colors.surface,
@@ -132,6 +152,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 4,
+  },
+  teamNamePress: {
+    flex: 1,
+    minWidth: 0,
   },
   teamName: {
     fontSize: 14,

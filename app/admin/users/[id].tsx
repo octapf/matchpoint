@@ -18,6 +18,7 @@ import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import { useUserStore } from '@/store/useUserStore';
 import type { Gender, User, UserRole } from '@/types';
+import { normalizeUsername, isValidUsername } from '@/lib/validation/username';
 
 export default function AdminEditUserScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -28,7 +29,7 @@ export default function AdminEditUserScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
@@ -44,7 +45,7 @@ export default function AdminEditUserScreen() {
     try {
       const u = (await usersApi.findOne({ id })) as User;
       setEmail(u.email ?? '');
-      setDisplayName(u.displayName ?? '');
+      setUsername(u.username ?? u.displayName ?? '');
       setFirstName(u.firstName ?? '');
       setLastName(u.lastName ?? '');
       setGender((u.gender as Gender) || '');
@@ -73,11 +74,16 @@ export default function AdminEditUserScreen() {
       Alert.alert(t('common.error'), t('editProfile.genderRequired'));
       return;
     }
+    const normalized = normalizeUsername(username);
+    if (!isValidUsername(normalized)) {
+      Alert.alert(t('common.error'), t('editProfile.invalidUsername'));
+      return;
+    }
 
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {
-        displayName: displayName.trim(),
+        username: normalized,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         gender: gender as Gender,
@@ -89,7 +95,12 @@ export default function AdminEditUserScreen() {
       }
       router.back();
     } catch (err) {
-      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('editProfile.failedToSave'));
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'Username already taken') {
+        Alert.alert(t('common.error'), t('editProfile.usernameTaken'));
+      } else {
+        Alert.alert(t('common.error'), msg || t('editProfile.failedToSave'));
+      }
     } finally {
       setSaving(false);
     }
@@ -116,13 +127,13 @@ export default function AdminEditUserScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>{t('profile.displayName')}</Text>
+          <Text style={styles.label}>{t('profile.username')}</Text>
           <TextInput
             style={styles.input}
-            placeholder={t('profile.displayNamePlaceholder')}
+            placeholder={t('profile.usernamePlaceholder')}
             placeholderTextColor={Colors.textMuted}
-            value={displayName}
-            onChangeText={setDisplayName}
+            value={username}
+            onChangeText={setUsername}
             autoCapitalize="none"
           />
         </View>

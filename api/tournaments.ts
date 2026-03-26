@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
+import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
 import {
   buildInviteOgHtml,
   injectInviteOgIntoIndexHtml,
@@ -81,16 +83,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (hasInvite) filter.inviteLink = inviteLink.trim();
 
       const docs = await col.find(filter).sort({ startDate: 1, date: 1 }).toArray();
-      return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+      const entriesCol = db.collection('entries');
+      const tournamentIds = docs.map((d) =>
+        d._id instanceof ObjectId ? d._id.toString() : String(d._id),
+      );
+      const countByTournament = new Map<string, number>();
+      if (tournamentIds.length > 0) {
+        const agg = await entriesCol
+          .aggregate<{ _id: string; count: number }>([
+            { $match: { tournamentId: { $in: tournamentIds } } },
+            { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
+          ])
+          .toArray();
+        for (const row of agg) {
+          countByTournament.set(row._id, row.count);
+        }
+      }
+      return corsRes.status(200).json(
+        docs.map((d) => {
+          const serialized = serializeDoc(d as Record<string, unknown>)!;
+          const tid = d._id instanceof ObjectId ? d._id.toString() : String(d._id);
+          return { ...serialized, entriesCount: countByTournament.get(tid) ?? 0 };
+        }),
+      );
     }
 
     if (req.method === 'POST') {
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { name, date, startDate, endDate, location, description, maxTeams, inviteLink, organizerIds } = body;
+      const { name, date, startDate, endDate, location, description, maxTeams, groupCount: rawGroups, inviteLink, organizerIds } = body;
       const sDate = startDate || date;
       const eDate = endDate || date || sDate;
       if (!name || !sDate || !location || !maxTeams || !inviteLink || !organizerIds?.length) {
         return corsRes.status(400).json({ error: 'Missing required fields' });
+      }
+      const mt = Number(maxTeams);
+      const gc = normalizeGroupCount(rawGroups);
+      const vg = validateTournamentGroups(mt, gc);
+      if (!vg.ok) {
+        const err =
+          vg.reason === 'divisible'
+            ? 'Max teams must be divisible by the number of groups'
+            : vg.reason === 'minPerGroup'
+              ? 'Each group must allow at least 2 teams (increase max teams or reduce groups)'
+              : 'Invalid max teams';
+        return corsRes.status(400).json({ error: err });
+      }
+      const orgIds = Array.isArray(organizerIds) ? organizerIds : [organizerIds];
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
+      const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      if (!admin && !orgIds.includes(actorId)) {
+        return corsRes.status(403).json({ error: 'You must be listed as an organizer' });
       }
       if (eDate < sDate) {
         return corsRes.status(400).json({ error: 'End date must be on or after start date' });
@@ -103,10 +149,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         endDate: eDate,
         location,
         description: description || '',
-        maxTeams: Number(maxTeams),
+        maxTeams: mt,
+        groupCount: vg.groupCount,
         inviteLink,
         status: 'open',
-        organizerIds: Array.isArray(organizerIds) ? organizerIds : [organizerIds],
+        organizerIds: orgIds,
         createdAt: now,
         updatedAt: now,
       };

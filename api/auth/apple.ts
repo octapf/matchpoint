@@ -4,6 +4,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { issueSessionAndUser } from '../../server/lib/authResponse';
+import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(res).end();
@@ -41,13 +42,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const update: Record<string, unknown> = { updatedAt: now, authProvider: 'apple' };
       if (givenFirstName && !user.firstName) update.firstName = givenFirstName;
       if (givenLastName && !user.lastName) update.lastName = givenLastName;
+      const existingUsername = user.username;
+      if (typeof existingUsername !== 'string' || !existingUsername.trim()) {
+        update.username = await allocateUniqueUsernameFromEmail(col, email);
+      }
       await col.updateOne({ _id: user._id }, { $set: update });
       user = await col.findOne({ _id: user._id });
     } else {
       const firstName = givenFirstName || '';
       const lastName = givenLastName || '';
+      const username = await allocateUniqueUsernameFromEmail(col, email);
       const result = await col.insertOne({
         email,
+        username,
         firstName,
         lastName,
         phone: '',

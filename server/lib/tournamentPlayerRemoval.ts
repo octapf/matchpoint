@@ -19,7 +19,7 @@ export async function removePlayerFromTournament(db: Db, tournamentId: string, u
     const teamIdStr = tid.toString();
     await teamsCol.deleteOne({ _id: tid });
     await entriesCol.updateMany(
-      { teamId: teamIdStr },
+      { $or: [{ teamId: teamIdStr }, { teamId: tid }] },
       {
         $set: {
           teamId: null,

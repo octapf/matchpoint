@@ -227,9 +227,11 @@ export default function AdminSeedScreen() {
       {(info?.users ?? []).map((u) => (
         <View key={u._id} style={styles.userRow}>
           <View style={styles.userMeta}>
-            <Text style={styles.userName}>
-              {[u.firstName, u.lastName].filter(Boolean).join(' ')}
-            </Text>
+            <Pressable onPress={() => router.push(`/profile/${u._id}` as never)}>
+              <Text style={styles.userName}>
+                {[u.firstName, u.lastName].filter(Boolean).join(' ')}
+              </Text>
+            </Pressable>
             <Text style={styles.userEmail} selectable>
               {u.email}
             </Text>

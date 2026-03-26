@@ -4,6 +4,8 @@ import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
+import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
+import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -47,13 +49,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Only organizers can update this tournament' });
       }
 
-      const allowed = ['name', 'date', 'startDate', 'endDate', 'location', 'description', 'maxTeams', 'status', 'organizerIds'];
+      const allowed = [
+        'name',
+        'date',
+        'startDate',
+        'endDate',
+        'location',
+        'description',
+        'maxTeams',
+        'groupCount',
+        'status',
+        'organizerIds',
+      ];
       const update: Record<string, unknown> = {};
+      const curStatus = (cur as { status?: string }).status;
       for (const k of allowed) {
-        if (body[k] !== undefined) update[k] = body[k];
+        if (body[k] === undefined) continue;
+        if (k === 'status') {
+          const s = body[k];
+          const st = typeof s === 'string' ? s.trim() : s;
+          if (st === 'cancelled') {
+            update.status = 'cancelled';
+          } else if (st === 'open' && curStatus === 'cancelled') {
+            update.status = 'open';
+          }
+          // Ignore client-sent `open` / `full` — those are derived from signups.
+          continue;
+        }
+        update[k] = body[k];
       }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
+      }
+
+      if (update.maxTeams !== undefined || update.groupCount !== undefined) {
+        const curDoc = cur as { maxTeams?: number; groupCount?: number };
+        const nextMax =
+          update.maxTeams !== undefined ? Number(update.maxTeams) : Number(curDoc.maxTeams ?? 16);
+        const nextGcRaw = update.groupCount !== undefined ? update.groupCount : curDoc.groupCount;
+        const nextGc = normalizeGroupCount(nextGcRaw);
+        const vg = validateTournamentGroups(nextMax, nextGc);
+        if (!vg.ok) {
+          const err =
+            vg.reason === 'divisible'
+              ? 'Max teams must be divisible by the number of groups'
+              : vg.reason === 'minPerGroup'
+                ? 'Each group must allow at least 2 teams (increase max teams or reduce groups)'
+                : 'Invalid max teams';
+          return corsRes.status(400).json({ error: err });
+        }
+        update.groupCount = vg.groupCount;
+        update.maxTeams = nextMax;
+        const teamsCol = db.collection('teams');
+        const teamsList = await teamsCol.find({ tournamentId: id }).toArray();
+        const perGroup = new Map<number, number>();
+        for (const tm of teamsList) {
+          const gi = teamGroupIndex(tm as { groupIndex?: number });
+          if (gi >= vg.groupCount) {
+            return corsRes.status(400).json({
+              error:
+                'Some teams use a group that would not exist. Move teams in the roster before reducing groups.',
+            });
+          }
+          perGroup.set(gi, (perGroup.get(gi) ?? 0) + 1);
+        }
+        for (let i = 0; i < vg.groupCount; i++) {
+          if ((perGroup.get(i) ?? 0) > vg.teamsPerGroup) {
+            return corsRes.status(400).json({
+              error: 'Too many teams in a group for these settings. Move or remove teams first.',
+            });
+          }
+        }
       }
 
       const prevOrganizers = (cur.organizerIds as string[]) ?? [];
@@ -91,7 +157,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { returnDocument: 'after' }
       );
       if (!result) return corsRes.status(404).json({ error: 'Tournament not found' });
-      return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+      const afterStatus = (result as { status?: string }).status;
+      if (afterStatus !== 'cancelled') {
+        await syncTournamentOpenFullStatus(db, id);
+      }
+      const fresh = await col.findOne({ _id: oid });
+      return corsRes.status(200).json(serializeDoc((fresh ?? result) as Record<string, unknown>));
     }
 
     if (req.method === 'DELETE') {
@@ -106,7 +177,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId) && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
-      await db.collection('entries').deleteMany({ tournamentId: id });
+      const entriesCol = db.collection('entries');
+      const entryCount = await entriesCol.countDocuments({ tournamentId: id });
+      if (entryCount > 0) {
+        return corsRes.status(400).json({
+          error:
+            'Cannot delete tournament while players are registered. Remove all players from the roster first.',
+        });
+      }
+      await entriesCol.deleteMany({ tournamentId: id });
       await db.collection('teams').deleteMany({ tournamentId: id });
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();

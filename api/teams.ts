@@ -2,6 +2,16 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
+import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { isTournamentOrganizer } from '../server/lib/organizer';
+import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
+import { countTeamsInGroup, pickLeastLoadedGroup } from '../server/lib/tournamentGroupDb';
+
+function hasExplicitGroupIndex(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return false;
+  if (typeof raw === 'string' && raw.trim() === '') return false;
+  return true;
+}
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -28,11 +38,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { tournamentId, name, playerIds, createdBy } = body;
+      const { tournamentId, name, playerIds, createdBy, groupIndex: rawGi } = body;
       if (!tournamentId || !name || !playerIds?.length || !createdBy) {
         return corsRes.status(400).json({ error: 'Missing required fields' });
       }
+      if (!ObjectId.isValid(tournamentId)) {
+        return corsRes.status(400).json({ error: 'Invalid tournament ID' });
+      }
+      const tournamentsCol = db.collection('tournaments');
+      const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
+      if (!tournament) {
+        return corsRes.status(404).json({ error: 'Tournament not found' });
+      }
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
+      const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      const isOrg = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actorId);
+      if (!isOrg && !admin) {
+        return corsRes.status(403).json({ error: 'Only organizers can create teams' });
+      }
+      if (!admin && createdBy !== actorId) {
+        return corsRes.status(403).json({ error: 'Invalid createdBy' });
+      }
+
+      const maxT = Number((tournament as { maxTeams?: number }).maxTeams);
+      const gc = normalizeGroupCount((tournament as { groupCount?: number }).groupCount);
+      const vg = validateTournamentGroups(maxT, gc);
+      if (!vg.ok) {
+        return corsRes.status(400).json({ error: 'Tournament group configuration is invalid' });
+      }
+      let groupIndex: number;
+      if (!hasExplicitGroupIndex(rawGi)) {
+        groupIndex = await pickLeastLoadedGroup(db, tournamentId, vg);
+      } else {
+        let parsed = typeof rawGi === 'number' ? rawGi : parseInt(String(rawGi), 10);
+        if (!Number.isFinite(parsed) || parsed < 0) parsed = 0;
+        groupIndex = Math.min(vg.groupCount - 1, Math.floor(parsed));
+      }
+      const totalTeams = await col.countDocuments({ tournamentId });
+      if (totalTeams >= maxT) {
+        return corsRes.status(400).json({ error: 'Tournament is full (max teams reached)' });
+      }
+      const inGroup = await countTeamsInGroup(db, tournamentId, groupIndex);
+      if (inGroup >= vg.teamsPerGroup) {
+        return corsRes.status(400).json({ error: 'This group is full' });
+      }
+
       const playerIdSet = new Set(Array.isArray(playerIds) ? playerIds : [playerIds]);
       const existing = await col.findOne({
         tournamentId,
@@ -46,6 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         tournamentId,
         name,
         playerIds: Array.isArray(playerIds) ? playerIds : [playerIds],
+        groupIndex,
         createdBy,
         createdAt: now,
         updatedAt: now,

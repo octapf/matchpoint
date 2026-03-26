@@ -13,8 +13,11 @@ export interface User {
   username?: string;
   firstName: string;
   lastName: string;
+  /** @deprecated Legacy field; prefer `username`. Cleared when username is updated. */
   displayName?: string;
   phone?: string;
+  /** When true, other authenticated users may see `phone` on your public profile. */
+  phoneVisible?: boolean;
   gender?: Gender;
   authProvider: 'google' | 'apple' | 'email';
   /** Set server-side or via ADMIN_EMAILS bootstrap */
@@ -37,9 +40,13 @@ export interface Tournament {
   location: string;
   description?: string;
   maxTeams: number;
+  /** Number of groups (min 2, default 4). maxTeams ÷ groupCount must be ≥ 2 (default capacity 4 per group with 16 max teams). */
+  groupCount?: number;
   inviteLink: string;
   status: TournamentStatus;
   organizerIds: string[];
+  /** Populated by GET /api/tournaments list (count of entry documents). */
+  entriesCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +56,8 @@ export interface Team {
   tournamentId: string;
   name: string;
   playerIds: string[];
+  /** 0-based; capacity per group = maxTeams / groupCount (at least 2). Omit on create to auto-fill least-loaded group. */
+  groupIndex?: number;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

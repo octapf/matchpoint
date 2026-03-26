@@ -46,7 +46,7 @@ export default function SplashScreen() {
         return;
       }
       if (currentUser) {
-        router.replace('/(tabs)');
+        router.replace('/(tabs)/feed');
       } else {
         router.replace('/(auth)/sign-in');
       }

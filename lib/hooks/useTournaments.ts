@@ -2,10 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { tournamentsApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
-import { MOCK_DEV_TOURNAMENT } from '@/lib/mocks/devTournamentMocks';
+import { MOCK_DEV_TOURNAMENT, MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
 import type { Tournament } from '@/types';
 
-const MOCK_TOURNAMENTS: Tournament[] = [MOCK_DEV_TOURNAMENT];
+const MOCK_TOURNAMENTS: Tournament[] = [
+  { ...MOCK_DEV_TOURNAMENT, entriesCount: MOCK_DEV_ENTRIES.length },
+];
 
 export function useTournaments(params?: { status?: string; organizerId?: string }) {
   return useQuery({
@@ -68,6 +70,19 @@ export function useUpdateTournament() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data._id] });
+      queryClient.invalidateQueries({ queryKey: ['entries', { tournamentId: data._id }] });
+    },
+  });
+}
+
+export function useRebalanceTournamentGroups() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, actingUserId }: { id: string; actingUserId: string }) =>
+      tournamentsApi.rebalanceTeams(id, actingUserId),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
     },
   });
 }
@@ -81,7 +96,7 @@ export function useDeleteTournament() {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/feed');
     },
   });
 }

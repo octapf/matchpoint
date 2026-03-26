@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
+import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { useCreateTournament } from '@/lib/hooks/useTournaments';
 import { useUserStore } from '@/store/useUserStore';
+import {
+  validateTournamentGroups,
+  normalizeGroupCount,
+  getValidGroupCountsForMaxTeams,
+  pickGroupCountForMaxTeams,
+} from '@/lib/tournamentGroups';
 
 function generateInviteToken() {
   return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -23,7 +30,25 @@ export default function CreateTournamentScreen() {
   const [endDate, setEndDate] = useState<string>('');
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
+  const [groupCount, setGroupCount] = useState('4');
   const [description, setDescription] = useState('');
+
+  const maxTeamsForSelect = useMemo(() => {
+    const n = parseInt(maxTeams, 10);
+    return Number.isFinite(n) && n >= 2 && n <= 64 ? n : 16;
+  }, [maxTeams]);
+
+  useEffect(() => {
+    const mt = parseInt(maxTeams, 10);
+    if (!Number.isFinite(mt) || mt < 2 || mt > 64) return;
+    const valid = getValidGroupCountsForMaxTeams(mt);
+    if (valid.length === 0) return;
+    const gc = parseInt(groupCount, 10);
+    const cur = Number.isFinite(gc) ? gc : 4;
+    if (!valid.includes(cur)) {
+      setGroupCount(String(pickGroupCountForMaxTeams(mt, cur)));
+    }
+  }, [maxTeams]);
 
   const handleCreate = () => {
     if (!name.trim() || !startDate || !location.trim()) {
@@ -38,6 +63,12 @@ export default function CreateTournamentScreen() {
     const max = parseInt(maxTeams, 10) || 16;
     if (max < 2 || max > 64) {
       Alert.alert(t('common.error'), t('tournaments.invalidMaxTeams'));
+      return;
+    }
+    const gc = normalizeGroupCount(parseInt(groupCount, 10) || 4);
+    const vg = validateTournamentGroups(max, gc);
+    if (!vg.ok) {
+      Alert.alert(t('common.error'), t('tournaments.invalidGroups'));
       return;
     }
     if (!userId) {
@@ -57,6 +88,7 @@ export default function CreateTournamentScreen() {
         description: description.trim() || undefined,
         inviteLink: inviteToken,
         organizerIds: [userId],
+        groupCount: vg.groupCount,
       },
       {
         onSuccess: (data) => {
@@ -119,6 +151,15 @@ export default function CreateTournamentScreen() {
           onChangeText={setMaxTeams}
         />
       </View>
+      <View style={styles.groupBlock}>
+        <GroupCountSelect
+          label={t('tournaments.groupCount')}
+          maxTeams={maxTeamsForSelect}
+          value={groupCount}
+          onChange={setGroupCount}
+        />
+        <Text style={styles.hint}>{t('tournaments.groupCountHint')}</Text>
+      </View>
       <View style={styles.field}>
         <Text style={styles.label}>{t('tournaments.description')}</Text>
         <TextInput
@@ -147,6 +188,8 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '700', color: Colors.text, marginBottom: 24 },
   field: { marginBottom: 20 },
+  groupBlock: { marginBottom: 20 },
+  hint: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
   input: {
     backgroundColor: Colors.surface,
