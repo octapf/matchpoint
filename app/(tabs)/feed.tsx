@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,12 @@ import Colors from '@/constants/Colors';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { TournamentStatsBlock } from '@/components/ui/TournamentStatsBlock';
 import { useWeather } from '@/lib/hooks/useWeather';
+import { useTournaments } from '@/lib/hooks/useTournaments';
+import { formatTournamentDate } from '@/lib/utils/dateFormat';
+import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
+import type { Tournament } from '@/types';
 import { weatherCodeToSkyKey, type WeatherPayload } from '@/lib/weather/openMeteo';
 
 function formatHourLabel(iso: string, locale: string): string {
@@ -67,6 +72,13 @@ export default function FeedScreen() {
   const language = useLanguageStore((s) => s.language ?? 'en');
   const { data, isLoading, isError, error, refetch, isFetching, usedDeviceLocation, refreshLocation, locationAreaName } =
     useWeather();
+  const {
+    data: tournaments = [],
+    isLoading: loadingTournaments,
+    isError: tournamentsQueryError,
+    refetch: refetchTournaments,
+    isFetching: isFetchingTournaments,
+  } = useTournaments();
 
   useFocusEffect(
     useCallback(() => {
@@ -103,6 +115,13 @@ export default function FeedScreen() {
       contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) + 8 }]}
       keyboardShouldPersistTaps="handled"
       nestedScrollEnabled
+      refreshControl={
+        <RefreshControl
+          refreshing={isFetchingTournaments}
+          onRefresh={() => void refetchTournaments()}
+          tintColor={Colors.yellow}
+        />
+      }
     >
       <TabScreenHeader title={t('feed.homeTitle')} />
 
@@ -197,6 +216,86 @@ export default function FeedScreen() {
               </>
             ) : null}
           </View>
+        )}
+      </View>
+
+      <View style={styles.tournamentsSection}>
+        <Text style={styles.sectionTitle}>{t('feed.tournamentsPreview')}</Text>
+        {loadingTournaments && (tournaments as Tournament[]).length === 0 ? (
+          <View style={styles.tournamentCard}>
+            <Skeleton height={20} width="65%" style={{ marginBottom: 10 }} />
+            <Skeleton height={14} width="45%" style={{ marginBottom: 6 }} />
+            <Skeleton height={14} width="55%" style={{ marginBottom: 8 }} />
+            <Skeleton height={12} width="35%" />
+          </View>
+        ) : tournamentsQueryError ? (
+          <Text style={styles.tournamentError}>{t('tournaments.failedToLoad')}</Text>
+        ) : (tournaments as Tournament[]).length === 0 ? (
+          <Text style={styles.tournamentEmpty}>{t('feed.noTournamentsYet')}</Text>
+        ) : (
+          (tournaments as Tournament[]).map((tournament) => {
+            const dateLabel = tournament.date || tournament.startDate;
+            const maxP = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
+            const current = tournament.entriesCount ?? 0;
+            const totalGroups = normalizeGroupCount(tournament.groupCount);
+            const isCancelled = tournament.status === 'cancelled';
+            return (
+              <Pressable
+                key={tournament._id}
+                style={[styles.tournamentCard, isCancelled && styles.tournamentCardCancelled]}
+                onPress={() => router.push(`/tournament/${tournament._id}` as never)}
+              >
+                <Text style={styles.tournamentTitle}>{tournament.name}</Text>
+                {isCancelled ? (
+                  <View style={styles.cancelledRow}>
+                    <Ionicons name="close-circle" size={16} color={Colors.error} />
+                    <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.tournamentMeta}>
+                  {formatTournamentDate(dateLabel) || '—'} · {tournament.location?.trim() || '—'}
+                </Text>
+                <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
+                  {[
+                    ...[
+                      ...(tournament.divisions?.includes('men') ? [t('tournaments.divisionMen')] : []),
+                      ...(tournament.divisions?.includes('women') ? [t('tournaments.divisionWomen')] : []),
+                      ...(tournament.divisions?.includes('mixed') ? [t('tournaments.divisionMixed')] : []),
+                    ],
+                    tournament.categories?.length
+                      ? tournament.categories.length === 2 &&
+                        tournament.categories.includes('Gold') &&
+                        tournament.categories.includes('Silver')
+                        ? t('tournaments.categoryGoldSilver')
+                        : tournament.categories.length === 3 &&
+                            tournament.categories.includes('Gold') &&
+                            tournament.categories.includes('Silver') &&
+                            tournament.categories.includes('Bronze')
+                          ? t('tournaments.categoryGoldSilverBronze')
+                          : tournament.categories.join(' · ')
+                      : t('tournaments.categoryNone'),
+                  ].join(' · ')}
+                </Text>
+                <View style={styles.tournamentStatsWrap}>
+                  <TournamentStatsBlock
+                    compact
+                    horizontal
+                    muted={isCancelled}
+                    currentPlayers={current}
+                    totalPlayers={maxP}
+                    currentTeams={tournament.teamsCount ?? 0}
+                    totalTeams={tournament.maxTeams ?? 16}
+                    currentGroups={tournament.groupsWithTeamsCount ?? 0}
+                    totalGroups={totalGroups}
+                    waitlistCount={tournament.waitlistCount ?? 0}
+                  />
+                </View>
+                {isCancelled ? (
+                  <Text style={styles.tournamentCancelledHint}>{t('tournaments.cancelledListHint')}</Text>
+                ) : null}
+              </Pressable>
+            );
+          })
         )}
       </View>
 
@@ -329,6 +428,63 @@ const styles = StyleSheet.create({
     color: '#f87171',
     marginBottom: 12,
     fontSize: 15,
+  },
+  tournamentsSection: { gap: 10, marginBottom: 22 },
+  tournamentCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  tournamentCardCancelled: {
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.error,
+  },
+  tournamentTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  cancelledRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  cancelledBadge: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.error,
+  },
+  tournamentMeta: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  tournamentMetaSecondary: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginBottom: 8,
+  },
+  tournamentStatsWrap: {
+    marginBottom: 4,
+  },
+  tournamentCancelledHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  tournamentEmpty: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    lineHeight: 20,
+  },
+  tournamentError: {
+    fontSize: 14,
+    color: Colors.error,
   },
   feedSection: { gap: 12 },
   sectionTitle: {

@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
-import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
+import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../lib/tournamentGroups';
 import {
   buildInviteOgHtml,
   injectInviteOgIntoIndexHtml,
@@ -87,23 +87,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentIds = docs.map((d) =>
         d._id instanceof ObjectId ? d._id.toString() : String(d._id),
       );
+      const tournamentObjectIds = tournamentIds
+        .filter((tid) => ObjectId.isValid(tid))
+        .map((tid) => new ObjectId(tid));
+      const tournamentIdMatch = { $in: [...tournamentIds, ...tournamentObjectIds] };
       const countByTournament = new Map<string, number>();
       if (tournamentIds.length > 0) {
         const agg = await entriesCol
           .aggregate<{ _id: string; count: number }>([
-            { $match: { tournamentId: { $in: tournamentIds } } },
+            { $match: { tournamentId: tournamentIdMatch } },
             { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
           ])
           .toArray();
         for (const row of agg) {
-          countByTournament.set(row._id, row.count);
+          countByTournament.set(String(row._id), row.count);
         }
       }
+
+      const groupCountByTid = new Map<string, number>();
+      for (const d of docs) {
+        const tid = d._id instanceof ObjectId ? d._id.toString() : String(d._id);
+        groupCountByTid.set(tid, normalizeGroupCount((d as { groupCount?: number }).groupCount));
+      }
+
+      const teamsCountByTid = new Map<string, number>();
+      const groupsSetByTid = new Map<string, Set<number>>();
+      for (const tid of tournamentIds) {
+        teamsCountByTid.set(tid, 0);
+        groupsSetByTid.set(tid, new Set<number>());
+      }
+
+      if (tournamentIds.length > 0) {
+        const teamsCol = db.collection('teams');
+        const teamsList = await teamsCol
+          .find({ tournamentId: tournamentIdMatch })
+          .project({ tournamentId: 1, groupIndex: 1 })
+          .toArray();
+        for (const row of teamsList) {
+          const tid = String((row as { tournamentId?: string | ObjectId }).tournamentId ?? '');
+          if (!tid) continue;
+          teamsCountByTid.set(tid, (teamsCountByTid.get(tid) ?? 0) + 1);
+          const ngc = groupCountByTid.get(tid) ?? normalizeGroupCount(undefined);
+          const gi = teamGroupIndex(row as { groupIndex?: number });
+          const clamped = Math.min(ngc - 1, Math.max(0, gi));
+          groupsSetByTid.get(tid)?.add(clamped);
+        }
+      }
+
+      const waitlistCountByTid = new Map<string, number>();
+      for (const tid of tournamentIds) {
+        waitlistCountByTid.set(tid, 0);
+      }
+      if (tournamentIds.length > 0) {
+        const waitCol = db.collection('waitlist');
+        const wagg = await waitCol
+          .aggregate<{ _id: string; count: number }>([
+            { $match: { tournamentId: tournamentIdMatch } },
+            { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
+          ])
+          .toArray();
+        for (const row of wagg) {
+          waitlistCountByTid.set(String(row._id), row.count);
+        }
+      }
+
       return corsRes.status(200).json(
         docs.map((d) => {
           const serialized = serializeDoc(d as Record<string, unknown>)!;
           const tid = d._id instanceof ObjectId ? d._id.toString() : String(d._id);
-          return { ...serialized, entriesCount: countByTournament.get(tid) ?? 0 };
+          return {
+            ...serialized,
+            entriesCount: countByTournament.get(tid) ?? countByTournament.get(String((d as { _id?: unknown })._id)) ?? 0,
+            teamsCount: teamsCountByTid.get(tid) ?? teamsCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
+            groupsWithTeamsCount: groupsSetByTid.get(tid)?.size ?? 0,
+            waitlistCount: waitlistCountByTid.get(tid) ?? waitlistCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
+          };
         }),
       );
     }

@@ -33,6 +33,7 @@ export function useCreateTeam() {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },
   });
 }
@@ -47,6 +48,7 @@ export function useUpdateTeam() {
       queryClient.invalidateQueries({ queryKey: ['team', data._id] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },
   });
 }

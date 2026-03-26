@@ -30,7 +30,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
-      return corsRes.status(200).json(serializeDoc(doc as Record<string, unknown>));
+      const serialized = serializeDoc(doc as Record<string, unknown>)!;
+
+      // Attach the same count fields as the list endpoint so cards and detail stay consistent.
+      const entriesCol = db.collection('entries');
+      const teamsCol = db.collection('teams');
+      const waitCol = db.collection('waitlist');
+
+      const [entriesCount, teamsList, waitlistCount] = await Promise.all([
+        entriesCol.countDocuments({ tournamentId: { $in: [id, oid] } }),
+        teamsCol.find({ tournamentId: { $in: [id, oid] } }).project({ groupIndex: 1 }).toArray(),
+        waitCol.countDocuments({ tournamentId: { $in: [id, oid] } }),
+      ]);
+
+      const teamsCount = teamsList.length;
+      const gc = normalizeGroupCount((serialized as { groupCount?: number }).groupCount);
+      const groupsSet = new Set<number>();
+      for (const row of teamsList) {
+        const gi = teamGroupIndex(row as { groupIndex?: number });
+        const clamped = Math.min(gc - 1, Math.max(0, gi));
+        groupsSet.add(clamped);
+      }
+
+      return corsRes.status(200).json({
+        ...serialized,
+        entriesCount,
+        teamsCount,
+        groupsWithTeamsCount: groupsSet.size,
+        waitlistCount,
+      });
     }
 
     if (req.method === 'PATCH') {
@@ -101,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         update.groupCount = vg.groupCount;
         update.maxTeams = nextMax;
         const teamsCol = db.collection('teams');
-        const teamsList = await teamsCol.find({ tournamentId: id }).toArray();
+        const teamsList = await teamsCol.find({ tournamentId: { $in: [id, oid] } }).toArray();
         const perGroup = new Map<number, number>();
         for (const tm of teamsList) {
           const gi = teamGroupIndex(tm as { groupIndex?: number });
@@ -131,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!actorIsAdmin) {
           const entriesCol = db.collection('entries');
           const entryUserIds = new Set(
-            (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
+            (await entriesCol.find({ tournamentId: { $in: [id, oid] } }).toArray()).map((e) => e.userId as string)
           );
           for (const uid of nextOrganizers) {
             if (prevOrganizers.includes(uid)) continue;
@@ -178,15 +206,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
       const entriesCol = db.collection('entries');
-      const entryCount = await entriesCol.countDocuments({ tournamentId: id });
+      const entryCount = await entriesCol.countDocuments({ tournamentId: { $in: [id, oid] } });
       if (entryCount > 0) {
         return corsRes.status(400).json({
           error:
             'Cannot delete tournament while players are registered. Remove all players from the roster first.',
         });
       }
-      await entriesCol.deleteMany({ tournamentId: id });
-      await db.collection('teams').deleteMany({ tournamentId: id });
+      await entriesCol.deleteMany({ tournamentId: { $in: [id, oid] } });
+      await db.collection('teams').deleteMany({ tournamentId: { $in: [id, oid] } });
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();
     }

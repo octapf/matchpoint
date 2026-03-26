@@ -1,28 +1,28 @@
 import React, { useCallback } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
 import { IconButton } from '@/components/ui/IconButton';
+import { TournamentStatsBlock } from '@/components/ui/TournamentStatsBlock';
 import { useTournaments } from '@/lib/hooks/useTournaments';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import { config } from '@/lib/config';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import i18n from '@/lib/i18n';
 import type { Tournament } from '@/types';
-
-function maxPlayersForTournament(tournament: Tournament): number {
-  return (tournament.maxTeams ?? 16) * 2;
-}
+import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
 
 export default function TournamentsScreen() {
+  const router = useRouter();
   const { t } = useTranslation();
   const storedLanguage = useLanguageStore((s) => s.language);
   const insets = useSafeAreaInsets();
-  const { data: tournaments = [], isLoading, isError, error } = useTournaments();
+  const { data: tournaments = [], isLoading, isError, error, refetch, isFetching } = useTournaments();
 
   const shareTournament = useCallback(
     (tournament: Tournament) => {
@@ -79,30 +79,94 @@ export default function TournamentsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={scrollContentStyle}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={scrollContentStyle}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={Colors.yellow} />}
+      >
         <TabScreenHeader title={t('tournaments.screenTitle')} />
+        {tournaments.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={34} color={Colors.textMuted} style={{ marginBottom: 10 }} />
+            <Text style={styles.emptyTitle}>{t('admin.noTournaments')}</Text>
+            <Text style={styles.emptySubtitle}>{t('feed.noTournamentsYet')}</Text>
+            <View style={{ marginTop: 14 }}>
+              <Pressable style={styles.emptyCta} onPress={() => router.push('/tournament/create')}>
+                <Text style={styles.emptyCtaText}>{t('tournaments.create')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <>
         {(tournaments as Tournament[]).map((tournament) => {
           const dateLabel = tournament.date || tournament.startDate;
-          const maxP = maxPlayersForTournament(tournament);
+          const maxP = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
           const current = tournament.entriesCount ?? 0;
+          const totalGroups = normalizeGroupCount(tournament.groupCount);
           const hasInvite = !!tournament.inviteLink;
+          const isCancelled = tournament.status === 'cancelled';
           return (
-            <View key={tournament._id} style={styles.cardOuter}>
-              <Link href={`/tournament/${tournament._id}`} asChild>
-                <Pressable
-                  style={StyleSheet.flatten([
-                    styles.cardPressable,
-                    hasInvite ? styles.cardPressableWithShare : undefined,
-                  ])}
-                >
-                  <Text style={styles.cardTitle}>{tournament.name}</Text>
-                  <Text style={styles.cardDate}>{formatTournamentDate(dateLabel)}</Text>
-                  <Text style={styles.cardLocation}>{tournament.location}</Text>
-                  <Text style={styles.cardSpots}>
-                    {t('tournaments.playersSignedUp', { current, max: maxP })}
-                  </Text>
-                </Pressable>
-              </Link>
+            <View
+              key={tournament._id}
+              style={[styles.cardOuter, isCancelled && styles.cardOuterCancelled]}
+            >
+              <Pressable
+                style={[
+                  styles.cardPressable,
+                  hasInvite ? styles.cardPressableWithShare : undefined,
+                ]}
+                onPress={() => router.push(`/tournament/${tournament._id}`)}
+              >
+                <Text style={styles.cardTitle}>{tournament.name}</Text>
+                {isCancelled ? (
+                  <View style={styles.cancelledRow} accessibilityRole="text">
+                    <Ionicons name="close-circle" size={16} color={Colors.error} />
+                    <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.cardDate}>
+                  {formatTournamentDate(dateLabel) || '—'}
+                </Text>
+                <Text style={styles.cardLocation}>{tournament.location?.trim() || '—'}</Text>
+                <Text style={styles.cardMetaSecondary} numberOfLines={1}>
+                  {[
+                    ...[
+                      ...(tournament.divisions?.includes('men') ? [t('tournaments.divisionMen')] : []),
+                      ...(tournament.divisions?.includes('women') ? [t('tournaments.divisionWomen')] : []),
+                      ...(tournament.divisions?.includes('mixed') ? [t('tournaments.divisionMixed')] : []),
+                    ],
+                    tournament.categories?.length
+                      ? tournament.categories.length === 2 &&
+                        tournament.categories.includes('Gold') &&
+                        tournament.categories.includes('Silver')
+                        ? t('tournaments.categoryGoldSilver')
+                        : tournament.categories.length === 3 &&
+                            tournament.categories.includes('Gold') &&
+                            tournament.categories.includes('Silver') &&
+                            tournament.categories.includes('Bronze')
+                          ? t('tournaments.categoryGoldSilverBronze')
+                          : tournament.categories.join(' · ')
+                      : t('tournaments.categoryNone'),
+                  ].join(' · ')}
+                </Text>
+                <View style={styles.cardStats}>
+                  <TournamentStatsBlock
+                    compact
+                    horizontal
+                    muted={isCancelled}
+                    currentPlayers={current}
+                    totalPlayers={maxP}
+                    currentTeams={tournament.teamsCount ?? 0}
+                    totalTeams={tournament.maxTeams ?? 16}
+                    currentGroups={tournament.groupsWithTeamsCount ?? 0}
+                    totalGroups={totalGroups}
+                    waitlistCount={tournament.waitlistCount ?? 0}
+                  />
+                </View>
+                {isCancelled ? (
+                  <Text style={styles.cardCancelledSub}>{t('tournaments.cancelledListHint')}</Text>
+                ) : null}
+              </Pressable>
               {hasInvite ? (
                 <View style={styles.shareCorner} pointerEvents="box-none">
                   <IconButton
@@ -117,12 +181,12 @@ export default function TournamentsScreen() {
             </View>
           );
         })}
+          </>
+        )}
       </ScrollView>
-      <Link href="/tournament/create" asChild>
-        <Pressable style={styles.fab}>
-          <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
-        </Pressable>
-      </Link>
+      <Pressable style={styles.fab} onPress={() => router.push('/tournament/create')}>
+        <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -145,6 +209,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: Colors.surface,
     overflow: 'hidden',
+  },
+  cardOuterCancelled: {
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.error,
+  },
+  cancelledRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  cancelledBadge: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.error,
+    letterSpacing: 0.3,
   },
   cardPressable: {
     padding: 16,
@@ -175,9 +255,18 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginBottom: 8,
   },
-  cardSpots: {
+  cardMetaSecondary: {
     fontSize: 12,
-    color: Colors.yellow,
+    color: Colors.textMuted,
+    marginBottom: 8,
+  },
+  cardStats: {
+    marginBottom: 4,
+  },
+  cardCancelledSub: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 4,
   },
   fab: {
     position: 'absolute',
@@ -192,6 +281,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1a1a1a',
+    textTransform: 'uppercase',
+    fontStyle: 'italic',
   },
   errorOuter: {
     flex: 1,
@@ -206,4 +297,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
+  emptyState: {
+    marginTop: 28,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 6 },
+  emptySubtitle: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
+  emptyCta: {
+    backgroundColor: Colors.yellow,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+  emptyCtaText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', fontStyle: 'italic' },
 });

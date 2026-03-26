@@ -30,6 +30,8 @@ export interface User {
 
 export type TournamentStatus = 'open' | 'full' | 'cancelled';
 
+export type TournamentDivision = 'men' | 'women' | 'mixed';
+
 export interface Tournament {
   _id: string;
   name: string;
@@ -39,6 +41,13 @@ export interface Tournament {
   endDate: string;
   location: string;
   description?: string;
+  /** Enabled divisions for registration/competition. Must include at least one. */
+  divisions?: TournamentDivision[];
+  /**
+   * Optional sub-categories inside a division (e.g. Gold/Silver).
+   * Empty/omitted means a single unnamed category.
+   */
+  categories?: string[];
   maxTeams: number;
   /** Number of groups (min 2, default 4). maxTeams ÷ groupCount must be ≥ 2 (default capacity 4 per group with 16 max teams). */
   groupCount?: number;
@@ -47,6 +56,12 @@ export interface Tournament {
   organizerIds: string[];
   /** Populated by GET /api/tournaments list (count of entry documents). */
   entriesCount?: number;
+  /** Populated by GET /api/tournaments list (count of team documents). */
+  teamsCount?: number;
+  /** Populated by GET /api/tournaments list (groups with ≥1 team vs `groupCount`). */
+  groupsWithTeamsCount?: number;
+  /** Populated by GET /api/tournaments list (waitlist entries). */
+  waitlistCount?: number;
   createdAt: string;
   updatedAt: string;
 }

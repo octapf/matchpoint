@@ -2,11 +2,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { tournamentsApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
-import { MOCK_DEV_TOURNAMENT, MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
+import { MOCK_DEV_TOURNAMENT, MOCK_DEV_ENTRIES, MOCK_DEV_TEAMS } from '@/lib/mocks/devTournamentMocks';
+import { countGroupsWithTeams } from '@/lib/tournamentGroups';
 import type { Tournament } from '@/types';
 
 const MOCK_TOURNAMENTS: Tournament[] = [
-  { ...MOCK_DEV_TOURNAMENT, entriesCount: MOCK_DEV_ENTRIES.length },
+  {
+    ...MOCK_DEV_TOURNAMENT,
+    entriesCount: MOCK_DEV_ENTRIES.length,
+    teamsCount: MOCK_DEV_TEAMS.length,
+    groupsWithTeamsCount: countGroupsWithTeams(MOCK_DEV_TEAMS, MOCK_DEV_TOURNAMENT.groupCount ?? 4),
+    waitlistCount: 0,
+  },
 ];
 
 export function useTournaments(params?: { status?: string; organizerId?: string }) {
@@ -24,7 +31,11 @@ export function useTournament(id: string | undefined) {
     queryKey: ['tournament', id],
     queryFn: () =>
       shouldUseDevMocks()
-        ? Promise.resolve({ ...MOCK_DEV_TOURNAMENT, _id: id || MOCK_DEV_TOURNAMENT._id })
+        ? Promise.resolve({
+            ...MOCK_DEV_TOURNAMENT,
+            _id: id || MOCK_DEV_TOURNAMENT._id,
+            waitlistCount: MOCK_DEV_TOURNAMENT.waitlistCount ?? 0,
+          })
         : (tournamentsApi.findOne(id!) as Promise<Tournament>),
     enabled: !!id,
   });

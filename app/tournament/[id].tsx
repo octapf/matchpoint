@@ -3,10 +3,11 @@ import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Share, Alert, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import type { Gender, User } from '@/types';
+import type { Gender, User, TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { TournamentOrganizerMenu, type OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
 import { config, shouldUseDevMocks } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -18,6 +19,7 @@ import {
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
+import { useWaitlist, useJoinWaitlist, useLeaveWaitlist } from '@/lib/hooks/useWaitlist';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
@@ -26,6 +28,8 @@ import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Team, Entry } from '@/types';
 import {
+  countGroupsWithTeams,
+  maxPlayerSlotsForTournament,
   normalizeGroupCount,
   shouldOfferGroupRebalance,
   teamGroupIndex,
@@ -114,16 +118,22 @@ function TournamentHeaderTitle({ id }: { id: string | undefined }) {
 
 const headerTitleStyle = { color: '#e5e5e5', fontSize: 17, fontWeight: '600' } as const;
 
-type TournamentTab = 'players' | 'teams' | 'groups' | 'fixture';
+type TournamentTab = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
 
 const TAB_CONFIG: {
   id: TournamentTab;
   icon: keyof typeof Ionicons.glyphMap;
-  labelKey: 'tournamentDetail.tabPlayers' | 'tournamentDetail.tabTeams' | 'tournamentDetail.tabGroups' | 'tournamentDetail.tabFixture';
+  labelKey:
+    | 'tournamentDetail.tabPlayers'
+    | 'tournamentDetail.tabTeams'
+    | 'tournamentDetail.tabGroups'
+    | 'tournamentDetail.tabWaitingList'
+    | 'tournamentDetail.tabFixture';
 }[] = [
   { id: 'players', icon: 'people-outline', labelKey: 'tournamentDetail.tabPlayers' },
   { id: 'teams', icon: 'shield-outline', labelKey: 'tournamentDetail.tabTeams' },
   { id: 'groups', icon: 'grid-outline', labelKey: 'tournamentDetail.tabGroups' },
+  { id: 'waitinglist', icon: 'time-outline', labelKey: 'tournamentDetail.tabWaitingList' },
   { id: 'fixture', icon: 'calendar-outline', labelKey: 'tournamentDetail.tabFixture' },
 ];
 
@@ -140,6 +150,9 @@ export default function TournamentDetailScreen() {
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: entries = [], isLoading: loadingEntries } = useEntries(id ? { tournamentId: id } : undefined);
+  const { data: waitlistInfo } = useWaitlist(id);
+  const joinWaitlist = useJoinWaitlist();
+  const leaveWaitlist = useLeaveWaitlist();
 
   const createEntry = useCreateEntry();
   const deleteTournament = useDeleteTournament();
@@ -191,6 +204,97 @@ export default function TournamentDetailScreen() {
     [teams, groupMeta.groupCount, groupMeta.teamsPerGroup]
   );
 
+  const groupsWithTeams = useMemo(
+    () => countGroupsWithTeams(teams, groupMeta.groupCount),
+    [teams, groupMeta.groupCount],
+  );
+
+  // Must be declared before any early `return` so hook order stays stable.
+  const handleDelete = () => {
+    if (!userId || !id || !tournament) return;
+    const organizerIds = tournament.organizerIds ?? [];
+    const hasNonOrganizerEntry = entries.some((e) => !organizerIds.includes(e.userId));
+    if (hasNonOrganizerEntry) {
+      Alert.alert(t('common.error'), t('tournamentDetail.cannotDeleteWithPlayers'));
+      return;
+    }
+    Alert.alert(
+      t('tournamentDetail.deleteTournament'),
+      t('tournamentDetail.deleteConfirm', { name: tournament.name }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () => deleteTournament.mutate({ id, actingUserId: userId }),
+        },
+      ]
+    );
+  };
+
+  const handleShareInvite = () => {
+    if (!tournament?.inviteLink) return;
+    const lang: 'en' | 'es' | 'it' =
+      storedLanguage === 'en' || storedLanguage === 'es' || storedLanguage === 'it'
+        ? storedLanguage
+        : i18n.locale === 'es' || i18n.locale === 'it'
+          ? i18n.locale
+          : 'en';
+    const url = config.invite.getUrl(tournament.inviteLink, lang);
+    Share.share({
+      message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
+      url,
+      title: t('tournamentDetail.inviteTitle'),
+    }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
+  };
+
+  const organizerMenuItems = useMemo((): OrganizerMenuItem[] => {
+    const list: OrganizerMenuItem[] = [];
+
+    if (!tournament) return list;
+
+    if (id) {
+      list.push(
+        {
+          key: 'edit',
+          label: t('tournamentDetail.menuEdit'),
+          icon: 'create-outline',
+          color: Colors.yellow,
+          onPress: () => router.push(`/admin/tournament/${id}` as never),
+        },
+        {
+          key: 'roster',
+          label: t('tournamentDetail.menuAdd'),
+          icon: 'person-add-outline',
+          color: Colors.yellow,
+          onPress: () => router.push(`/admin/tournament/${id}/roster` as never),
+        }
+      );
+    }
+
+    if (tournament.inviteLink) {
+      list.push({
+        key: 'share',
+        label: t('tournamentDetail.menuShare'),
+        icon: 'share-outline',
+        color: Colors.yellow,
+        onPress: handleShareInvite,
+      });
+    }
+
+    list.push({
+      key: 'delete',
+      label: t('tournamentDetail.menuCancel'),
+      icon: 'trash-outline',
+      color: Colors.danger,
+      onPress: handleDelete,
+      disabled: deleteTournament.isPending,
+      accessibilityLabel: t('tournamentDetail.deleteTournament'),
+    });
+
+    return list;
+  }, [id, tournament, t, router, handleShareInvite, handleDelete, deleteTournament.isPending]);
+
   if (isLoading || !tournament) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -223,32 +327,10 @@ export default function TournamentDetailScreen() {
     );
   }
 
-  const teamsCount = teams.length;
-
   const isOrganizer = tournament.organizerIds?.includes(userId ?? '');
   const isAdmin = user?.role === 'admin';
   /** Organizers and global admins can manage roster, teams, and invites from this screen. */
   const canManageTournament = isOrganizer || isAdmin;
-
-  const handleDelete = () => {
-    if (!userId || !id) return;
-    if (entries.length > 0) {
-      Alert.alert(t('common.error'), t('tournamentDetail.cannotDeleteWithPlayers'));
-      return;
-    }
-    Alert.alert(
-      t('tournamentDetail.deleteTournament'),
-      t('tournamentDetail.deleteConfirm', { name: tournament.name }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: () => deleteTournament.mutate({ id, actingUserId: userId }),
-        },
-      ]
-    );
-  };
 
   const promoteOrganizer = (targetUserId: string, playerName: string) => {
     if (!userId || !id) return;
@@ -373,6 +455,21 @@ export default function TournamentDetailScreen() {
 
   const organizerIds = tournament.organizerIds ?? [];
   const dateLabel = tournament.date || tournament.startDate;
+  const isCancelled = tournament.status === 'cancelled';
+  const playerCap = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
+  const isFull = entries.length >= playerCap;
+  const waitlistPosition = waitlistInfo?.position ?? null;
+  const waitlistCountForStats = waitlistInfo?.count ?? tournament.waitlistCount ?? 0;
+  const divisions = ((tournament.divisions ?? []) as TournamentDivision[]).filter(Boolean);
+  const categories = (tournament.categories ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
+  const categoryPresetLabel =
+    categories.length === 0
+      ? t('tournaments.categoryNone')
+      : categories.length === 2 && categories.includes('Gold') && categories.includes('Silver')
+        ? t('tournaments.categoryGoldSilver')
+        : categories.length === 3 && categories.includes('Gold') && categories.includes('Silver') && categories.includes('Bronze')
+          ? t('tournaments.categoryGoldSilverBronze')
+          : categories.join(' · ');
 
   const sortedEntries = [...entries].sort((a, b) => {
     const na = getPlayerSortKey(userMap[a.userId]);
@@ -387,84 +484,80 @@ export default function TournamentDetailScreen() {
     deleteTournament.isPending ||
     rebalanceGroupsMutation.isPending;
 
-  const handleShareInvite = () => {
-    const lang: 'en' | 'es' | 'it' =
-      storedLanguage === 'en' || storedLanguage === 'es' || storedLanguage === 'it'
-        ? storedLanguage
-        : i18n.locale === 'es' || i18n.locale === 'it'
-          ? i18n.locale
-          : 'en';
-    const url = config.invite.getUrl(tournament.inviteLink, lang);
-    Share.share({
-      message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
-      url,
-      title: t('tournamentDetail.inviteTitle'),
-    }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
+        {isCancelled ? (
+          <View style={styles.cancelledBanner} accessibilityRole="alert">
+            <Ionicons name="close-circle-outline" size={22} color={Colors.error} />
+            <Text style={styles.cancelledBannerText}>{t('tournamentDetail.cancelledBanner')}</Text>
+          </View>
+        ) : null}
         <View style={styles.headerTopRow}>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.title}>{tournament.name}</Text>
+          <View style={styles.dateLocationLeft}>
+            <View style={styles.dateLocationRow}>
+              <Text style={styles.location}>{tournament.location?.trim() || '—'}</Text>
+              <Text style={styles.dateLocationSep}>·</Text>
+              <Text style={styles.date}>{formatTournamentDate(dateLabel) || '—'}</Text>
+            </View>
           </View>
           {canManageTournament ? (
             <View style={styles.headerTopActions}>
-              {id ? (
-                <>
-                  <IconButton
-                    icon="create-outline"
-                    onPress={() => router.push(`/admin/tournament/${id}` as never)}
-                    accessibilityLabel={t('tournamentDetail.editTournament')}
-                    color={Colors.yellow}
-                    compact
-                  />
-                  <IconButton
-                    icon="person-add-outline"
-                    onPress={() => router.push(`/admin/tournament/${id}/roster` as never)}
-                    accessibilityLabel={t('tournamentDetail.addPlayersToTournament')}
-                    color={Colors.yellow}
-                    compact
-                  />
-                </>
-              ) : null}
-              {tournament.inviteLink ? (
-                <IconButton
-                  icon="share-outline"
-                  onPress={handleShareInvite}
-                  accessibilityLabel={t('tournamentDetail.shareInvite')}
-                  color={Colors.yellow}
-                  compact
-                />
-              ) : null}
-              <IconButton
-                icon="trash-outline"
-                onPress={handleDelete}
-                disabled={deleteTournament.isPending}
-                accessibilityLabel={t('tournamentDetail.deleteTournament')}
-                color={Colors.danger}
-                compact
-              />
+              <TournamentOrganizerMenu menuLabel={t('tournamentDetail.actionsMenu')} items={organizerMenuItems} />
             </View>
           ) : null}
         </View>
-        <Text style={styles.date}>{formatTournamentDate(dateLabel)}</Text>
-        <Text style={styles.location}>{tournament.location}</Text>
-        <Text style={styles.spots}>
-          {t('tournamentDetail.teamsCount', { count: teamsCount, max: tournament.maxTeams ?? 16 })}
-        </Text>
-        <Text style={styles.groupsLine}>
-          {t('tournamentDetail.groupsSummary', {
-            groups: groupMeta.groupCount,
-            perGroup: groupMeta.teamsPerGroup,
-          })}
-        </Text>
+        <View style={styles.metaPillsRow}>
+          {divisions.includes('men') ? (
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>{t('tournaments.divisionMen')}</Text>
+            </View>
+          ) : null}
+          {divisions.includes('women') ? (
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>{t('tournaments.divisionWomen')}</Text>
+            </View>
+          ) : null}
+          {divisions.includes('mixed') ? (
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>{t('tournaments.divisionMixed')}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.metaPill, styles.metaPillAlt]}>
+            <Text style={[styles.metaPillText, styles.metaPillTextAlt]} numberOfLines={1}>
+              {categoryPresetLabel}
+            </Text>
+          </View>
+        </View>
       </View>
 
       <View style={styles.tabBar} accessibilityRole="tablist">
         {TAB_CONFIG.map(({ id: tabId, icon, labelKey }) => {
           const selected = activeTab === tabId;
+          const tabValue =
+            tabId === 'players'
+              ? `${tournament.entriesCount ?? entries.length}/${playerCap}`
+              : tabId === 'teams'
+                ? `${tournament.teamsCount ?? teams.length}/${tournament.maxTeams ?? 16}`
+                : tabId === 'groups'
+                  ? `${tournament.groupsWithTeamsCount ?? groupsWithTeams}/${groupMeta.groupCount}`
+                  : tabId === 'waitinglist'
+                    ? `${tournament.waitlistCount ?? waitlistCountForStats}`
+                    : '';
+
+          const isWaitingListTab = tabId === 'waitinglist';
+          const tabValueColor = selected
+            ? isWaitingListTab
+              ? Colors.violet
+              : Colors.tabIconSelected
+            : Colors.textMuted;
+          const tabIconColor = selected
+            ? isWaitingListTab
+              ? Colors.violet
+              : Colors.tabIconSelected
+            : Colors.tabIconDefault;
+          const tabLabelColorOverride = selected && isWaitingListTab ? Colors.violet : undefined;
+
           return (
             <Pressable
               key={tabId}
@@ -473,12 +566,26 @@ export default function TournamentDetailScreen() {
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Ionicons
-                name={icon}
-                size={22}
-                color={selected ? Colors.tabIconSelected : Colors.tabIconDefault}
-              />
-              <Text style={[styles.tabLabel, selected && styles.tabLabelSelected]} numberOfLines={1}>
+              {isWaitingListTab ? (
+                <Text style={[styles.waitingListMark, { color: tabIconColor }]}>WL</Text>
+              ) : (
+                <Ionicons
+                  name={icon}
+                  size={22}
+                  color={tabIconColor}
+                />
+              )}
+              {tabValue ? (
+                <Text style={[styles.tabValue, { color: tabValueColor }]}>{tabValue}</Text>
+              ) : null}
+              <Text
+                style={[
+                  styles.tabLabel,
+                  selected && !tabLabelColorOverride && styles.tabLabelSelected,
+                  tabLabelColorOverride ? { color: tabLabelColorOverride } : undefined,
+                ]}
+                numberOfLines={1}
+              >
                 {t(labelKey)}
               </Text>
             </Pressable>
@@ -682,6 +789,13 @@ export default function TournamentDetailScreen() {
           )
         ) : null}
 
+        {activeTab === 'waitinglist' ? (
+          <View style={styles.fixturePlaceholder}>
+            <Ionicons name="time-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={styles.fixturePlaceholderText}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>
+          </View>
+        ) : null}
+
         {activeTab === 'fixture' ? (
           <View style={styles.fixturePlaceholder}>
             <Ionicons name="calendar-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 12 }} />
@@ -694,7 +808,7 @@ export default function TournamentDetailScreen() {
         {!canEnroll && (
           <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
         )}
-        {!hasJoined && canEnroll && (
+        {!hasJoined && canEnroll && !isCancelled && !isFull && (
           <Button
             title={t('tournamentDetail.joinTournament')}
             onPress={() => {
@@ -704,6 +818,53 @@ export default function TournamentDetailScreen() {
             disabled={createEntry.isPending}
             fullWidth
           />
+        )}
+        {!hasJoined && canEnroll && !isCancelled && isFull && waitlistPosition == null && (
+          <Button
+            title={t('tournaments.waitlistJoin')}
+            variant="secondary"
+            onPress={() => {
+              if (!userId || !id) return;
+              joinWaitlist.mutate(
+                { tournamentId: id, userId },
+                {
+                  onError: (err: unknown) =>
+                    Alert.alert(
+                      t('common.error'),
+                      err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
+                    ),
+                }
+              );
+            }}
+            disabled={joinWaitlist.isPending}
+            fullWidth
+          />
+        )}
+        {!hasJoined && canEnroll && !isCancelled && isFull && waitlistPosition != null && (
+          <View style={styles.waitlistRow}>
+            <Text style={styles.waitlistPositionText}>
+              {t('tournaments.waitlistYouAre', { n: waitlistPosition })}
+            </Text>
+            <Button
+              title={t('tournaments.waitlistLeave')}
+              variant="outline"
+              onPress={() => {
+                if (!userId || !id) return;
+                leaveWaitlist.mutate(
+                  { tournamentId: id, actingUserId: userId },
+                  {
+                    onError: (err: unknown) =>
+                      Alert.alert(
+                        t('common.error'),
+                        err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
+                      ),
+                  }
+                );
+              }}
+              disabled={leaveWaitlist.isPending}
+              fullWidth
+            />
+          </View>
         )}
         {userHasTeam && (
           <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
@@ -726,13 +887,50 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  headerTitleWrap: { flex: 1, minWidth: 0 },
-  headerTopActions: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
-  title: { fontSize: 24, fontWeight: '700', color: Colors.text },
-  date: { fontSize: 16, color: Colors.textSecondary, marginBottom: 2 },
-  location: { fontSize: 16, color: Colors.textSecondary, marginBottom: 8 },
-  spots: { fontSize: 14, color: Colors.textMuted },
-  groupsLine: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
+  headerTopRowEnd: { justifyContent: 'flex-end' },
+  headerTopActions: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
+  dateLocationLeft: { flex: 1, minWidth: 0 },
+  metaPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  metaPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  metaPillText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  metaPillAlt: { borderColor: Colors.violetOutline, backgroundColor: Colors.violetMuted },
+  metaPillTextAlt: { color: Colors.violet },
+  cancelledBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  cancelledBannerText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+    lineHeight: 21,
+  },
+  dateLocationRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  date: { fontSize: 16, color: Colors.textSecondary, flexShrink: 0 },
+  dateLocationSep: { fontSize: 16, color: Colors.textSecondary, lineHeight: 22 },
+  location: { fontSize: 16, color: Colors.textSecondary, flex: 1, minWidth: 0 },
+  statsBlock: { marginTop: 4 },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
@@ -762,6 +960,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textMuted,
     textAlign: 'center',
+  },
+  tabValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 14,
+    textAlign: 'center',
+  },
+  waitingListMark: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    lineHeight: 22,
+    textAlign: 'center',
+    minHeight: 22,
+    textTransform: 'uppercase',
   },
   tabLabelSelected: {
     color: Colors.yellow,
@@ -826,6 +1039,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: Colors.textMuted, fontStyle: 'italic' },
   joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
+  waitlistRow: { gap: 10 },
+  waitlistPositionText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   playerRow: {
     backgroundColor: Colors.surface,
     borderRadius: 12,

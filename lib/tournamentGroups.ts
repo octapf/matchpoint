@@ -81,6 +81,21 @@ export function teamGroupIndex(team: { groupIndex?: number }): number {
   return typeof g === 'number' && g >= 0 ? g : 0;
 }
 
+/** Distinct group slots (0 … groupCount−1) that have at least one team. */
+export function countGroupsWithTeams(
+  teams: { groupIndex?: number }[],
+  groupCount: number,
+): number {
+  const gc = normalizeGroupCount(groupCount);
+  if (teams.length === 0) return 0;
+  const seen = new Set<number>();
+  for (const team of teams) {
+    const gi = Math.min(gc - 1, Math.max(0, teamGroupIndex(team)));
+    seen.add(gi);
+  }
+  return seen.size;
+}
+
 /**
  * True when teams should be redistributed: any group over capacity, or every team is still in group 1
  * (legacy missing groupIndex) while other groups are empty.

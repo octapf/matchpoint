@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  Pressable,
+  Modal,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Colors from '@/constants/Colors';
 import { useTranslation } from '@/lib/i18n';
 import { formatTournamentDate, toISODate } from '@/lib/utils/dateFormat';
@@ -9,6 +18,7 @@ type DatePickerFieldProps = {
   onChange: (isoDate: string) => void;
   label?: string;
   minDate?: Date;
+  fieldStyle?: StyleProp<ViewStyle>;
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -27,6 +37,7 @@ export function DatePickerField({
   onChange,
   label = 'Date',
   minDate = new Date(),
+  fieldStyle,
 }: DatePickerFieldProps) {
   const { t, i18n } = useTranslation();
   const [show, setShow] = useState(false);
@@ -76,7 +87,7 @@ export function DatePickerField({
 
   if (Platform.OS === 'web') {
     return (
-      <View style={styles.field}>
+      <View style={[styles.field, fieldStyle]}>
         {label ? <Text style={styles.label}>{label}</Text> : null}
         <input
           type="date"
@@ -99,7 +110,7 @@ export function DatePickerField({
   }
 
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, fieldStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <Pressable style={styles.input} onPress={() => setShow(true)}>
         <Text style={[styles.inputText, !value && styles.placeholder]}>{displayValue}</Text>

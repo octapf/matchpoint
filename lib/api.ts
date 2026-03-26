@@ -115,6 +115,25 @@ export const entriesApi = {
     apiRequest<void>(`/api/entries/${id}`, { method: 'DELETE', params: { actingUserId } }),
 };
 
+export const waitlistApi = {
+  get: (tournamentId: string) =>
+    apiRequest<{ count: number; position: number | null }>('/api/waitlist', {
+      params: { tournamentId },
+    }),
+
+  join: (tournamentId: string, userId: string) =>
+    apiRequest<unknown>('/api/waitlist', {
+      method: 'POST',
+      body: JSON.stringify({ tournamentId, userId }),
+    }),
+
+  leave: (tournamentId: string, actingUserId: string) =>
+    apiRequest<void>('/api/waitlist', {
+      method: 'DELETE',
+      params: { tournamentId, actingUserId },
+    }),
+};
+
 // Teams
 export const teamsApi = {
   find: (params?: { tournamentId?: string; createdBy?: string }) =>

@@ -33,7 +33,9 @@ export function useCreateEntry() {
       queryClient.invalidateQueries({ queryKey: ['entries'] });
       if (variables.tournamentId) {
         queryClient.invalidateQueries({ queryKey: ['tournament', variables.tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ['waitlist', variables.tournamentId] });
       }
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },
   });
 }
@@ -67,6 +69,7 @@ export function useDeleteEntry() {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId] });
     },
   });
 }

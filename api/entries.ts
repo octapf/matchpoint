@@ -81,6 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
       const result = await col.insertOne(doc);
       const inserted = await col.findOne({ _id: result.insertedId });
+      await db.collection('waitlist').deleteMany({ tournamentId, userId });
       await syncTournamentOpenFullStatus(db, tournamentId);
       return corsRes.status(201).json(serializeDoc(inserted as Record<string, unknown>));
     }
