@@ -1,20 +1,65 @@
 /**
- * Dev tournament seed: 16 users (Seed 1…16), one tournament, teams, entries.
+ * Dev tournament seed: 16 users (firstName Seed1…Seed16, lastName Bot), one tournament, teams, entries.
  * Used by POST /api/admin and scripts/seed-dev-tournament.ts
  */
 import type { Db } from 'mongodb';
+import { ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
 
 export const DEV_SEED_INVITE_LINK = 'seed-dev-beach-cup';
 export const DEV_SEED_LOGIN_PASSWORD = 'SeedDev1!';
 
-const EMAIL_RE = /^seed\.player\d{2}@matchpoint\.dev$/;
+/** Any dev seed login email: seed.player + digits + @matchpoint.dev (case-insensitive). */
+const SEED_USER_EMAIL_MONGO_RE = /^seed\.player\d+@matchpoint\.dev$/i;
 
 const PLAYERS = Array.from({ length: 16 }, (_, i) => ({
-  firstName: 'Seed',
-  lastName: String(i + 1),
+  firstName: `Seed${i + 1}`,
+  lastName: 'Bot',
   gender: i % 2 === 0 ? 'male' : 'female',
 }));
+
+function seedDisplayName(p: (typeof PLAYERS)[number]): string {
+  return `${p.firstName} ${p.lastName}`;
+}
+
+function canonicalSeedEmail(oneBasedIndex: number): string {
+  return `seed.player${String(oneBasedIndex).padStart(2, '0')}@matchpoint.dev`.toLowerCase();
+}
+
+function canonicalSeedUsername(oneBasedIndex: number): string {
+  return `seed_player${String(oneBasedIndex).padStart(2, '0')}`;
+}
+
+/**
+ * Fixes drift / casing / padding on seed users. Matches by _id after a flexible email query
+ * so updates apply even if the stored email is not byte-identical to the canonical form.
+ */
+export async function syncSeedUserNames(db: Db): Promise<void> {
+  const users = db.collection('users');
+  const now = new Date().toISOString();
+  const docs = await users.find({ email: { $regex: SEED_USER_EMAIL_MONGO_RE } }).toArray();
+  for (const doc of docs) {
+    const raw = String((doc as { email?: string }).email ?? '').trim();
+    const m = raw.match(/^seed\.player(\d+)@matchpoint\.dev$/i);
+    if (!m) continue;
+    const num = parseInt(m[1], 10);
+    if (num < 1 || num > PLAYERS.length) continue;
+    const p = PLAYERS[num - 1]!;
+    await users.updateOne(
+      { _id: doc._id as ObjectId },
+      {
+        $set: {
+          email: canonicalSeedEmail(num),
+          username: canonicalSeedUsername(num),
+          firstName: p.firstName,
+          lastName: p.lastName,
+          displayName: seedDisplayName(p),
+          updatedAt: now,
+        },
+      }
+    );
+  }
+}
 
 const TEAM_SPECS: [string, ...number[]][] = [
   ['Team Alpha', 0, 1],
@@ -84,7 +129,7 @@ export async function purgeDevSeed(db: Db): Promise<DevSeedPurgeResult> {
     tournamentRemoved = true;
   }
 
-  const ur = await users.deleteMany({ email: { $regex: EMAIL_RE } });
+  const ur = await users.deleteMany({ email: { $regex: SEED_USER_EMAIL_MONGO_RE } });
   const usersDel = ur.deletedCount ?? 0;
 
   return {
@@ -100,7 +145,7 @@ export async function purgeDevSeed(db: Db): Promise<DevSeedPurgeResult> {
 async function fetchSeedUsers(db: Db): Promise<DevSeedUserRow[]> {
   const docs = await db
     .collection('users')
-    .find({ email: { $regex: EMAIL_RE } })
+    .find({ email: { $regex: SEED_USER_EMAIL_MONGO_RE } })
     .sort({ email: 1 })
     .toArray();
   return docs.map((u) => {
@@ -134,6 +179,10 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const teams = db.collection('teams');
   const entries = db.collection('entries');
 
+  if (!options.force) {
+    await syncSeedUserNames(db);
+  }
+
   const existing = await tournaments.findOne({ inviteLink: DEV_SEED_INVITE_LINK });
 
   if (existing && !options.force) {
@@ -151,16 +200,17 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const userIds: string[] = [];
 
   for (let i = 0; i < PLAYERS.length; i++) {
-    const n = String(i + 1).padStart(2, '0');
-    const email = `seed.player${n}@matchpoint.dev`;
+    const num = i + 1;
+    const email = canonicalSeedEmail(num);
     const p = PLAYERS[i]!;
     const doc = {
-      email: email.toLowerCase(),
-      username: `seed_player${n}`,
+      email,
+      username: canonicalSeedUsername(num),
       passwordHash,
       emailVerified: true,
       firstName: p.firstName,
       lastName: p.lastName,
+      displayName: seedDisplayName(p),
       phone: '',
       gender: p.gender,
       authProvider: 'email',

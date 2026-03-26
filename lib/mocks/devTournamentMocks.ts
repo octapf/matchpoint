@@ -24,15 +24,16 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   updatedAt: TS,
 };
 
-/** 16 players: firstName Seed, lastName 1…16 (matches DB seed naming) */
+/** 16 players: firstName Seed1…Seed16, lastName Bot (matches DB seed naming) */
 export const MOCK_DEV_USERS: User[] = Array.from({ length: 16 }, (_, i) => {
   const n = i + 1;
   const nn = String(n).padStart(2, '0');
   return {
     _id: `mock-u-${n}`,
     username: `seed_player${nn}`,
-    firstName: 'Seed',
-    lastName: String(n),
+    firstName: `Seed${n}`,
+    lastName: 'Bot',
+    displayName: `Seed${n} Bot`,
     gender: i % 2 === 0 ? ('male' as const) : ('female' as const),
     authProvider: 'google' as const,
     createdAt: TS,

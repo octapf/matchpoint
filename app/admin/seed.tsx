@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { setClipboardString } from '@/lib/clipboard';
 import { useTranslation } from '@/lib/i18n';
@@ -21,7 +22,7 @@ function formatDevSeedApiError(
   return msg;
 }
 
-function CopyChip({ label, value }: { label: string; value: string }) {
+function CopyChip({ label, value, mask }: { label: string; value: string; mask?: boolean }) {
   const { t } = useTranslation();
   const [flash, setFlash] = useState(false);
   const onCopy = async () => {
@@ -30,22 +31,29 @@ function CopyChip({ label, value }: { label: string; value: string }) {
     setFlash(true);
     setTimeout(() => setFlash(false), 1200);
   };
+  const display =
+    !value ? '—' : mask ? '*'.repeat(value.length) : value;
   return (
     <View style={styles.copyRow}>
       <View style={styles.copyTextCol}>
         <Text style={styles.copyLabel}>{label}</Text>
-        <Text style={styles.copyValue} selectable>
-          {value || '—'}
+        <Text style={styles.copyValue} selectable={!mask}>
+          {display}
         </Text>
       </View>
       <Pressable
         onPress={() => void onCopy()}
         disabled={!value}
-        style={({ pressed }) => [styles.copyBtn, pressed && styles.copyBtnPressed, !value && styles.copyBtnDisabled]}
+        style={({ pressed }) => [
+          styles.copyIconBtn,
+          pressed && styles.copyBtnPressed,
+          !value && styles.copyBtnDisabled,
+          flash && styles.copyIconBtnFlash,
+        ]}
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${t('common.copy')}`}
       >
-        <Text style={styles.copyBtnText}>{flash ? t('admin.devSeedCopied') : t('common.copy')}</Text>
+        <Ionicons name="copy-outline" size={22} color={!value ? Colors.textMuted : '#1a1a1a'} />
       </Pressable>
     </View>
   );
@@ -209,9 +217,9 @@ export default function AdminSeedScreen() {
       ) : null}
 
       <Text style={styles.section}>{t('admin.devSeedCredentials')}</Text>
-      <CopyChip label={t('admin.devSeedPassword')} value={info?.password ?? ''} />
+      <CopyChip label={t('admin.devSeedPassword')} value={info?.password ?? ''} mask />
       <CopyChip label={t('admin.devSeedTournamentId')} value={info?.tournamentId ?? ''} />
-      <CopyChip label={t('admin.devSeedInvite')} value={info?.inviteLink ?? ''} />
+      <CopyChip label={t('admin.devSeedInvite')} value={info?.inviteLink ?? ''} mask />
 
       <Text style={styles.section}>{t('admin.devSeedUsernames')}</Text>
       <Text style={styles.hint}>{t('admin.devSeedUsernamesHint')}</Text>
@@ -220,7 +228,7 @@ export default function AdminSeedScreen() {
         <View key={u._id} style={styles.userRow}>
           <View style={styles.userMeta}>
             <Text style={styles.userName}>
-              {u.firstName} {u.lastName}
+              {[u.firstName, u.lastName].filter(Boolean).join(' ')}
             </Text>
             <Text style={styles.userEmail} selectable>
               {u.email}
@@ -278,15 +286,17 @@ const styles = StyleSheet.create({
   copyTextCol: { flex: 1, minWidth: 0 },
   copyLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4 },
   copyValue: { fontSize: 14, color: Colors.text, fontFamily: 'monospace' },
-  copyBtn: {
+  copyIconBtn: {
     backgroundColor: Colors.yellow,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  copyIconBtnFlash: { opacity: 0.75 },
   copyBtnPressed: { opacity: 0.88 },
   copyBtnDisabled: { opacity: 0.4 },
-  copyBtnText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
