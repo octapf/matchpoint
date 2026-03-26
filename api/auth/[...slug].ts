@@ -1,14 +1,190 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { ObjectId } from 'mongodb';
+import { OAuth2Client } from 'google-auth-library';
+import verifyAppleToken from 'verify-apple-id-token';
+
+import { getDb } from '../../server/lib/mongodb';
+import { withCors } from '../../server/lib/cors';
+import { requireAuth } from '../../server/lib/auth';
+import { issueSessionAndUser } from '../../server/lib/authResponse';
+import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
+
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
-import { ObjectId } from 'mongodb';
-import { getDb } from '../../server/lib/mongodb';
-import { withCors } from '../../server/lib/cors';
-import { issueSessionAndUser } from '../../server/lib/authResponse';
-import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
 
+function serializeUser(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { _id, passwordHash, ...rest } = doc;
+  return { ...rest, _id: _id instanceof ObjectId ? _id.toString() : _id };
+}
+
+// ------------------------
+// Google auth (/auth/google)
+// ------------------------
+async function handleGoogle(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const webClientId = process.env.GOOGLE_CLIENT_ID;
+  const androidClientId = process.env.GOOGLE_ANDROID_CLIENT_ID;
+  const audiences = [webClientId, androidClientId].filter(
+    (audience): audience is string => typeof audience === 'string' && audience.length > 0
+  );
+  if (audiences.length === 0) {
+    return res.status(500).json({ error: 'Google auth not configured' });
+  }
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { idToken } = body;
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(400).json({ error: 'Missing idToken' });
+    }
+
+    const client = new OAuth2Client(webClientId || androidClientId);
+    const ticket = await client.verifyIdToken({ idToken, audience: audiences });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: 'Invalid token' });
+    }
+
+    const email = payload.email;
+    const firstName = payload.given_name || payload.name?.split(' ')[0] || '';
+    const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
+
+    const db = await getDb();
+    const col = db.collection('users');
+    let user = await col.findOne({ email });
+
+    const now = new Date().toISOString();
+    if (user) {
+      const patch: Record<string, unknown> = {
+        updatedAt: now,
+        authProvider: 'google',
+        firstName,
+        lastName,
+      };
+      const existingUsername = (user as { username?: unknown }).username;
+      if (typeof existingUsername !== 'string' || !existingUsername.trim()) {
+        patch.username = await allocateUniqueUsernameFromEmail(col, email);
+      }
+      const uid = (user as { _id: ObjectId })._id;
+      await col.updateOne({ _id: uid }, { $set: patch });
+      user = await col.findOne({ _id: uid });
+    } else {
+      const username = await allocateUniqueUsernameFromEmail(col, email);
+      const result = await col.insertOne({
+        email,
+        username,
+        firstName,
+        lastName,
+        phone: '',
+        authProvider: 'google',
+        createdAt: now,
+        updatedAt: now,
+      });
+      user = await col.findOne({ _id: result.insertedId });
+    }
+
+    const { user: u, accessToken } = await issueSessionAndUser(db, String((user as { _id: ObjectId })._id), email);
+    return res.status(200).json({ ...u, accessToken });
+  } catch (err) {
+    console.error('Google auth error:', err);
+    return res.status(401).json({ error: 'Authentication failed' });
+  }
+}
+
+// ------------------------
+// Apple auth (/auth/apple)
+// ------------------------
+async function handleApple(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const clientId = process.env.APPLE_CLIENT_ID;
+  if (!clientId) {
+    return res.status(500).json({ error: 'Apple auth not configured' });
+  }
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { identityToken, firstName: givenFirstName, lastName: givenLastName } = body;
+    if (!identityToken || typeof identityToken !== 'string') {
+      return res.status(400).json({ error: 'Missing identityToken' });
+    }
+
+    const jwtClaims = await verifyAppleToken({
+      idToken: identityToken,
+      clientId,
+    });
+
+    const email = (jwtClaims as { email?: string }).email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email not provided by Apple' });
+    }
+
+    const db = await getDb();
+    const col = db.collection('users');
+    let user = await col.findOne({ email });
+
+    const now = new Date().toISOString();
+    if (user) {
+      const update: Record<string, unknown> = { updatedAt: now, authProvider: 'apple' };
+      const u = user as { firstName?: string; lastName?: string; username?: unknown; _id: ObjectId };
+      if (givenFirstName && !u.firstName) update.firstName = givenFirstName;
+      if (givenLastName && !u.lastName) update.lastName = givenLastName;
+      if (typeof u.username !== 'string' || !u.username.trim()) {
+        update.username = await allocateUniqueUsernameFromEmail(col, email);
+      }
+      await col.updateOne({ _id: u._id }, { $set: update });
+      user = await col.findOne({ _id: u._id });
+    } else {
+      const firstName = givenFirstName || '';
+      const lastName = givenLastName || '';
+      const username = await allocateUniqueUsernameFromEmail(col, email);
+      const result = await col.insertOne({
+        email,
+        username,
+        firstName,
+        lastName,
+        phone: '',
+        authProvider: 'apple',
+        createdAt: now,
+        updatedAt: now,
+      });
+      user = await col.findOne({ _id: result.insertedId });
+    }
+
+    const { user: u, accessToken } = await issueSessionAndUser(db, String((user as { _id: ObjectId })._id), email);
+    return res.status(200).json({ ...u, accessToken });
+  } catch (err) {
+    console.error('Apple auth error:', err);
+    return res.status(401).json({ error: 'Authentication failed' });
+  }
+}
+
+// ------------------------
+// Me (/auth/me)
+// ------------------------
+async function handleMe(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
+
+  try {
+    const db = await getDb();
+    const user = await db.collection('users').findOne({ _id: new ObjectId(auth.userId) });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    return res.status(200).json(serializeUser(user as Record<string, unknown>));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// ------------------------
+// Email auth (/auth/email?action=...)
+// ------------------------
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function validateEmail(email: string): string | null {
   if (!EMAIL_REGEX.test(email)) return 'Email inválido';
@@ -46,12 +222,6 @@ function getClientIp(req: VercelRequest): string {
   if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
   if (Array.isArray(forwarded)) return forwarded[0] || 'unknown';
   return (req.socket as { remoteAddress?: string })?.remoteAddress || 'unknown';
-}
-
-function serializeDoc(doc: Record<string, unknown> | null) {
-  if (!doc) return null;
-  const { _id, passwordHash, ...rest } = doc;
-  return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
 }
 
 async function handleSignup(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
@@ -94,7 +264,6 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
     updatedAt: now,
   });
 
-  // Send verification email
   const appUrl = process.env.APP_URL || 'https://matchpoint-neon-delta.vercel.app';
   const verifyToken = jwt.sign(
     { userId: result.insertedId.toString(), purpose: 'verify' },
@@ -105,7 +274,12 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
   const emailUser = process.env.EMAIL_USER;
   const emailPass = process.env.EMAIL_PASS;
   if (emailUser && emailPass) {
-    const transporter = nodemailer.createTransport({ host: 'smtp.zoho.com', port: 465, secure: true, auth: { user: emailUser, pass: emailPass } });
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.zoho.com',
+      port: 465,
+      secure: true,
+      auth: { user: emailUser, pass: emailPass },
+    });
     await transporter.sendMail({
       from: `Matchpoint <${emailUser}>`,
       to: email,
@@ -120,7 +294,7 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
     });
   }
 
-  const { user, accessToken } = await issueSessionAndUser(db, result.insertedId.toString(), email.toLowerCase());
+  const { user, accessToken } = await issueSessionAndUser(db, result.insertedId.toString(), emailLower);
   return res.status(201).json({ ...user, accessToken });
 }
 
@@ -144,20 +318,22 @@ async function handleLogin(req: VercelRequest, body: Record<string, unknown>, re
     authProvider: 'email',
   });
 
-  if (!user || !user.passwordHash) {
+  const passwordHash = (user as { passwordHash?: unknown } | null)?.passwordHash;
+  if (!user || typeof passwordHash !== 'string' || !passwordHash) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  const valid = await bcrypt.compare(password, user.passwordHash as string);
+  const valid = await bcrypt.compare(password, passwordHash);
   if (!valid) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   const now = new Date().toISOString();
-  const sessionExpiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
-  await col.updateOne({ _id: user._id }, { $set: { updatedAt: now, lastLoginAt: now } });
-  const emailStr = user.email as string | undefined;
-  const { user: u, accessToken } = await issueSessionAndUser(db, String(user._id), emailStr);
+  const uid = (user as { _id: ObjectId })._id;
+  await col.updateOne({ _id: uid }, { $set: { updatedAt: now, lastLoginAt: now } });
+  const emailStr = (user as { email?: string }).email;
+  const { user: u, accessToken } = await issueSessionAndUser(db, String(uid), emailStr);
+  const sessionExpiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
   return res.status(200).json({ ...u, accessToken, sessionExpiresAt });
 }
 
@@ -171,7 +347,7 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
   if (emailErr) return res.status(400).json({ error: emailErr });
 
   const db = await getDb();
-  const ok = await checkRateLimit(db, `forgot:${getClientIp(req)}`, 3, 60 * 60 * 1000); // 3 per hour
+  const ok = await checkRateLimit(db, `forgot:${getClientIp(req)}`, 3, 60 * 60 * 1000);
   if (!ok) return res.status(429).json({ error: 'Demasiados intentos. Probá de nuevo en 1 hora.' });
 
   const user = await db.collection('users').findOne({
@@ -179,7 +355,6 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
     authProvider: 'email',
   });
 
-  // Always return success to avoid email enumeration
   if (!user) {
     return res.status(200).json({ message: 'If that email exists, a reset link was sent' });
   }
@@ -187,7 +362,7 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
   const secret = process.env.JWT_SECRET || 'matchpoint-reset-secret';
   const jti = randomUUID();
   const token = jwt.sign(
-    { userId: user._id.toString(), email: user.email, jti },
+    { userId: String((user as { _id: ObjectId })._id), email: (user as { email?: string }).email, jti },
     secret,
     { expiresIn: '1h' }
   );
@@ -213,7 +388,7 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background: #1a1a1a; padding: 32px; border-radius: 12px;">
           <h2 style="color: #fbbf24; margin-bottom: 8px;">Reset your password</h2>
-          <p style="color: #e5e5e5;">Hi ${user.firstName},</p>
+          <p style="color: #e5e5e5;">Hi ${(user as { firstName?: string }).firstName ?? ''},</p>
           <p style="color: #a3a3a3;">We received a request to reset your Matchpoint password.</p>
           <a href="${resetUrl}" style="display:inline-block;background:#fbbf24;color:#000;padding:14px 28px;border-radius:50px;text-decoration:none;font-weight:bold;margin:20px 0;">
             Reset Password
@@ -228,7 +403,7 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
   return res.status(200).json({ message: 'If that email exists, a reset link was sent' });
 }
 
-async function handleResetPassword(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
+async function handleResetPassword(_req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
   const { token, password } = body as Record<string, string>;
 
   if (!token || !password) {
@@ -255,15 +430,12 @@ async function handleResetPassword(req: VercelRequest, body: Record<string, unkn
   const col = db.collection('users');
   const user = await col.findOne({ _id: new ObjectId(payload.userId) });
 
-  if (!user || user.authProvider !== 'email') {
+  if (!user || (user as { authProvider?: string }).authProvider !== 'email') {
     return res.status(404).json({ error: 'User not found' });
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  await col.updateOne(
-    { _id: user._id },
-    { $set: { passwordHash, updatedAt: new Date().toISOString() } }
-  );
+  await col.updateOne({ _id: (user as { _id: ObjectId })._id }, { $set: { passwordHash, updatedAt: new Date().toISOString() } });
   if (payload.jti) {
     await db.collection('used_reset_tokens').insertOne({ jti: payload.jti, usedAt: new Date() });
   }
@@ -284,18 +456,16 @@ async function handleChangePassword(body: Record<string, unknown>, res: VercelRe
   const col = db.collection('users');
   const user = await col.findOne({ _id: new ObjectId(userId), authProvider: 'email' });
 
-  if (!user || !user.passwordHash) {
+  const currentHash = (user as { passwordHash?: unknown } | null)?.passwordHash;
+  if (!user || typeof currentHash !== 'string' || !currentHash) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
 
-  const valid = await bcrypt.compare(currentPassword, user.passwordHash as string);
+  const valid = await bcrypt.compare(currentPassword, currentHash);
   if (!valid) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
-  await col.updateOne(
-    { _id: user._id },
-    { $set: { passwordHash, updatedAt: new Date().toISOString() } }
-  );
+  await col.updateOne({ _id: (user as { _id: ObjectId })._id }, { $set: { passwordHash, updatedAt: new Date().toISOString() } });
   return res.status(200).json({ message: 'Contraseña actualizada' });
 }
 
@@ -321,28 +491,46 @@ async function handleVerifyEmail(body: Record<string, unknown>, res: VercelRespo
   return res.status(200).json({ message: 'Email verificado' });
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
-  if (req.method !== 'POST') return withCors(res).status(405).json({ error: 'Method not allowed' });
-
-  const corsRes = withCors(res);
+async function handleEmail(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const action = req.query.action as string;
-
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {});
-
     switch (action) {
-      case 'signup':         return handleSignup(req, body, corsRes);
-      case 'login':          return handleLogin(req, body, corsRes);
-      case 'forgot-password': return handleForgotPassword(req, body, corsRes);
-      case 'reset-password': return handleResetPassword(req, body, corsRes);
-      case 'change-password': return handleChangePassword(body, corsRes);
-      case 'verify-email': return handleVerifyEmail(body, corsRes);
+      case 'signup':
+        return handleSignup(req, body, res);
+      case 'login':
+        return handleLogin(req, body, res);
+      case 'forgot-password':
+        return handleForgotPassword(req, body, res);
+      case 'reset-password':
+        return handleResetPassword(req, body, res);
+      case 'change-password':
+        return handleChangePassword(body, res);
+      case 'verify-email':
+        return handleVerifyEmail(body, res);
       default:
-        return corsRes.status(400).json({ error: 'Invalid action' });
+        return res.status(400).json({ error: 'Invalid action' });
     }
   } catch (err) {
     console.error('Email auth error:', err);
-    return corsRes.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === 'OPTIONS') return withCors(res).end();
+  const corsRes = withCors(res);
+
+  const raw = req.query.slug;
+  const parts = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+  const route = parts[0] ?? '';
+
+  if (route === 'google') return handleGoogle(req, corsRes);
+  if (route === 'apple') return handleApple(req, corsRes);
+  if (route === 'email') return handleEmail(req, corsRes);
+  if (route === 'me') return handleMe(req, corsRes);
+
+  return corsRes.status(404).json({ error: 'Not found' });
+}
+
