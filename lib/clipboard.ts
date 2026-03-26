@@ -1,13 +1,9 @@
-import { Platform } from 'react-native';
-
-/** Web static export cannot resolve expo-clipboard at bundle time; native uses it at runtime. */
+/**
+ * Default / web: `navigator.clipboard` only — no expo-clipboard (required for `expo export -p web`).
+ * Native builds use `clipboard.native.ts` (Metro resolves it before this file).
+ */
 export async function setClipboardString(text: string): Promise<void> {
-  if (Platform.OS === 'web') {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    }
-    return;
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
   }
-  const { setStringAsync } = require('expo-clipboard') as typeof import('expo-clipboard');
-  await setStringAsync(text);
 }
