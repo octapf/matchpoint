@@ -117,7 +117,7 @@ export const entriesApi = {
 
 export const waitlistApi = {
   get: (tournamentId: string) =>
-    apiRequest<{ count: number; position: number | null }>('/api/waitlist', {
+    apiRequest<{ count: number; position: number | null; users: { userId: string; createdAt: string }[] }>('/api/waitlist', {
       params: { tournamentId },
     }),
 
@@ -262,6 +262,7 @@ export type AdminDevSeedResult = AdminDevSeedInfo & {
   alreadyExists: boolean;
   teamsCount?: number;
   entriesCount?: number;
+  waitlistCount?: number;
 };
 
 export type AdminDevSeedPurgeResult = {
@@ -269,6 +270,7 @@ export type AdminDevSeedPurgeResult = {
     tournament: boolean;
     teams: number;
     entries: number;
+    waitlist: number;
     users: number;
   };
 };

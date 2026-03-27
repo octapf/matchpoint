@@ -1,5 +1,5 @@
 /**
- * Dev tournament seed: 16 users (firstName Seed1…Seed16, lastName Bot), one tournament, teams, entries.
+ * Dev tournament seed: 120 users (firstName Seed1…Seed120, lastName Bot), one tournament, teams, entries.
  * Used by POST /api/admin and scripts/seed-dev-tournament.ts
  */
 import type { Db } from 'mongodb';
@@ -12,11 +12,54 @@ export const DEV_SEED_LOGIN_PASSWORD = 'SeedDev1!';
 /** Any dev seed login email: seed.player + digits + @matchpoint.dev (case-insensitive). */
 const SEED_USER_EMAIL_MONGO_RE = /^seed\.player\d+@matchpoint\.dev$/i;
 
-const PLAYERS = Array.from({ length: 16 }, (_, i) => ({
-  firstName: `Seed${i + 1}`,
+type SeedDivision = 'men' | 'women' | 'mixed';
+type SeedPlayerSpec = {
+  firstName: string;
+  lastName: string;
+  gender: 'male' | 'female';
+  division: SeedDivision;
+};
+
+const USERS_PER_DIVISION = 40;
+const TEAMS_PER_DIVISION = 16;
+const GROUPS_PER_DIVISION = 4;
+const PLAYERS_PER_TEAM = 2;
+
+const MEN_PLAYERS = Array.from({ length: USERS_PER_DIVISION }, (_, i) => ({
+  firstName: `SeedM${i + 1}`,
   lastName: 'Bot',
-  gender: i % 2 === 0 ? 'male' : 'female',
+  gender: 'male' as const,
+  division: 'men' as const,
 }));
+
+const WOMEN_PLAYERS = Array.from({ length: USERS_PER_DIVISION }, (_, i) => ({
+  firstName: `SeedW${i + 1}`,
+  lastName: 'Bot',
+  gender: 'female' as const,
+  division: 'women' as const,
+}));
+
+const MIXED_PLAYERS = [
+  ...Array.from({ length: USERS_PER_DIVISION / 2 }, (_, i) => ({
+    firstName: `SeedX${i + 1}M`,
+    lastName: 'Bot',
+    gender: 'male' as const,
+    division: 'mixed' as const,
+  })),
+  ...Array.from({ length: USERS_PER_DIVISION / 2 }, (_, i) => ({
+    firstName: `SeedX${i + 1}W`,
+    lastName: 'Bot',
+    gender: 'female' as const,
+    division: 'mixed' as const,
+  })),
+];
+
+const PLAYERS: SeedPlayerSpec[] = [...MEN_PLAYERS, ...WOMEN_PLAYERS, ...MIXED_PLAYERS];
+
+const SEEDED_TEAM_COUNT = TEAMS_PER_DIVISION * 3;
+const SEEDED_GROUP_COUNT = GROUPS_PER_DIVISION * 3;
+const SEEDED_ENTRY_COUNT = SEEDED_TEAM_COUNT * PLAYERS_PER_TEAM;
+const SEEDED_WAITLIST_COUNT = PLAYERS.length - SEEDED_ENTRY_COUNT;
 
 function canonicalSeedEmail(oneBasedIndex: number): string {
   return `seed.player${String(oneBasedIndex).padStart(2, '0')}@matchpoint.dev`.toLowerCase();
@@ -57,18 +100,6 @@ export async function syncSeedUserNames(db: Db): Promise<void> {
   }
 }
 
-const TEAM_SPECS: { name: string; groupIndex: number; players: number[] }[] = [
-  { name: 'Team Alpha', groupIndex: 0, players: [0, 1] },
-  { name: 'Beach Kings', groupIndex: 0, players: [2, 3] },
-  { name: 'Sand Setters', groupIndex: 1, players: [4, 5] },
-  { name: 'Net Ninjas', groupIndex: 1, players: [6, 7] },
-  { name: 'Spike Squad', groupIndex: 2, players: [8, 9] },
-  { name: 'Need Partner A', groupIndex: 2, players: [10] },
-  { name: 'Need Partner B', groupIndex: 3, players: [11] },
-];
-
-const SOLO_LOOKING = [12, 13, 14, 15];
-
 export type DevSeedUserRow = {
   _id: string;
   email: string;
@@ -89,6 +120,7 @@ export type DevSeedRunResult = DevSeedInfo & {
   alreadyExists: boolean;
   teamsCount?: number;
   entriesCount?: number;
+  waitlistCount?: number;
 };
 
 export type DevSeedPurgeResult = {
@@ -96,6 +128,7 @@ export type DevSeedPurgeResult = {
     tournament: boolean;
     teams: number;
     entries: number;
+    waitlist: number;
     users: number;
   };
 };
@@ -109,18 +142,23 @@ export async function purgeDevSeed(db: Db): Promise<DevSeedPurgeResult> {
   const users = db.collection('users');
   const teams = db.collection('teams');
   const entries = db.collection('entries');
+  const waitlist = db.collection('waitlist');
 
   const existing = await tournaments.findOne({ inviteLink: DEV_SEED_INVITE_LINK });
   let teamsDel = 0;
   let entriesDel = 0;
+  let waitlistDel = 0;
   let tournamentRemoved = false;
 
   if (existing) {
     const tid = existing._id.toString();
-    const er = await entries.deleteMany({ tournamentId: tid });
+    const tournamentIdFilter = { $in: [tid, existing._id] };
+    const er = await entries.deleteMany({ tournamentId: tournamentIdFilter });
     entriesDel = er.deletedCount ?? 0;
-    const tr = await teams.deleteMany({ tournamentId: tid });
+    const tr = await teams.deleteMany({ tournamentId: tournamentIdFilter });
     teamsDel = tr.deletedCount ?? 0;
+    const wr = await waitlist.deleteMany({ tournamentId: tournamentIdFilter });
+    waitlistDel = wr.deletedCount ?? 0;
     await tournaments.deleteOne({ _id: existing._id });
     tournamentRemoved = true;
   }
@@ -133,6 +171,7 @@ export async function purgeDevSeed(db: Db): Promise<DevSeedPurgeResult> {
       tournament: tournamentRemoved,
       teams: teamsDel,
       entries: entriesDel,
+      waitlist: waitlistDel,
       users: usersDel,
     },
   };
@@ -174,47 +213,71 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const users = db.collection('users');
   const teams = db.collection('teams');
   const entries = db.collection('entries');
-
-  if (!options.force) {
-    await syncSeedUserNames(db);
-  }
+  const waitlist = db.collection('waitlist');
 
   const existing = await tournaments.findOne({ inviteLink: DEV_SEED_INVITE_LINK });
 
   if (existing && !options.force) {
-    const info = await getDevSeedInfo(db);
-    return {
-      ...info,
-      alreadyExists: true,
-    };
+    const tournamentId = (existing as { _id: { toString: () => string } })._id.toString();
+    const existingTidFilter = { tournamentId: { $in: [tournamentId, new ObjectId(tournamentId)] } };
+    const [teamsCount, entriesCount, waitlistCount] = await Promise.all([
+      teams.countDocuments(existingTidFilter),
+      entries.countDocuments(existingTidFilter),
+      waitlist.countDocuments(existingTidFilter),
+    ]);
+    const currentDivisions = ((existing as { divisions?: unknown }).divisions ?? []) as string[];
+    const currentCategories = ((existing as { categories?: unknown }).categories ?? []) as string[];
+    const hasExpectedDivisions =
+      currentDivisions.length === 3 &&
+      currentDivisions.includes('men') &&
+      currentDivisions.includes('women') &&
+      currentDivisions.includes('mixed');
+    const hasExpectedCategories =
+      currentCategories.length === 3 &&
+      currentCategories.includes('Gold') &&
+      currentCategories.includes('Silver') &&
+      currentCategories.includes('Bronze');
+    const maxTeams = Number((existing as { maxTeams?: unknown }).maxTeams);
+    const groupCount = Number((existing as { groupCount?: unknown }).groupCount);
+    const isUpToDate =
+      hasExpectedDivisions &&
+      hasExpectedCategories &&
+      maxTeams === SEEDED_TEAM_COUNT &&
+      groupCount === SEEDED_GROUP_COUNT &&
+      teamsCount === SEEDED_TEAM_COUNT &&
+      entriesCount === SEEDED_ENTRY_COUNT &&
+      waitlistCount === SEEDED_WAITLIST_COUNT;
+    if (!isUpToDate) {
+      await purgeDevSeed(db);
+    } else {
+      await syncSeedUserNames(db);
+      const info = await getDevSeedInfo(db);
+      return {
+        ...info,
+        alreadyExists: true,
+      };
+    }
   }
 
   await purgeDevSeed(db);
 
   const now = new Date().toISOString();
   const passwordHash = await bcrypt.hash(DEV_SEED_LOGIN_PASSWORD, 12);
-  const userIds: string[] = [];
-
-  for (let i = 0; i < PLAYERS.length; i++) {
-    const num = i + 1;
-    const email = canonicalSeedEmail(num);
-    const p = PLAYERS[i]!;
-    const doc = {
-      email,
-      username: canonicalSeedUsername(num),
-      passwordHash,
-      emailVerified: true,
-      firstName: p.firstName,
-      lastName: p.lastName,
-      phone: '',
-      gender: p.gender,
-      authProvider: 'email',
-      createdAt: now,
-      updatedAt: now,
-    };
-    const r = await users.insertOne(doc);
-    userIds.push(r.insertedId.toString());
-  }
+  const userDocs = PLAYERS.map((p, i) => ({
+    email: canonicalSeedEmail(i + 1),
+    username: canonicalSeedUsername(i + 1),
+    passwordHash,
+    emailVerified: true,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    phone: '',
+    gender: p.gender,
+    authProvider: 'email',
+    createdAt: now,
+    updatedAt: now,
+  }));
+  const usersInsert = await users.insertMany(userDocs);
+  const userIds = Array.from({ length: userDocs.length }, (_, i) => usersInsert.insertedIds[i]!.toString());
 
   const organizerId = userIds[0]!;
   const tournamentDoc = {
@@ -224,8 +287,12 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     endDate: '2026-07-15',
     location: 'Barceloneta Beach',
     description: 'Seeded data for tournament / team development.',
-    maxTeams: 16,
-    groupCount: 4,
+    divisions: ['men', 'women', 'mixed'],
+    categories: ['Gold', 'Silver', 'Bronze'] as string[],
+    maxTeams: SEEDED_TEAM_COUNT,
+    pointsToWin: 21,
+    setsPerMatch: 1,
+    groupCount: SEEDED_GROUP_COUNT,
     inviteLink: DEV_SEED_INVITE_LINK,
     status: 'open',
     organizerIds: [organizerId],
@@ -235,61 +302,117 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const tRes = await tournaments.insertOne(tournamentDoc);
   const tournamentId = tRes.insertedId.toString();
 
-  const teamIdByIndex: string[] = [];
-
-  for (const spec of TEAM_SPECS) {
-    const { name, groupIndex, players: playerIdxs } = spec;
-    const playerIds = playerIdxs.map((idx) => userIds[idx]!);
-    const createdBy = playerIds[0]!;
-    const teamDoc = {
-      tournamentId,
-      name,
-      groupIndex,
-      playerIds,
-      createdBy,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const tr = await teams.insertOne(teamDoc);
-    teamIdByIndex.push(tr.insertedId.toString());
+  const groupedUsers: Record<SeedDivision, { all: string[]; men: string[]; women: string[] }> = {
+    men: { all: [], men: [], women: [] },
+    women: { all: [], men: [], women: [] },
+    mixed: { all: [], men: [], women: [] },
+  };
+  for (let i = 0; i < PLAYERS.length; i++) {
+    const player = PLAYERS[i]!;
+    const uid = userIds[i]!;
+    groupedUsers[player.division].all.push(uid);
+    if (player.gender === 'male') groupedUsers[player.division].men.push(uid);
+    else groupedUsers[player.division].women.push(uid);
   }
 
-  for (let ti = 0; ti < TEAM_SPECS.length; ti++) {
-    const spec = TEAM_SPECS[ti]!;
-    const teamId = teamIdByIndex[ti]!;
-    for (const idx of spec.players) {
-      await entries.insertOne({
-        tournamentId,
-        userId: userIds[idx]!,
-        teamId,
-        lookingForPartner: false,
-        status: 'in_team',
-        createdAt: now,
-        updatedAt: now,
-      });
+  const divisionSpecs: { key: SeedDivision; label: string; groupOffset: number }[] = [
+    { key: 'men', label: 'Men', groupOffset: 0 },
+    { key: 'women', label: 'Women', groupOffset: GROUPS_PER_DIVISION },
+    { key: 'mixed', label: 'Mixed', groupOffset: GROUPS_PER_DIVISION * 2 },
+  ];
+  const waitingUserIds: string[] = [];
+  const teamDocs: Array<{
+    tournamentId: string;
+    name: string;
+    groupIndex: number;
+    playerIds: string[];
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+  }> = [];
+  const teamPlayersByIndex: string[][] = [];
+
+  for (const division of divisionSpecs) {
+    const divisionUsers = groupedUsers[division.key].all;
+    const inTeamTarget = TEAMS_PER_DIVISION * PLAYERS_PER_TEAM;
+    const teamUsers = divisionUsers.slice(0, inTeamTarget);
+    const overflowUsers = divisionUsers.slice(inTeamTarget);
+    const teamsPerGroup = TEAMS_PER_DIVISION / GROUPS_PER_DIVISION;
+
+    if (division.key === 'mixed') {
+      const mixedMen = groupedUsers.mixed.men.slice(0, TEAMS_PER_DIVISION);
+      const mixedWomen = groupedUsers.mixed.women.slice(0, TEAMS_PER_DIVISION);
+
+      for (let teamIndex = 0; teamIndex < TEAMS_PER_DIVISION; teamIndex++) {
+        const male = mixedMen[teamIndex];
+        const female = mixedWomen[teamIndex];
+        if (!male || !female) break;
+        const playerIds = [male, female];
+        teamPlayersByIndex.push(playerIds);
+        teamDocs.push({
+          tournamentId,
+          name: `${division.label} Team ${String(teamIndex + 1).padStart(2, '0')}`,
+          groupIndex: division.groupOffset + Math.floor(teamIndex / teamsPerGroup),
+          playerIds,
+          createdBy: male,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } else {
+      for (let teamIndex = 0; teamIndex < TEAMS_PER_DIVISION; teamIndex++) {
+        const start = teamIndex * PLAYERS_PER_TEAM;
+        const playerIds = teamUsers.slice(start, start + PLAYERS_PER_TEAM);
+        if (playerIds.length < PLAYERS_PER_TEAM) break;
+        teamPlayersByIndex.push(playerIds);
+        teamDocs.push({
+          tournamentId,
+          name: `${division.label} Team ${String(teamIndex + 1).padStart(2, '0')}`,
+          groupIndex: division.groupOffset + Math.floor(teamIndex / teamsPerGroup),
+          playerIds,
+          createdBy: playerIds[0]!,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
+
+    waitingUserIds.push(...overflowUsers);
   }
 
-  for (const idx of SOLO_LOOKING) {
-    await entries.insertOne({
+  const teamsInsert = teamDocs.length ? await teams.insertMany(teamDocs) : null;
+  const insertedTeamIds = teamDocs.map((_, i) => teamsInsert!.insertedIds[i]!.toString());
+  const entryDocs = insertedTeamIds.flatMap((teamId, i) =>
+    teamPlayersByIndex[i]!.map((playerId) => ({
       tournamentId,
-      userId: userIds[idx]!,
-      teamId: null,
-      lookingForPartner: true,
-      status: 'joined',
+      userId: playerId,
+      teamId,
+      lookingForPartner: false,
+      status: 'in_team',
       createdAt: now,
       updatedAt: now,
-    });
+    }))
+  );
+  if (entryDocs.length) {
+    await entries.insertMany(entryDocs);
   }
 
-  const entryCount =
-    TEAM_SPECS.reduce((acc, s) => acc + s.players.length, 0) + SOLO_LOOKING.length;
+  const waitlistDocs = waitingUserIds.map((playerId) => ({
+    tournamentId,
+    userId: playerId,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  if (waitlistDocs.length) {
+    await waitlist.insertMany(waitlistDocs);
+  }
   const info = await getDevSeedInfo(db);
 
   return {
     ...info,
     alreadyExists: false,
-    teamsCount: TEAM_SPECS.length,
-    entriesCount: entryCount,
+    teamsCount: TEAMS_PER_DIVISION * divisionSpecs.length,
+    entriesCount: entryDocs.length,
+    waitlistCount: waitingUserIds.length,
   };
 }

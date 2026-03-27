@@ -4,6 +4,9 @@
   "outputDirectory": "dist",
   "framework": null,
   "functions": {
+    "api/admin.ts": {
+      "maxDuration": 60
+    },
     "api/**/*.ts": {
       "maxDuration": 10
     }
@@ -28,6 +31,10 @@
     {
       "source": "/.well-known/assetlinks.json",
       "destination": "/assetlinks.json"
+    },
+    {
+      "source": "/api/auth/:slug",
+      "destination": "/api/auth?slug=:slug"
     },
     {
       "source": "/((?!api/)(?!.*\\.[a-zA-Z0-9]{2,6}$).*)",

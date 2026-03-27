@@ -106,8 +106,10 @@ export default function AdminSeedScreen() {
         Alert.alert(t('admin.devSeedTitle'), t('admin.devSeedAlreadyExists'));
       } else {
         const parts = [t('admin.devSeedDone')];
+        parts.push(`${t('tournamentDetail.tabPlayers')}: ${result.users.length}`);
         if (result.teamsCount != null) parts.push(`${t('admin.teams')}: ${result.teamsCount}`);
         if (result.entriesCount != null) parts.push(`${t('admin.entries')}: ${result.entriesCount}`);
+        if (result.waitlistCount != null) parts.push(`${t('tournamentDetail.tabWaitingList')}: ${result.waitlistCount}`);
         Alert.alert(t('admin.devSeedTitle'), parts.join('\n'));
       }
     } catch (e) {
@@ -138,6 +140,7 @@ export default function AdminSeedScreen() {
         t('admin.devSeedPurgeLineCounts', {
           teams: String(r.teams),
           entries: String(r.entries),
+          waitlist: String(r.waitlist),
           users: String(r.users),
         }),
       ]

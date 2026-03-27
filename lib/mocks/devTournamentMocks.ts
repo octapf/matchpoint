@@ -19,6 +19,8 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   divisions: ['men', 'women', 'mixed'],
   categories: ['Gold', 'Silver'],
   maxTeams: 16,
+  pointsToWin: 21,
+  setsPerMatch: 1,
   groupCount: 4,
   inviteLink: 'dev-invite',
   status: 'open',

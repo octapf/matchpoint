@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   Modal,
+  ScrollView,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -41,25 +42,39 @@ export function DatePickerField({
 }: DatePickerFieldProps) {
   const { t, i18n } = useTranslation();
   const [show, setShow] = useState(false);
+  const [mode, setMode] = useState<'calendar' | 'year'>('calendar');
   const locale = i18n.locale || 'en';
   const displayValue = value ? formatTournamentDate(value, locale) : t('common.selectDate');
 
-  const d = value ? new Date(value + 'T12:00:00') : new Date(minDate);
+  const today = useMemo(() => new Date(), []);
+  const minRef = useMemo(() => new Date(minDate), [minDate]);
+  const valueRef = value ? new Date(value + 'T12:00:00') : null;
+  const d = (() => {
+    if (valueRef && valueRef >= minRef) return valueRef;
+    if (today >= minRef) return today;
+    return minRef;
+  })();
   const [viewYear, setViewYear] = useState(d.getFullYear());
   const [viewMonth, setViewMonth] = useState(d.getMonth());
 
   useEffect(() => {
     if (show) {
-      const ref = value ? new Date(value + 'T12:00:00') : new Date(minDate);
+      const ref = (() => {
+        const v = value ? new Date(value + 'T12:00:00') : null;
+        if (v && v >= minRef) return v;
+        if (today >= minRef) return today;
+        return minRef;
+      })();
       setViewYear(ref.getFullYear());
       setViewMonth(ref.getMonth());
+      setMode('calendar');
     }
-  }, [show, value, minDate]);
+  }, [show, value, today, minRef]);
 
   const { startPad, days } = getDaysInMonth(viewYear, viewMonth);
-  const minYear = minDate.getFullYear();
-  const minMonth = minDate.getMonth();
-  const minDay = minDate.getDate();
+  const minYear = minRef.getFullYear();
+  const minMonth = minRef.getMonth();
+  const minDay = minRef.getDate();
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startPad; i++) cells.push(null);
@@ -73,7 +88,8 @@ export function DatePickerField({
   );
 
   const canPrev = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
-  const canNext = viewYear < minYear + 3;
+  const maxYear = Math.max(minYear + 20, new Date().getFullYear() + 10);
+  const canNext = viewYear < maxYear || (viewYear === maxYear && viewMonth < 11);
 
   const selectDay = (day: number) => {
     const iso = toISODate(new Date(viewYear, viewMonth, day));
@@ -129,61 +145,97 @@ export function DatePickerField({
 
             <View style={styles.nav}>
               <Pressable
-                style={[styles.navBtn, !canPrev && styles.navBtnDisabled]}
+                style={[styles.navBtn, (!canPrev || mode === 'year') && styles.navBtnDisabled]}
                 onPress={() => {
+                  if (mode !== 'calendar') return;
                   if (viewMonth === 0) setViewYear((y) => y - 1);
                   setViewMonth((m) => (m === 0 ? 11 : m - 1));
                 }}
-                disabled={!canPrev}
+                disabled={!canPrev || mode === 'year'}
               >
-                <Text style={[styles.navBtnText, !canPrev && styles.navBtnTextDisabled]}>‹</Text>
+                <Text style={[styles.navBtnText, (!canPrev || mode === 'year') && styles.navBtnTextDisabled]}>‹</Text>
               </Pressable>
-              <Text style={styles.navTitle}>{localizedMonths[viewMonth]} {viewYear}</Text>
               <Pressable
-                style={[styles.navBtn, !canNext && styles.navBtnDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.selectDate')}
+                onPress={() => setMode((m) => (m === 'calendar' ? 'year' : 'calendar'))}
+                style={styles.navTitleBtn}
+              >
+                <Text style={styles.navTitle}>
+                  {localizedMonths[viewMonth]} {viewYear}
+                </Text>
+                <Text style={styles.navTitleHint}>{mode === 'calendar' ? '▼' : '▲'}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.navBtn, (!canNext || mode === 'year') && styles.navBtnDisabled]}
                 onPress={() => {
+                  if (mode !== 'calendar') return;
                   if (viewMonth === 11) setViewYear((y) => y + 1);
                   setViewMonth((m) => (m === 11 ? 0 : m + 1));
                 }}
-                disabled={!canNext}
+                disabled={!canNext || mode === 'year'}
               >
-                <Text style={[styles.navBtnText, !canNext && styles.navBtnTextDisabled]}>›</Text>
+                <Text style={[styles.navBtnText, (!canNext || mode === 'year') && styles.navBtnTextDisabled]}>›</Text>
               </Pressable>
             </View>
 
-            <View style={styles.weekdays}>
-              {localizedWeekdays.map((w) => (
-                <Text key={w} style={styles.weekday}>{w}</Text>
-              ))}
-            </View>
+            {mode === 'year' ? (
+              <ScrollView style={styles.yearScroll} contentContainerStyle={styles.yearGrid} showsVerticalScrollIndicator={false}>
+                {Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i).map((y) => {
+                  const selected = y === viewYear;
+                  return (
+                    <Pressable
+                      key={y}
+                      style={[styles.yearCell, selected && styles.yearCellSelected]}
+                      onPress={() => {
+                        setViewYear(y);
+                        setMode('calendar');
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={String(y)}
+                    >
+                      <Text style={[styles.yearCellText, selected && styles.yearCellTextSelected]}>{y}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <>
+                <View style={styles.weekdays}>
+                  {localizedWeekdays.map((w) => (
+                    <Text key={w} style={styles.weekday}>{w}</Text>
+                  ))}
+                </View>
 
-            <View style={styles.grid}>
-              {cells.map((day, i) => {
-                if (day === null) return <View key={i} style={styles.cell} />;
-                const iso = toISODate(new Date(viewYear, viewMonth, day));
-                const sel = new Date(iso + 'T12:00:00');
-                const min = new Date(minYear, minMonth, minDay);
-                const disabled = sel < min;
-                const selected = value === iso;
-                return (
-                  <Pressable
-                    key={i}
-                    style={[
-                      styles.cell,
-                      styles.cellDay,
-                      selected && styles.cellSelected,
-                      disabled && styles.cellDisabled,
-                    ]}
-                    onPress={() => !disabled && selectDay(day)}
-                    disabled={disabled}
-                  >
-                    <Text style={[styles.cellText, selected && styles.cellTextSelected, disabled && styles.cellTextDisabled]}>
-                      {day}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                <View style={styles.grid}>
+                  {cells.map((day, i) => {
+                    if (day === null) return <View key={i} style={styles.cell} />;
+                    const iso = toISODate(new Date(viewYear, viewMonth, day));
+                    const sel = new Date(iso + 'T12:00:00');
+                    const min = new Date(minYear, minMonth, minDay);
+                    const disabled = sel < min;
+                    const selected = value === iso;
+                    return (
+                      <Pressable
+                        key={i}
+                        style={[
+                          styles.cell,
+                          styles.cellDay,
+                          selected && styles.cellSelected,
+                          disabled && styles.cellDisabled,
+                        ]}
+                        onPress={() => !disabled && selectDay(day)}
+                        disabled={disabled}
+                      >
+                        <Text style={[styles.cellText, selected && styles.cellTextSelected, disabled && styles.cellTextDisabled]}>
+                          {day}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -238,7 +290,9 @@ const styles = StyleSheet.create({
   navBtnDisabled: { opacity: 0.3 },
   navBtnText: { fontSize: 24, color: Colors.text, fontWeight: '300' },
   navBtnTextDisabled: { color: Colors.textMuted },
+  navTitleBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 8 },
   navTitle: { fontSize: 18, fontWeight: '600', color: Colors.text },
+  navTitleHint: { fontSize: 12, color: Colors.textMuted, fontWeight: '700' },
   weekdays: {
     flexDirection: 'row',
     marginBottom: 8,
@@ -272,4 +326,17 @@ const styles = StyleSheet.create({
   cellText: { fontSize: 16, color: Colors.text },
   cellTextSelected: { color: '#1a1a1a', fontWeight: '600' },
   cellTextDisabled: { color: Colors.textMuted },
+  yearScroll: { maxHeight: 320 },
+  yearGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 6 },
+  yearCell: {
+    width: '30%',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearCellSelected: { backgroundColor: Colors.yellow },
+  yearCellText: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  yearCellTextSelected: { color: '#1a1a1a' },
 });

@@ -84,7 +84,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'endDate',
         'location',
         'description',
+        'divisions',
+        'categories',
         'maxTeams',
+        'pointsToWin',
+        'setsPerMatch',
         'groupCount',
         'status',
         'organizerIds',
@@ -148,6 +152,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           }
         }
+      }
+      if (update.pointsToWin !== undefined) {
+        const p = Number(update.pointsToWin);
+        if (!Number.isFinite(p) || p < 1 || p > 99) {
+          return corsRes.status(400).json({ error: 'Points to win must be between 1 and 99' });
+        }
+        update.pointsToWin = Math.floor(p);
+      }
+      if (update.setsPerMatch !== undefined) {
+        const s = Number(update.setsPerMatch);
+        if (!Number.isFinite(s) || s < 1 || s > 7) {
+          return corsRes.status(400).json({ error: 'Sets per match must be between 1 and 7' });
+        }
+        update.setsPerMatch = Math.floor(s);
+      }
+
+      if (update.divisions !== undefined) {
+        const raw = update.divisions;
+        if (!Array.isArray(raw)) {
+          return corsRes.status(400).json({ error: 'Divisions must be an array' });
+        }
+        const next = raw
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+          .filter((x, i, arr) => arr.indexOf(x) === i);
+        const valid = next.filter((x) => x === 'men' || x === 'women' || x === 'mixed');
+        if (valid.length === 0) {
+          return corsRes.status(400).json({ error: 'At least one division is required' });
+        }
+        update.divisions = valid;
+      }
+
+      if (update.categories !== undefined) {
+        const raw = update.categories;
+        if (!Array.isArray(raw)) {
+          return corsRes.status(400).json({ error: 'Categories must be an array' });
+        }
+        const next = raw
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+          .filter((x, i, arr) => arr.indexOf(x) === i);
+        const valid = next.filter((x) => x === 'Gold' || x === 'Silver' || x === 'Bronze');
+        // Empty array means "single unnamed category" preset.
+        if (valid.length !== next.length) {
+          return corsRes.status(400).json({ error: 'Invalid category value' });
+        }
+        update.categories = valid;
       }
 
       const prevOrganizers = (cur.organizerIds as string[]) ?? [];

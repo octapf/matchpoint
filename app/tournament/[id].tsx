@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Share, Alert, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type { Gender, User, TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
@@ -119,10 +119,13 @@ function TournamentHeaderTitle({ id }: { id: string | undefined }) {
 const headerTitleStyle = { color: '#e5e5e5', fontSize: 17, fontWeight: '600' } as const;
 
 type TournamentTab = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
+type DivisionTab = TournamentDivision;
+type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
+type MatchSubTab = 'classification' | MatchCategoryTab;
 
 const TAB_CONFIG: {
   id: TournamentTab;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: keyof typeof Ionicons.glyphMap | 'volleyball';
   labelKey:
     | 'tournamentDetail.tabPlayers'
     | 'tournamentDetail.tabTeams'
@@ -134,7 +137,7 @@ const TAB_CONFIG: {
   { id: 'teams', icon: 'shield-outline', labelKey: 'tournamentDetail.tabTeams' },
   { id: 'groups', icon: 'grid-outline', labelKey: 'tournamentDetail.tabGroups' },
   { id: 'waitinglist', icon: 'time-outline', labelKey: 'tournamentDetail.tabWaitingList' },
-  { id: 'fixture', icon: 'calendar-outline', labelKey: 'tournamentDetail.tabFixture' },
+  { id: 'fixture', icon: 'volleyball', labelKey: 'tournamentDetail.tabFixture' },
 ];
 
 export default function TournamentDetailScreen() {
@@ -142,6 +145,8 @@ export default function TournamentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
+  const [activeDivision, setActiveDivision] = useState<DivisionTab>('mixed');
+  const [activeMatchesSubtab, setActiveMatchesSubtab] = useState<MatchSubTab>('classification');
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const storedLanguage = useLanguageStore((s) => s.language);
@@ -163,7 +168,8 @@ export default function TournamentDetailScreen() {
 
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
   const entryUserIds = entries.map((e) => e.userId);
-  const combinedUserIds = [...new Set([...allPlayerIds, ...entryUserIds])];
+  const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
+  const combinedUserIds = [...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds])];
   const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
@@ -461,21 +467,168 @@ export default function TournamentDetailScreen() {
   const waitlistPosition = waitlistInfo?.position ?? null;
   const waitlistCountForStats = waitlistInfo?.count ?? tournament.waitlistCount ?? 0;
   const divisions = ((tournament.divisions ?? []) as TournamentDivision[]).filter(Boolean);
-  const categories = (tournament.categories ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
-  const categoryPresetLabel =
-    categories.length === 0
-      ? t('tournaments.categoryNone')
-      : categories.length === 2 && categories.includes('Gold') && categories.includes('Silver')
-        ? t('tournaments.categoryGoldSilver')
-        : categories.length === 3 && categories.includes('Gold') && categories.includes('Silver') && categories.includes('Bronze')
-          ? t('tournaments.categoryGoldSilverBronze')
-          : categories.join(' · ');
+  const availableDivisions: DivisionTab[] = (divisions.length ? divisions : ['mixed']) as DivisionTab[];
+  const currentDivision: DivisionTab = availableDivisions.includes(activeDivision)
+    ? activeDivision
+    : availableDivisions[0]!;
+  const divisionCount = Math.max(1, availableDivisions.length);
+  const teamsPerDivisionCap = Math.max(2, Math.floor((tournament.maxTeams ?? 16) / divisionCount));
+  const playersPerDivisionCap = maxPlayerSlotsForTournament(teamsPerDivisionCap);
+  const groupsPerDivisionCap = Math.max(1, Math.floor(groupMeta.groupCount / divisionCount));
 
-  const sortedEntries = [...entries].sort((a, b) => {
+  const teamDivisionById: Record<string, DivisionTab> = (() => {
+    const map: Record<string, DivisionTab> = {};
+    for (const team of teams) {
+      const p1 = userMap[team.playerIds?.[0] ?? ''];
+      const p2 = userMap[team.playerIds?.[1] ?? ''];
+      const g1 = p1?.gender;
+      const g2 = p2?.gender;
+      const division: DivisionTab =
+        g1 === 'male' && g2 === 'male'
+          ? 'men'
+          : g1 === 'female' && g2 === 'female'
+            ? 'women'
+            : g1 === 'male' || g2 === 'male'
+              ? 'mixed'
+              : g1 === 'female' || g2 === 'female'
+                ? 'mixed'
+                : 'mixed';
+      map[team._id] = division;
+    }
+    return map;
+  })();
+
+  const filteredTeams = teams.filter((team) => teamDivisionById[team._id] === currentDivision);
+
+  const filteredEntries = entries.filter((entry) => {
+    if (entry.teamId) {
+      return teamDivisionById[entry.teamId] === currentDivision;
+    }
+    const g = userMap[entry.userId]?.gender;
+    if (currentDivision === 'men') return g === 'male';
+    if (currentDivision === 'women') return g === 'female';
+    return false;
+  });
+
+  const sortedEntries = [...filteredEntries].sort((a, b) => {
     const na = getPlayerSortKey(userMap[a.userId]);
     const nb = getPlayerSortKey(userMap[b.userId]);
     return na.localeCompare(nb);
   });
+
+  const divisionTeamsByGroup = (() => {
+    const existingGroups = [...new Set(filteredTeams.map((tm) => teamGroupIndex(tm)))].sort((a, b) => a - b);
+    const fallbackGroups = Array.from({ length: groupsPerDivisionCap }, (_, i) => i);
+    const sourceGroups = existingGroups.length > 0 ? existingGroups : fallbackGroups;
+    const buckets: Team[][] = sourceGroups.map(() => []);
+    const idxByGroup = new Map<number, number>(sourceGroups.map((g, idx) => [g, idx]));
+    for (const team of filteredTeams) {
+      const gi = teamGroupIndex(team);
+      const idx = idxByGroup.get(gi);
+      if (idx != null) buckets[idx]!.push(team);
+    }
+    return buckets;
+  })();
+
+  const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
+  const filteredWaitlist = (waitlistInfo?.users ?? []).filter((row) => {
+    const g = userMap[row.userId]?.gender;
+    if (currentDivision === 'men') return g === 'male' || g == null;
+    if (currentDivision === 'women') return g === 'female' || g == null;
+    return true;
+  });
+  const matchCategoryTabs = (() => {
+    const cats = (tournament.categories ?? []).filter((c): c is MatchCategoryTab =>
+      c === 'Gold' || c === 'Silver' || c === 'Bronze'
+    );
+    return ['classification', ...cats] as MatchSubTab[];
+  })();
+  const selectedMatchesSubtab = matchCategoryTabs.includes(activeMatchesSubtab)
+    ? activeMatchesSubtab
+    : matchCategoryTabs[0]!;
+  const classificationData = (() => {
+    const categoryCount = Math.max(1, matchCategoryTabs.length - 1);
+    const pointsToWin = Math.max(1, Math.min(99, Number(tournament.pointsToWin ?? 21) || 21));
+    const setsPerMatch = Math.max(1, Math.min(7, Number(tournament.setsPerMatch ?? 1) || 1));
+    const setsToWin = Math.floor(setsPerMatch / 2) + 1;
+    const seeded = divisionTeamsByGroup.map((groupTeams) => {
+      const matches: {
+        id: string;
+        teamA: Team;
+        teamB: Team;
+        setsWonA: number;
+        setsWonB: number;
+        scoreA: number;
+        scoreB: number;
+        winnerId: string;
+      }[] = [];
+      const stats: Record<string, { team: Team; wins: number; points: number }> = {};
+      for (const team of groupTeams) {
+        stats[team._id] = { team, wins: 0, points: 0 };
+      }
+      for (let i = 0; i < groupTeams.length; i++) {
+        for (let j = i + 1; j < groupTeams.length; j++) {
+          const teamA = groupTeams[i]!;
+          const teamB = groupTeams[j]!;
+          const seedA = teamA._id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+          const seedB = teamB._id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+          let setsWonA = 0;
+          let setsWonB = 0;
+          let scoreA = 0;
+          let scoreB = 0;
+          for (let setIdx = 0; setIdx < setsPerMatch; setIdx++) {
+            if (setsWonA >= setsToWin || setsWonB >= setsToWin) break;
+            const baseA = (seedA + seedB + i + j + setIdx * 3) % 10;
+            const baseB = (seedA * 3 + seedB + i + j + setIdx * 5) % 10;
+            let setA = Math.max(0, pointsToWin - 3 + baseA);
+            let setB = Math.max(0, pointsToWin - 3 + baseB);
+            if (setA === setB) setA += 1;
+            if (setA > setB) {
+              setsWonA += 1;
+            } else {
+              setsWonB += 1;
+            }
+            scoreA += setA;
+            scoreB += setB;
+          }
+          const winnerId = setsWonA > setsWonB ? teamA._id : teamB._id;
+          stats[teamA._id]!.points += scoreA;
+          stats[teamB._id]!.points += scoreB;
+          stats[winnerId]!.wins += 1;
+          matches.push({
+            id: `${teamA._id}-${teamB._id}`,
+            teamA,
+            teamB,
+            setsWonA,
+            setsWonB,
+            scoreA,
+            scoreB,
+            winnerId,
+          });
+        }
+      }
+      const standings = Object.values(stats).sort(
+        (a, b) =>
+          b.wins - a.wins ||
+          b.points - a.points ||
+          a.team.name.localeCompare(b.team.name)
+      );
+      const categories: Partial<Record<MatchCategoryTab, typeof standings>> = {};
+      if (categoryCount > 0) {
+        const orderedCats = matchCategoryTabs.filter((x): x is MatchCategoryTab => x !== 'classification');
+        let cursor = 0;
+        for (let ci = 0; ci < orderedCats.length; ci++) {
+          const remaining = standings.length - cursor;
+          const slotsLeft = orderedCats.length - ci;
+          const size = Math.ceil(remaining / slotsLeft);
+          categories[orderedCats[ci]!] = standings.slice(cursor, cursor + size);
+          cursor += size;
+        }
+      }
+      return { matches, standings, categories };
+    });
+    return seeded;
+  })();
 
   const mutationBusy =
     deleteEntry.isPending ||
@@ -500,6 +653,10 @@ export default function TournamentDetailScreen() {
               <Text style={styles.dateLocationSep}>·</Text>
               <Text style={styles.date}>{formatTournamentDate(dateLabel) || '—'}</Text>
             </View>
+            <Text style={styles.matchRulesText}>
+              {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}:{' '}
+              {tournament.setsPerMatch ?? 1}
+            </Text>
           </View>
           {canManageTournament ? (
             <View style={styles.headerTopActions}>
@@ -507,90 +664,99 @@ export default function TournamentDetailScreen() {
             </View>
           ) : null}
         </View>
-        <View style={styles.metaPillsRow}>
-          {divisions.includes('men') ? (
-            <View style={styles.metaPill}>
-              <Text style={styles.metaPillText}>{t('tournaments.divisionMen')}</Text>
-            </View>
-          ) : null}
-          {divisions.includes('women') ? (
-            <View style={styles.metaPill}>
-              <Text style={styles.metaPillText}>{t('tournaments.divisionWomen')}</Text>
-            </View>
-          ) : null}
-          {divisions.includes('mixed') ? (
-            <View style={styles.metaPill}>
-              <Text style={styles.metaPillText}>{t('tournaments.divisionMixed')}</Text>
-            </View>
-          ) : null}
-          <View style={[styles.metaPill, styles.metaPillAlt]}>
-            <Text style={[styles.metaPillText, styles.metaPillTextAlt]} numberOfLines={1}>
-              {categoryPresetLabel}
-            </Text>
-          </View>
-        </View>
       </View>
 
-      <View style={styles.tabBar} accessibilityRole="tablist">
-        {TAB_CONFIG.map(({ id: tabId, icon, labelKey }) => {
-          const selected = activeTab === tabId;
-          const tabValue =
-            tabId === 'players'
-              ? `${tournament.entriesCount ?? entries.length}/${playerCap}`
-              : tabId === 'teams'
-                ? `${tournament.teamsCount ?? teams.length}/${tournament.maxTeams ?? 16}`
-                : tabId === 'groups'
-                  ? `${tournament.groupsWithTeamsCount ?? groupsWithTeams}/${groupMeta.groupCount}`
-                  : tabId === 'waitinglist'
-                    ? `${tournament.waitlistCount ?? waitlistCountForStats}`
-                    : '';
+      <View style={styles.tabsSection}>
+        <View style={styles.divisionTabBar} accessibilityRole="tablist">
+          {availableDivisions.map((division) => {
+            const selected = currentDivision === division;
+            const label =
+              division === 'men'
+                ? t('tournaments.divisionMen')
+                : division === 'women'
+                  ? t('tournaments.divisionWomen')
+                  : t('tournaments.divisionMixed');
+            return (
+              <Pressable
+                key={division}
+                style={[styles.divisionTab, selected && styles.divisionTabSelected]}
+                onPress={() => setActiveDivision(division)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.divisionTabLabel, selected && styles.divisionTabLabelSelected]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-          const isWaitingListTab = tabId === 'waitinglist';
-          const tabValueColor = selected
-            ? isWaitingListTab
-              ? Colors.violet
-              : Colors.tabIconSelected
-            : Colors.textMuted;
-          const tabIconColor = selected
-            ? isWaitingListTab
-              ? Colors.violet
-              : Colors.tabIconSelected
-            : Colors.tabIconDefault;
-          const tabLabelColorOverride = selected && isWaitingListTab ? Colors.violet : undefined;
+        <View style={styles.tabBar} accessibilityRole="tablist">
+          {TAB_CONFIG.map(({ id: tabId, icon, labelKey }) => {
+            const selected = activeTab === tabId;
+            const tabValue =
+              tabId === 'players'
+                ? `${filteredEntries.length}/${playersPerDivisionCap}`
+                : tabId === 'teams'
+                  ? `${filteredTeams.length}/${teamsPerDivisionCap}`
+                  : tabId === 'groups'
+                  ? `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
+                    : tabId === 'waitinglist'
+                      ? `${Math.floor((tournament.waitlistCount ?? waitlistCountForStats) / divisionCount)}`
+                      : '';
 
-          return (
-            <Pressable
-              key={tabId}
-              style={[styles.tabItem, selected && styles.tabItemSelected]}
-              onPress={() => setActiveTab(tabId)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-            >
+            const isWaitingListTab = tabId === 'waitinglist';
+            const tabValueColor = selected
+              ? isWaitingListTab
+                ? Colors.violet
+                : Colors.tabIconSelected
+              : Colors.textMuted;
+            const tabIconColor = selected
+              ? isWaitingListTab
+                ? Colors.violet
+                : Colors.tabIconSelected
+              : Colors.tabIconDefault;
+            const tabLabelColorOverride = selected && isWaitingListTab ? Colors.violet : undefined;
+
+            return (
+              <Pressable
+                key={tabId}
+                style={[styles.tabItem, selected && styles.tabItemSelected]}
+                onPress={() => setActiveTab(tabId)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+              >
               {isWaitingListTab ? (
-                <Text style={[styles.waitingListMark, { color: tabIconColor }]}>WL</Text>
-              ) : (
-                <Ionicons
-                  name={icon}
+                  <Text style={[styles.waitingListMark, { color: tabIconColor }]}>WL</Text>
+              ) : tabId === 'fixture' ? (
+                <MaterialCommunityIcons
+                  name="volleyball"
                   size={22}
                   color={tabIconColor}
                 />
-              )}
-              {tabValue ? (
-                <Text style={[styles.tabValue, { color: tabValueColor }]}>{tabValue}</Text>
-              ) : null}
-              <Text
-                style={[
-                  styles.tabLabel,
-                  selected && !tabLabelColorOverride && styles.tabLabelSelected,
-                  tabLabelColorOverride ? { color: tabLabelColorOverride } : undefined,
-                ]}
-                numberOfLines={1}
-              >
-                {t(labelKey)}
-              </Text>
-            </Pressable>
-          );
-        })}
+                ) : (
+                  <Ionicons
+                  name={icon as keyof typeof Ionicons.glyphMap}
+                    size={22}
+                    color={tabIconColor}
+                  />
+                )}
+                {tabValue ? (
+                  <Text style={[styles.tabValue, { color: tabValueColor }]}>{tabValue}</Text>
+                ) : null}
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    selected && !tabLabelColorOverride && styles.tabLabelSelected,
+                    tabLabelColorOverride ? { color: tabLabelColorOverride } : undefined,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t(labelKey)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.tabPanel}>
@@ -694,10 +860,10 @@ export default function TournamentDetailScreen() {
                   <Skeleton height={36} width={80} borderRadius={18} />
                 </View>
               </View>
-            ) : teams.length === 0 ? (
+            ) : filteredTeams.length === 0 ? (
               <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
             ) : (
-              teams.map((team) => (
+              filteredTeams.map((team) => (
                 <TeamCard
                   key={team._id}
                   team={team}
@@ -723,7 +889,7 @@ export default function TournamentDetailScreen() {
                 <Skeleton height={36} width={80} borderRadius={18} />
               </View>
             </View>
-          ) : teams.length === 0 ? (
+          ) : filteredTeams.length === 0 ? (
             <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
           ) : (
             <>
@@ -764,7 +930,7 @@ export default function TournamentDetailScreen() {
                   />
                 </View>
               ) : null}
-              {teamsByGroup.map((groupTeams, gi) => (
+              {divisionTeamsByGroup.map((groupTeams, gi) => (
                 <View key={`g-${gi}`} style={styles.groupBlock}>
                   <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
                   {groupTeams.length === 0 ? (
@@ -790,16 +956,105 @@ export default function TournamentDetailScreen() {
         ) : null}
 
         {activeTab === 'waitinglist' ? (
-          <View style={styles.fixturePlaceholder}>
-            <Ionicons name="time-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={styles.fixturePlaceholderText}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>
-          </View>
+          filteredWaitlist.length === 0 ? (
+            <Text style={styles.emptyText}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>
+          ) : (
+            filteredWaitlist.map((row, idx) => {
+              const u = userMap[row.userId];
+              const playerName = getPlayerListName(u) || t('common.player');
+              return (
+                <View key={`${row.userId}-${idx}`} style={styles.playerRow}>
+                  <Pressable
+                    style={styles.playerRowMain}
+                    onPress={() => router.push(`/profile/${row.userId}` as never)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.viewProfile')}
+                  >
+                    <Avatar
+                      firstName={u?.firstName ?? ''}
+                      lastName={u?.lastName ?? ''}
+                      gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
+                      size="sm"
+                    />
+                    <View style={styles.playerRowText}>
+                      <Text style={styles.playerRowName}>{playerName}</Text>
+                      <Text style={styles.waitlistRankText}>{t('tournaments.waitlistYouAre', { n: idx + 1 })}</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              );
+            })
+          )
         ) : null}
 
         {activeTab === 'fixture' ? (
-          <View style={styles.fixturePlaceholder}>
-            <Ionicons name="calendar-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={styles.fixturePlaceholderText}>{t('tournamentDetail.fixturePlaceholder')}</Text>
+          <View>
+            <View style={styles.matchesSubtabBar}>
+              {matchCategoryTabs.map((tab) => {
+                const selected = selectedMatchesSubtab === tab;
+                const label =
+                  tab === 'classification'
+                    ? t('tournamentDetail.matchesClassification')
+                    : tab === 'Gold'
+                      ? t('tournaments.categoryGold')
+                      : tab === 'Silver'
+                        ? t('tournaments.categorySilver')
+                        : t('tournaments.categoryBronze');
+                return (
+                  <Pressable
+                    key={tab}
+                    style={[styles.matchesSubtabItem, selected && styles.matchesSubtabItemSelected]}
+                    onPress={() => setActiveMatchesSubtab(tab)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.matchesSubtabLabel, selected && styles.matchesSubtabLabelSelected]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {selectedMatchesSubtab === 'classification' ? (
+              classificationData.length === 0 ? (
+                <Text style={styles.emptyText}>{t('tournamentDetail.fixturePlaceholder')}</Text>
+              ) : (
+                classificationData.map((groupData, gi) => (
+                  <View key={`class-group-${gi}`} style={styles.groupBlock}>
+                    <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
+                    {groupData.matches.map((m) => (
+                      <View key={m.id} style={styles.matchRow}>
+                        <Text style={[styles.matchTeamName, m.winnerId === m.teamA._id && styles.matchWinner]}>
+                          {m.teamA.name}
+                        </Text>
+                        <Text style={styles.matchScore}>{m.setsWonA} - {m.setsWonB}</Text>
+                        <Text style={[styles.matchTeamName, m.winnerId === m.teamB._id && styles.matchWinner]}>
+                          {m.teamB.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ))
+              )
+            ) : (
+              classificationData.map((groupData, gi) => {
+                const categoryRows = groupData.categories[selectedMatchesSubtab as MatchCategoryTab] ?? [];
+                return (
+                  <View key={`cat-group-${selectedMatchesSubtab}-${gi}`} style={styles.groupBlock}>
+                    <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
+                    {categoryRows.length === 0 ? (
+                      <Text style={styles.emptyGroup}>{t('tournamentDetail.noTeamsInGroup')}</Text>
+                    ) : (
+                      categoryRows.map((row, idx) => (
+                        <View key={`${row.team._id}-${idx}`} style={styles.matchStandingRow}>
+                          <Text style={styles.matchStandingRank}>#{idx + 1}</Text>
+                          <Text style={styles.matchStandingTeam}>{row.team.name}</Text>
+                          <Text style={styles.matchStandingMeta}>{row.wins}W · {row.points}pts</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                );
+              })
+            )}
           </View>
         ) : null}
       </View>
@@ -890,18 +1145,44 @@ const styles = StyleSheet.create({
   headerTopRowEnd: { justifyContent: 'flex-end' },
   headerTopActions: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
   dateLocationLeft: { flex: 1, minWidth: 0 },
-  metaPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  metaPill: {
-    paddingVertical: 6,
+  tabsSection: { marginBottom: 16, overflow: 'visible' },
+  divisionTabBar: {
+    flexDirection: 'row',
+    gap: 8,
+    position: 'relative',
+    zIndex: 3,
+    marginBottom: -2,
+    paddingHorizontal: 6,
+  },
+  divisionTab: {
+    flex: 1,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 999,
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  divisionTabSelected: {
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    borderBottomColor: Colors.surface,
+    zIndex: 4,
+    transform: [{ translateY: -1 }],
   },
-  metaPillText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  metaPillAlt: { borderColor: Colors.violetOutline, backgroundColor: Colors.violetMuted },
-  metaPillTextAlt: { color: Colors.violet },
+  divisionTabLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    color: Colors.textMuted,
+  },
+  divisionTabLabelSelected: { color: Colors.violet },
   cancelledBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -930,17 +1211,25 @@ const styles = StyleSheet.create({
   date: { fontSize: 16, color: Colors.textSecondary, flexShrink: 0 },
   dateLocationSep: { fontSize: 16, color: Colors.textSecondary, lineHeight: 22 },
   location: { fontSize: 16, color: Colors.textSecondary, flex: 1, minWidth: 0 },
+  matchRulesText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
   statsBlock: { marginTop: 4 },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    paddingTop: 10,
+    paddingBottom: 6,
+    paddingHorizontal: 4,
+    marginBottom: 0,
     gap: 4,
+    zIndex: 2,
   },
   tabItem: {
     flex: 1,
@@ -992,6 +1281,83 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  matchesSubtabBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  matchesSubtabItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  matchesSubtabItemSelected: {
+    backgroundColor: Colors.violetMuted,
+    borderColor: Colors.violetOutline,
+  },
+  matchesSubtabLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  matchesSubtabLabelSelected: {
+    color: Colors.violet,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  matchTeamName: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  matchWinner: {
+    color: Colors.yellow,
+    fontWeight: '700',
+  },
+  matchScore: {
+    fontSize: 13,
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  matchStandingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  matchStandingRank: {
+    width: 28,
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '700',
+  },
+  matchStandingTeam: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  matchStandingMeta: {
+    fontSize: 12,
+    color: Colors.textMuted,
   },
   groupBlock: { marginBottom: 8 },
   groupHeading: {
@@ -1074,6 +1440,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.yellow,
     fontWeight: '600',
+    marginTop: 2,
+  },
+  waitlistRankText: {
+    fontSize: 12,
+    color: Colors.textMuted,
     marginTop: 2,
   },
 });

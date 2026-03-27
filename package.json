@@ -12,8 +12,11 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck",
     "seed:dev": "tsx scripts/seed-dev-tournament.ts",
+    "seed:dev:generate": "tsx scripts/seed-dev-tournament.ts",
     "seed:dev:force": "tsx scripts/seed-dev-tournament.ts --force",
+    "seed:dev:refresh": "tsx scripts/seed-dev-tournament.ts --force",
     "seed:dev:purge": "tsx scripts/seed-dev-tournament.ts --purge",
+    "seed:dev:reset": "npm run seed:dev:purge && npm run seed:dev:refresh",
     "export:web": "npx expo export -p web && node scripts/verify-web-og.js"
   },
   "dependencies": {

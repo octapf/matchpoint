@@ -46,6 +46,8 @@ export default function CreateTournamentScreen() {
   const [endDate, setEndDate] = useState<string>('');
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
+  const [pointsToWin, setPointsToWin] = useState('21');
+  const [setsPerMatch, setSetsPerMatch] = useState('1');
   const [groupCount, setGroupCount] = useState('4');
   const [description, setDescription] = useState('');
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
@@ -88,6 +90,8 @@ export default function CreateTournamentScreen() {
       return;
     }
     const gc = normalizeGroupCount(parseInt(groupCount, 10) || 4);
+    const p2w = parseInt(pointsToWin, 10) || 21;
+    const spm = parseInt(setsPerMatch, 10) || 1;
     const vg = validateTournamentGroups(max, gc);
     if (!vg.ok) {
       Alert.alert(t('common.error'), t('tournaments.invalidGroups'));
@@ -95,6 +99,14 @@ export default function CreateTournamentScreen() {
     }
     if (!userId) {
       Alert.alert(t('common.error'), t('tournaments.mustBeSignedIn'));
+      return;
+    }
+    if (p2w < 1 || p2w > 99) {
+      Alert.alert(t('common.error'), t('tournaments.invalidPointsToWin'));
+      return;
+    }
+    if (spm < 1 || spm > 7) {
+      Alert.alert(t('common.error'), t('tournaments.invalidSetsPerMatch'));
       return;
     }
 
@@ -110,6 +122,8 @@ export default function CreateTournamentScreen() {
         divisions,
         categories,
         maxTeams: max,
+        pointsToWin: p2w,
+        setsPerMatch: spm,
         description: description.trim() || undefined,
         inviteLink: inviteToken,
         organizerIds: [userId],
@@ -290,6 +304,37 @@ export default function CreateTournamentScreen() {
         />
       </View>
 
+      <View style={styles.dateRow}>
+        <View style={styles.dateFieldHalf}>
+          <Text style={styles.label}>
+            {t('tournaments.pointsToWin')}
+            {t('common.requiredSuffix')}
+          </Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="number-pad"
+            value={pointsToWin}
+            onChangeText={setPointsToWin}
+            placeholder={t('tournaments.pointsToWinPlaceholder')}
+            placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+        <View style={styles.dateFieldHalf}>
+          <Text style={styles.label}>
+            {t('tournaments.setsPerMatch')}
+            {t('common.requiredSuffix')}
+          </Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="number-pad"
+            value={setsPerMatch}
+            onChangeText={setSetsPerMatch}
+            placeholder={t('tournaments.setsPerMatchPlaceholder')}
+            placeholderTextColor={Colors.textMuted}
+          />
+        </View>
+      </View>
+
       <Button
         title={t('common.create')}
         onPress={handleCreate}
@@ -331,11 +376,17 @@ const styles = StyleSheet.create({
   },
   chipFlex: { flex: 1, minWidth: 0 },
   chipSelected: {
-    borderColor: Colors.yellow,
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderColor: Colors.violet,
+    backgroundColor: Colors.violetMuted,
   },
-  chipText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  chipTextSelected: { color: Colors.yellow },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+  },
+  chipTextSelected: { color: Colors.violet },
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },

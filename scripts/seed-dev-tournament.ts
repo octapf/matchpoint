@@ -1,10 +1,21 @@
 /**
  * CLI: same data as Admin → Dev seed and POST /api/admin (action devSeed).
+ * Seeded tournament defaults:
+ * - divisions: men/women/mixed
+ * - categories: Gold/Silver/Bronze
+ * - pointsToWin: 21
+ * - setsPerMatch: 1
  * Requires MONGODB_URI in .env
  *
  *   npx tsx scripts/seed-dev-tournament.ts
  *   npx tsx scripts/seed-dev-tournament.ts --force
  *   npx tsx scripts/seed-dev-tournament.ts --purge   # remove dev tournament + all seed users
+ *
+ * Package aliases used by admins/devs:
+ *   npm run seed:dev:generate
+ *   npm run seed:dev:refresh
+ *   npm run seed:dev:purge
+ *   npm run seed:dev:reset
  */
 import 'dotenv/config';
 import { MongoClient } from 'mongodb';

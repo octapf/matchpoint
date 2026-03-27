@@ -172,13 +172,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { name, date, startDate, endDate, location, description, maxTeams, groupCount: rawGroups, inviteLink, organizerIds } = body;
+      const {
+        name,
+        date,
+        startDate,
+        endDate,
+        location,
+        description,
+        divisions: rawDivisions,
+        categories: rawCategories,
+        maxTeams,
+        pointsToWin: rawPointsToWin,
+        setsPerMatch: rawSetsPerMatch,
+        groupCount: rawGroups,
+        inviteLink,
+        organizerIds,
+      } = body;
       const sDate = startDate || date;
       const eDate = endDate || date || sDate;
       if (!name || !sDate || !location || !maxTeams || !inviteLink || !organizerIds?.length) {
         return corsRes.status(400).json({ error: 'Missing required fields' });
       }
       const mt = Number(maxTeams);
+      const pointsToWin = Number(rawPointsToWin ?? 21);
+      const setsPerMatch = Number(rawSetsPerMatch ?? 1);
       const gc = normalizeGroupCount(rawGroups);
       const vg = validateTournamentGroups(mt, gc);
       if (!vg.ok) {
@@ -199,6 +216,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (eDate < sDate) {
         return corsRes.status(400).json({ error: 'End date must be on or after start date' });
       }
+      if (!Number.isFinite(pointsToWin) || pointsToWin < 1 || pointsToWin > 99) {
+        return corsRes.status(400).json({ error: 'Points to win must be between 1 and 99' });
+      }
+      if (!Number.isFinite(setsPerMatch) || setsPerMatch < 1 || setsPerMatch > 7) {
+        return corsRes.status(400).json({ error: 'Sets per match must be between 1 and 7' });
+      }
+
+      const divisions = Array.isArray(rawDivisions)
+        ? rawDivisions
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .filter(Boolean)
+            .filter((x, i, arr) => arr.indexOf(x) === i)
+            .filter((x) => x === 'men' || x === 'women' || x === 'mixed')
+        : [];
+      if (divisions.length === 0) {
+        return corsRes.status(400).json({ error: 'At least one division is required' });
+      }
+
+      const categories = Array.isArray(rawCategories)
+        ? rawCategories
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .filter(Boolean)
+            .filter((x, i, arr) => arr.indexOf(x) === i)
+        : [];
+      const validCategories = categories.filter((x) => x === 'Gold' || x === 'Silver' || x === 'Bronze');
+      // Empty array means "single unnamed category" preset.
+      if (validCategories.length !== categories.length) {
+        return corsRes.status(400).json({ error: 'Invalid category value' });
+      }
       const now = new Date().toISOString();
       const doc = {
         name,
@@ -207,7 +253,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         endDate: eDate,
         location,
         description: description || '',
+        divisions,
+        categories: validCategories,
         maxTeams: mt,
+        pointsToWin: Math.floor(pointsToWin),
+        setsPerMatch: Math.floor(setsPerMatch),
         groupCount: vg.groupCount,
         inviteLink,
         status: 'open',

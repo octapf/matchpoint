@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   },
   noUserOuter: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
   },
   centered: {
     flex: 1,
@@ -189,7 +189,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   content: {
-    padding: 24,
+    paddingHorizontal: 16,
+    paddingTop: 24,
     paddingBottom: 48,
   },
   avatarSection: {

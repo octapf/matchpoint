@@ -35,6 +35,15 @@ function formatWindSpeedValue(kmh: number): string {
   return r % 1 === 0 ? String(r) : r.toFixed(1);
 }
 
+function splitAcrossDivisions(total: number, parts: number, index: number) {
+  const safeParts = Math.max(1, parts);
+  const base = Math.floor(total / safeParts);
+  const remainder = total % safeParts;
+  return base + (index < remainder ? 1 : 0);
+}
+
+const BRONZE = '#cd7f32';
+
 function WeatherGlyph({
   skyKey,
   isDay,
@@ -82,10 +91,11 @@ export default function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      void refetchTournaments();
       if (!usedDeviceLocation) {
         void refreshLocation();
       }
-    }, [usedDeviceLocation, refreshLocation])
+    }, [usedDeviceLocation, refreshLocation, refetchTournaments])
   );
 
   const dateLabel = useMemo(() => {
@@ -235,10 +245,16 @@ export default function FeedScreen() {
         ) : (
           (tournaments as Tournament[]).map((tournament) => {
             const dateLabel = tournament.date || tournament.startDate;
-            const maxP = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
-            const current = tournament.entriesCount ?? 0;
             const totalGroups = normalizeGroupCount(tournament.groupCount);
             const isCancelled = tournament.status === 'cancelled';
+            const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
+            const divisionCount = Math.max(1, divisions.length);
+            const totalTeams = tournament.maxTeams ?? 16;
+            const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
+            const currentPlayers = tournament.entriesCount ?? 0;
+            const currentTeams = tournament.teamsCount ?? 0;
+            const currentGroups = tournament.groupsWithTeamsCount ?? 0;
+            const waitlistCount = tournament.waitlistCount ?? 0;
             return (
               <Pressable
                 key={tournament._id}
@@ -255,14 +271,23 @@ export default function FeedScreen() {
                 <Text style={styles.tournamentMeta}>
                   {formatTournamentDate(dateLabel) || '—'} · {tournament.location?.trim() || '—'}
                 </Text>
-                <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
-                  {[
-                    ...[
-                      ...(tournament.divisions?.includes('men') ? [t('tournaments.divisionMen')] : []),
-                      ...(tournament.divisions?.includes('women') ? [t('tournaments.divisionWomen')] : []),
-                      ...(tournament.divisions?.includes('mixed') ? [t('tournaments.divisionMixed')] : []),
-                    ],
-                    tournament.categories?.length
+                <View style={styles.categoryRow}>
+                  <View style={styles.categoryMedals}>
+                    {tournament.categories?.includes('Gold') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                    ) : null}
+                    {tournament.categories?.includes('Silver') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.textSecondary} />
+                    ) : null}
+                    {tournament.categories?.includes('Bronze') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={BRONZE} />
+                    ) : null}
+                    {!tournament.categories?.length ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                    ) : null}
+                  </View>
+                  <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
+                    {tournament.categories?.length
                       ? tournament.categories.length === 2 &&
                         tournament.categories.includes('Gold') &&
                         tournament.categories.includes('Silver')
@@ -273,22 +298,40 @@ export default function FeedScreen() {
                             tournament.categories.includes('Bronze')
                           ? t('tournaments.categoryGoldSilverBronze')
                           : tournament.categories.join(' · ')
-                      : t('tournaments.categoryNone'),
-                  ].join(' · ')}
+                      : t('tournaments.categoryNone')}
+                  </Text>
+                </View>
+                <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
+                  {`${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`}
                 </Text>
                 <View style={styles.tournamentStatsWrap}>
-                  <TournamentStatsBlock
-                    compact
-                    horizontal
-                    muted={isCancelled}
-                    currentPlayers={current}
-                    totalPlayers={maxP}
-                    currentTeams={tournament.teamsCount ?? 0}
-                    totalTeams={tournament.maxTeams ?? 16}
-                    currentGroups={tournament.groupsWithTeamsCount ?? 0}
-                    totalGroups={totalGroups}
-                    waitlistCount={tournament.waitlistCount ?? 0}
-                  />
+                  {divisions.map((division, idx) => {
+                    const divisionLabel =
+                      division === 'men'
+                        ? t('tournaments.divisionMen')
+                        : division === 'women'
+                          ? t('tournaments.divisionWomen')
+                          : t('tournaments.divisionMixed');
+                    return (
+                      <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
+                        <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
+                          {divisionLabel}
+                        </Text>
+                        <TournamentStatsBlock
+                          compact
+                          horizontal
+                          muted={isCancelled}
+                          currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
+                          totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
+                          currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
+                          totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
+                          currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
+                          totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
+                          waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
+                        />
+                      </View>
+                    );
+                  })}
                 </View>
                 {isCancelled ? (
                   <Text style={styles.tournamentCancelledHint}>{t('tournaments.cancelledListHint')}</Text>
@@ -318,7 +361,7 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 16, paddingBottom: 40 },
   weatherMetaBlock: {
     marginBottom: 12,
   },
@@ -469,8 +512,34 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginBottom: 8,
   },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  categoryMedals: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 18,
+  },
   tournamentStatsWrap: {
     marginBottom: 4,
+    gap: 8,
+  },
+  divisionStatsSection: {
+    gap: 4,
+  },
+  divisionStatsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.violet,
+    textTransform: 'uppercase',
+    fontStyle: 'italic',
+  },
+  divisionStatsTitleMuted: {
+    color: Colors.textSecondary,
   },
   tournamentCancelledHint: {
     fontSize: 12,

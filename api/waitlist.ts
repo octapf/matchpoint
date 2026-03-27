@@ -27,15 +27,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !ObjectId.isValid(tournamentId)) {
         return corsRes.status(400).json({ error: 'Invalid or missing tournamentId' });
       }
-      const count = await col.countDocuments({ tournamentId });
+      const oid = new ObjectId(tournamentId);
+      const tournamentFilter = { tournamentId: { $in: [tournamentId, oid] } };
+      const rows = await col.find(tournamentFilter).sort({ createdAt: 1 }).toArray();
+      const count = rows.length;
+      const users = rows.map((r) => ({
+        userId: String((r as { userId?: unknown }).userId ?? ''),
+        createdAt: String((r as { createdAt?: unknown }).createdAt ?? ''),
+      }));
       const sessionUserId = getSessionUserId(req);
       let position: number | null = null;
       if (sessionUserId) {
-        const rows = await col.find({ tournamentId }).sort({ createdAt: 1 }).toArray();
         const idx = rows.findIndex((r) => (r as { userId?: string }).userId === sessionUserId);
         position = idx >= 0 ? idx + 1 : null;
       }
-      return corsRes.status(200).json({ count, position });
+      return corsRes.status(200).json({ count, position, users });
     }
 
     if (req.method === 'POST') {

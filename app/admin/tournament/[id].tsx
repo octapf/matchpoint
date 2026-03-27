@@ -65,12 +65,16 @@ function formFieldsMatchServer(
   endDate: string,
   location: string,
   maxTeamsStr: string,
+  pointsToWinStr: string,
+  setsPerMatchStr: string,
   groupCountStr: string,
   description: string,
   divisions: TournamentDivision[],
   categoryPreset: CategoryPreset,
 ): boolean {
   const max = parseInt(maxTeamsStr, 10) || 16;
+  const p2w = parseInt(pointsToWinStr, 10) || 21;
+  const spm = parseInt(setsPerMatchStr, 10) || 1;
   const gc = normalizeGroupCount(parseInt(groupCountStr, 10) || 4);
   const sd = t.startDate || t.date || '';
   const ed = t.endDate || sd;
@@ -84,6 +88,8 @@ function formFieldsMatchServer(
     ed === end &&
     (t.location ?? '') === location.trim() &&
     (t.maxTeams ?? 16) === max &&
+    (t.pointsToWin ?? 21) === p2w &&
+    (t.setsPerMatch ?? 1) === spm &&
     (t.groupCount ?? 4) === gc &&
     (t.description ?? '') === description.trim() &&
     sameStringSet(serverDivisions, divisions) &&
@@ -98,6 +104,8 @@ function serverMatchesForm(
   endDate: string,
   location: string,
   maxTeamsStr: string,
+  pointsToWinStr: string,
+  setsPerMatchStr: string,
   groupCountStr: string,
   description: string,
   divisions: TournamentDivision[],
@@ -105,7 +113,20 @@ function serverMatchesForm(
   cancelledLocal: boolean,
 ): boolean {
   return (
-    formFieldsMatchServer(t, name, startDate, endDate, location, maxTeamsStr, groupCountStr, description, divisions, categoryPreset) &&
+    formFieldsMatchServer(
+      t,
+      name,
+      startDate,
+      endDate,
+      location,
+      maxTeamsStr,
+      pointsToWinStr,
+      setsPerMatchStr,
+      groupCountStr,
+      description,
+      divisions,
+      categoryPreset
+    ) &&
     (t.status === 'cancelled') === cancelledLocal
   );
 }
@@ -124,6 +145,8 @@ export default function AdminEditTournamentScreen() {
   const [endDate, setEndDate] = useState('');
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
+  const [pointsToWin, setPointsToWin] = useState('21');
+  const [setsPerMatch, setSetsPerMatch] = useState('1');
   const [groupCount, setGroupCount] = useState('4');
   const [description, setDescription] = useState('');
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
@@ -142,6 +165,8 @@ export default function AdminEditTournamentScreen() {
     setEndDate(tournament.endDate || sd);
     setLocation(tournament.location ?? '');
     setMaxTeams(String(tournament.maxTeams ?? 16));
+    setPointsToWin(String(tournament.pointsToWin ?? 21));
+    setSetsPerMatch(String(tournament.setsPerMatch ?? 1));
     setGroupCount(String(tournament.groupCount ?? 4));
     setDescription(tournament.description ?? '');
     setDivisions(((tournament.divisions ?? ['mixed']) as TournamentDivision[]).filter(Boolean));
@@ -173,6 +198,8 @@ export default function AdminEditTournamentScreen() {
           endDate,
           location,
           maxTeams,
+          pointsToWin,
+          setsPerMatch,
           groupCount,
           description,
           divisions,
@@ -202,7 +229,11 @@ export default function AdminEditTournamentScreen() {
       const end = endDate || startDate;
       if (end < startDate) return;
       const max = parseInt(maxTeams, 10) || 16;
+      const p2w = parseInt(pointsToWin, 10) || 21;
+      const spm = parseInt(setsPerMatch, 10) || 1;
       if (max < 2 || max > 64) return;
+      if (p2w < 1 || p2w > 99) return;
+      if (spm < 1 || spm > 7) return;
       const gc = normalizeGroupCount(parseInt(groupCount, 10) || 4);
       const vg = validateTournamentGroups(max, gc);
       if (!vg.ok) return;
@@ -215,6 +246,8 @@ export default function AdminEditTournamentScreen() {
           endDate,
           location,
           maxTeams,
+          pointsToWin,
+          setsPerMatch,
           groupCount,
           description,
           divisions,
@@ -236,6 +269,8 @@ export default function AdminEditTournamentScreen() {
         divisions,
         categories,
         maxTeams: max,
+        pointsToWin: p2w,
+        setsPerMatch: spm,
         groupCount: vg.groupCount,
         description: description.trim() || undefined,
       };
@@ -264,6 +299,8 @@ export default function AdminEditTournamentScreen() {
       endDate,
       location,
       maxTeams,
+      pointsToWin,
+      setsPerMatch,
       groupCount,
       description,
       divisions,
@@ -409,7 +446,8 @@ export default function AdminEditTournamentScreen() {
                       }
                       return [...prev, opt.id];
                     });
-                    scheduleSave();
+                    // Divisions/categories must persist immediately (otherwise query rehydrate looks like "revert").
+                    setTimeout(() => flushSave(), 0);
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}
@@ -440,7 +478,7 @@ export default function AdminEditTournamentScreen() {
                   style={[styles.chip, styles.chipFlex, selected && styles.chipSelected]}
                   onPress={() => {
                     setCategoryPreset(opt.id);
-                    scheduleSave();
+                    setTimeout(() => flushSave(), 0);
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}
@@ -530,6 +568,45 @@ export default function AdminEditTournamentScreen() {
           />
         </View>
 
+        <View style={styles.dateRow}>
+          <View style={styles.dateFieldHalf}>
+            <Text style={styles.label}>
+              {t('tournaments.pointsToWin')}
+              {t('common.requiredSuffix')}
+            </Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              value={pointsToWin}
+              onChangeText={(v) => {
+                setPointsToWin(v);
+                scheduleSave();
+              }}
+              onBlur={flushSave}
+              placeholder={t('tournaments.pointsToWinPlaceholder')}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+          <View style={styles.dateFieldHalf}>
+            <Text style={styles.label}>
+              {t('tournaments.setsPerMatch')}
+              {t('common.requiredSuffix')}
+            </Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              value={setsPerMatch}
+              onChangeText={(v) => {
+                setSetsPerMatch(v);
+                scheduleSave();
+              }}
+              onBlur={flushSave}
+              placeholder={t('tournaments.setsPerMatchPlaceholder')}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+        </View>
+
         <View style={styles.switchRow}>
           <View style={styles.switchRowText}>
             <Text style={styles.label}>{t('admin.cancelledSwitchLabel')}</Text>
@@ -594,11 +671,17 @@ const styles = StyleSheet.create({
   },
   chipFlex: { flex: 1, minWidth: 0 },
   chipSelected: {
-    borderColor: Colors.yellow,
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderColor: Colors.violet,
+    backgroundColor: Colors.violetMuted,
   },
-  chipText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  chipTextSelected: { color: Colors.yellow },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+  },
+  chipTextSelected: { color: Colors.violet },
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },

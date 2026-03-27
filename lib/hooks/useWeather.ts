@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { config } from '@/lib/config';
 import { tryGetDeviceLatLon } from '@/lib/weather/deviceLocation';
 import { fetchWeather, type LatLon } from '@/lib/weather/openMeteo';
 import { fetchLocationAreaName } from '@/lib/weather/reverseGeocode';
 import { useLanguageStore } from '@/store/useLanguageStore';
+
+const WEATHER_REFRESH_MS = 30 * 60 * 1000;
 
 export function useWeather() {
   const language = useLanguageStore((s) => s.language ?? 'en');
@@ -43,12 +45,25 @@ export function useWeather() {
   const query = useQuery({
     queryKey: ['weather', 'forecast', coords.lat, coords.lon],
     queryFn: () => fetchWeather(coords),
-    staleTime: 10 * 60 * 1000,
+    staleTime: WEATHER_REFRESH_MS,
+    refetchInterval: WEATHER_REFRESH_MS,
     retry: 1,
   });
 
+  const lastManualRefetchAt = useRef<number>(0);
+  const refetch = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastManualRefetchAt.current < WEATHER_REFRESH_MS) {
+      return query.data;
+    }
+    lastManualRefetchAt.current = now;
+    const res = await query.refetch();
+    return res.data;
+  }, [query]);
+
   return {
     ...query,
+    refetch,
     usedDeviceLocation,
     refreshLocation,
     locationAreaName,

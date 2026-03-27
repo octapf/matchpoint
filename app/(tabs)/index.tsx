@@ -1,9 +1,10 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
@@ -17,12 +18,49 @@ import i18n from '@/lib/i18n';
 import type { Tournament } from '@/types';
 import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
 
+function splitAcrossDivisions(total: number, parts: number, index: number) {
+  const safeParts = Math.max(1, parts);
+  const base = Math.floor(total / safeParts);
+  const remainder = total % safeParts;
+  return base + (index < remainder ? 1 : 0);
+}
+
+const BRONZE = '#cd7f32';
+
 export default function TournamentsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const storedLanguage = useLanguageStore((s) => s.language);
   const insets = useSafeAreaInsets();
   const { data: tournaments = [], isLoading, isError, error, refetch, isFetching } = useTournaments();
+
+  const shineX = useRef(new Animated.Value(-1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(8000),
+        Animated.timing(shineX, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shineX, {
+          toValue: -1,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shineX]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch])
+  );
 
   const shareTournament = useCallback(
     (tournament: Tournament) => {
@@ -100,11 +138,17 @@ export default function TournamentsScreen() {
           <>
         {(tournaments as Tournament[]).map((tournament) => {
           const dateLabel = tournament.date || tournament.startDate;
-          const maxP = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
-          const current = tournament.entriesCount ?? 0;
           const totalGroups = normalizeGroupCount(tournament.groupCount);
           const hasInvite = !!tournament.inviteLink;
           const isCancelled = tournament.status === 'cancelled';
+          const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
+          const divisionCount = Math.max(1, divisions.length);
+          const totalTeams = tournament.maxTeams ?? 16;
+          const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
+          const currentPlayers = tournament.entriesCount ?? 0;
+          const currentTeams = tournament.teamsCount ?? 0;
+          const currentGroups = tournament.groupsWithTeamsCount ?? 0;
+          const waitlistCount = tournament.waitlistCount ?? 0;
           return (
             <View
               key={tournament._id}
@@ -128,14 +172,23 @@ export default function TournamentsScreen() {
                   {formatTournamentDate(dateLabel) || '—'}
                 </Text>
                 <Text style={styles.cardLocation}>{tournament.location?.trim() || '—'}</Text>
-                <Text style={styles.cardMetaSecondary} numberOfLines={1}>
-                  {[
-                    ...[
-                      ...(tournament.divisions?.includes('men') ? [t('tournaments.divisionMen')] : []),
-                      ...(tournament.divisions?.includes('women') ? [t('tournaments.divisionWomen')] : []),
-                      ...(tournament.divisions?.includes('mixed') ? [t('tournaments.divisionMixed')] : []),
-                    ],
-                    tournament.categories?.length
+                <View style={styles.categoryRow}>
+                  <View style={styles.categoryMedals}>
+                    {tournament.categories?.includes('Gold') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                    ) : null}
+                    {tournament.categories?.includes('Silver') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.textSecondary} />
+                    ) : null}
+                    {tournament.categories?.includes('Bronze') ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={BRONZE} />
+                    ) : null}
+                    {!tournament.categories?.length ? (
+                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                    ) : null}
+                  </View>
+                  <Text style={styles.cardMetaSecondary} numberOfLines={1}>
+                    {tournament.categories?.length
                       ? tournament.categories.length === 2 &&
                         tournament.categories.includes('Gold') &&
                         tournament.categories.includes('Silver')
@@ -146,22 +199,40 @@ export default function TournamentsScreen() {
                             tournament.categories.includes('Bronze')
                           ? t('tournaments.categoryGoldSilverBronze')
                           : tournament.categories.join(' · ')
-                      : t('tournaments.categoryNone'),
-                  ].join(' · ')}
+                      : t('tournaments.categoryNone')}
+                  </Text>
+                </View>
+                <Text style={styles.cardMetaSecondary} numberOfLines={1}>
+                  {`${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`}
                 </Text>
                 <View style={styles.cardStats}>
-                  <TournamentStatsBlock
-                    compact
-                    horizontal
-                    muted={isCancelled}
-                    currentPlayers={current}
-                    totalPlayers={maxP}
-                    currentTeams={tournament.teamsCount ?? 0}
-                    totalTeams={tournament.maxTeams ?? 16}
-                    currentGroups={tournament.groupsWithTeamsCount ?? 0}
-                    totalGroups={totalGroups}
-                    waitlistCount={tournament.waitlistCount ?? 0}
-                  />
+                  {divisions.map((division, idx) => {
+                    const divisionLabel =
+                      division === 'men'
+                        ? t('tournaments.divisionMen')
+                        : division === 'women'
+                          ? t('tournaments.divisionWomen')
+                          : t('tournaments.divisionMixed');
+                    return (
+                      <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
+                        <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
+                          {divisionLabel}
+                        </Text>
+                        <TournamentStatsBlock
+                          compact
+                          horizontal
+                          muted={isCancelled}
+                          currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
+                          totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
+                          currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
+                          totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
+                          currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
+                          totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
+                          waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
+                        />
+                      </View>
+                    );
+                  })}
                 </View>
                 {isCancelled ? (
                   <Text style={styles.cardCancelledSub}>{t('tournaments.cancelledListHint')}</Text>
@@ -186,6 +257,30 @@ export default function TournamentsScreen() {
       </ScrollView>
       <Pressable style={styles.fab} onPress={() => router.push('/tournament/create')}>
         <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
+        <View style={styles.fabShineClip} pointerEvents="none">
+          <Animated.View
+            style={[
+              styles.fabShine,
+              {
+                transform: [
+                  {
+                    translateX: shineX.interpolate({
+                      inputRange: [-1, 1],
+                      outputRange: [-140, 140],
+                    }),
+                  },
+                  {
+                    translateY: shineX.interpolate({
+                      inputRange: [-1, 1],
+                      outputRange: [18, -18],
+                    }),
+                  },
+                  { rotate: '-18deg' },
+                ],
+              },
+            ]}
+          />
+        </View>
       </Pressable>
     </View>
   );
@@ -260,8 +355,34 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginBottom: 8,
   },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  categoryMedals: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 18,
+  },
   cardStats: {
     marginBottom: 4,
+    gap: 8,
+  },
+  divisionStatsSection: {
+    gap: 4,
+  },
+  divisionStatsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.violet,
+    textTransform: 'uppercase',
+    fontStyle: 'italic',
+  },
+  divisionStatsTitleMuted: {
+    color: Colors.textSecondary,
   },
   cardCancelledSub: {
     fontSize: 12,
@@ -272,17 +393,30 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.violet,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
+    overflow: 'hidden',
   },
   fabText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.yellow,
     textTransform: 'uppercase',
     fontStyle: 'italic',
+  },
+  fabShineClip: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+    borderRadius: 12,
+  },
+  fabShine: {
+    position: 'absolute',
+    top: -12,
+    bottom: -12,
+    width: 46,
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   errorOuter: {
     flex: 1,

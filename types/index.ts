@@ -49,6 +49,10 @@ export interface Tournament {
    */
   categories?: string[];
   maxTeams: number;
+  /** Points required to win a set (default 21). */
+  pointsToWin?: number;
+  /** Number of sets played per match (default 1). */
+  setsPerMatch?: number;
   /** Number of groups (min 2, default 4). maxTeams ÷ groupCount must be ≥ 2 (default capacity 4 per group with 16 max teams). */
   groupCount?: number;
   inviteLink: string;

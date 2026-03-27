@@ -7,7 +7,7 @@ export function useWaitlist(tournamentId: string | undefined) {
     queryKey: ['waitlist', tournamentId],
     queryFn: () =>
       shouldUseDevMocks()
-        ? Promise.resolve({ count: 0, position: null as number | null })
+        ? Promise.resolve({ count: 0, position: null as number | null, users: [] as { userId: string; createdAt: string }[] })
         : waitlistApi.get(tournamentId!),
     enabled: !!tournamentId,
   });
