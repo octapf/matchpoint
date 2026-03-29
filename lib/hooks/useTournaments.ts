@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { tournamentsApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
@@ -23,6 +23,7 @@ export function useTournaments(params?: { status?: string; organizerId?: string 
       shouldUseDevMocks()
         ? Promise.resolve(MOCK_TOURNAMENTS)
         : (tournamentsApi.find(params) as Promise<Tournament[]>),
+    staleTime: 60_000,
   });
 }
 
@@ -38,6 +39,8 @@ export function useTournament(id: string | undefined) {
           })
         : (tournamentsApi.findOne(id!) as Promise<Tournament>),
     enabled: !!id,
+    placeholderData: keepPreviousData,
+    staleTime: 45_000,
   });
 }
 
@@ -60,6 +63,7 @@ export function useTournamentByToken(token: string | undefined) {
       return null;
     },
     enabled: !!token?.trim(),
+    staleTime: 45_000,
   });
 }
 

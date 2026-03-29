@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl, Animated, Easing } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +19,7 @@ import { useLanguageStore } from '@/store/useLanguageStore';
 import i18n from '@/lib/i18n';
 import type { Tournament } from '@/types';
 import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
+import { prefetchTournament } from '@/lib/prefetchTournament';
 
 function splitAcrossDivisions(total: number, parts: number, index: number) {
   const safeParts = Math.max(1, parts);
@@ -28,6 +31,7 @@ function splitAcrossDivisions(total: number, parts: number, index: number) {
 const BRONZE = '#cd7f32';
 
 export default function TournamentsScreen() {
+  const queryClient = useQueryClient();
   const router = useRouter();
   const { t } = useTranslation();
   const storedLanguage = useLanguageStore((s) => s.language);
@@ -115,28 +119,8 @@ export default function TournamentsScreen() {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={scrollContentStyle}
-        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={Colors.yellow} />}
-      >
-        <TabScreenHeader title={t('tournaments.screenTitle')} />
-        {tournaments.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="trophy-outline" size={34} color={Colors.textMuted} style={{ marginBottom: 10 }} />
-            <Text style={styles.emptyTitle}>{t('admin.noTournaments')}</Text>
-            <Text style={styles.emptySubtitle}>{t('feed.noTournamentsYet')}</Text>
-            <View style={{ marginTop: 14 }}>
-              <Pressable style={styles.emptyCta} onPress={() => router.push('/tournament/create')}>
-                <Text style={styles.emptyCtaText}>{t('tournaments.create')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <>
-        {(tournaments as Tournament[]).map((tournament) => {
+  const renderTournamentItem = useCallback(
+    ({ item: tournament }: { item: Tournament }) => {
           const dateLabel = tournament.date || tournament.startDate;
           const totalGroups = normalizeGroupCount(tournament.groupCount);
           const hasInvite = !!tournament.inviteLink;
@@ -151,7 +135,6 @@ export default function TournamentsScreen() {
           const waitlistCount = tournament.waitlistCount ?? 0;
           return (
             <View
-              key={tournament._id}
               style={[styles.cardOuter, isCancelled && styles.cardOuterCancelled]}
             >
               <Pressable
@@ -159,7 +142,10 @@ export default function TournamentsScreen() {
                   styles.cardPressable,
                   hasInvite ? styles.cardPressableWithShare : undefined,
                 ]}
+                onPressIn={() => prefetchTournament(queryClient, tournament._id)}
                 onPress={() => router.push(`/tournament/${tournament._id}`)}
+                accessibilityRole="button"
+                accessibilityLabel={`${tournament.name}. ${formatTournamentDate(dateLabel) || ''}`}
               >
                 <View style={styles.cardTitleRow}>
                   <Text style={styles.cardTitle}>{tournament.name}</Text>
@@ -258,11 +244,49 @@ export default function TournamentsScreen() {
               ) : null}
             </View>
           );
-        })}
-          </>
-        )}
-      </ScrollView>
-      <Pressable style={styles.fab} onPress={() => router.push('/tournament/create')}>
+    },
+    [t, queryClient, router, shareTournament],
+  );
+
+  const listHeader = useCallback(
+    () => <TabScreenHeader title={t('tournaments.screenTitle')} />,
+    [t],
+  );
+
+  const listEmpty = useCallback(
+    () => (
+      <View style={styles.emptyState}>
+        <Ionicons name="trophy-outline" size={34} color={Colors.textMuted} style={{ marginBottom: 10 }} />
+        <Text style={styles.emptyTitle}>{t('admin.noTournaments')}</Text>
+        <Text style={styles.emptySubtitle}>{t('feed.noTournamentsYet')}</Text>
+        <View style={{ marginTop: 14 }}>
+          <Pressable style={styles.emptyCta} onPress={() => router.push('/tournament/create')}>
+            <Text style={styles.emptyCtaText}>{t('tournaments.create')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    ),
+    [t, router],
+  );
+
+  return (
+    <View style={styles.container}>
+      <FlashList
+        data={tournaments as Tournament[]}
+        keyExtractor={(item) => item._id}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        renderItem={renderTournamentItem}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={Colors.yellow} />}
+        contentContainerStyle={scrollContentStyle}
+        style={styles.scroll}
+      />
+      <Pressable
+        style={styles.fab}
+        onPress={() => router.push('/tournament/create')}
+        accessibilityRole="button"
+        accessibilityLabel={t('tournaments.create')}
+      >
         <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
         <View style={styles.fabShineClip} pointerEvents="none">
           <Animated.View

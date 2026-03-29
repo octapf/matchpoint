@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { entriesApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
+import { hapticSuccess } from '@/lib/haptics';
 import { MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
-import type { Entry } from '@/types';
+import type { Entry, Tournament } from '@/types';
 
 export function useEntries(
   params?: { tournamentId?: string; userId?: string; teamId?: string },
@@ -22,20 +23,80 @@ export function useEntries(
             })
           )
         : (entriesApi.find(params) as Promise<Entry[]>),
+    staleTime: 30_000,
   });
 }
+
+type CreateEntryDoc = { tournamentId: string; userId: string; lookingForPartner?: boolean };
 
 export function useCreateEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (doc: Record<string, unknown>) => entriesApi.insertOne(doc) as Promise<Entry>,
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['entries'] });
-      if (variables.tournamentId) {
-        queryClient.invalidateQueries({ queryKey: ['tournament', variables.tournamentId] });
-        queryClient.invalidateQueries({ queryKey: ['waitlist', variables.tournamentId] });
+    onMutate: async (doc) => {
+      const tournamentId = typeof doc.tournamentId === 'string' ? doc.tournamentId : '';
+      const userId = typeof doc.userId === 'string' ? doc.userId : '';
+      if (!tournamentId || !userId) return {};
+
+      await queryClient.cancelQueries({ queryKey: ['entries', { tournamentId }] });
+      await queryClient.cancelQueries({ queryKey: ['tournament', tournamentId] });
+      await queryClient.cancelQueries({ queryKey: ['tournaments'] });
+
+      const prevEntries = queryClient.getQueryData<Entry[]>(['entries', { tournamentId }]);
+      const prevTournament = queryClient.getQueryData<Tournament>(['tournament', tournamentId]);
+      const prevTournaments = queryClient.getQueryData<Tournament[]>(['tournaments']);
+
+      const tempId = `optimistic-${Date.now()}`;
+      const optimistic: Entry = {
+        _id: tempId,
+        tournamentId,
+        userId,
+        teamId: null,
+        lookingForPartner: doc.lookingForPartner !== false,
+        status: 'joined',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      queryClient.setQueryData<Entry[]>(['entries', { tournamentId }], (old) =>
+        old ? [...old, optimistic] : [optimistic]
+      );
+      queryClient.setQueryData<Tournament>(['tournament', tournamentId], (old) =>
+        old ? { ...old, entriesCount: (old.entriesCount ?? 0) + 1 } : old
+      );
+      queryClient.setQueryData<Tournament[]>(['tournaments'], (old) =>
+        old?.map((t) =>
+          t._id === tournamentId ? { ...t, entriesCount: (t.entriesCount ?? 0) + 1 } : t
+        )
+      );
+
+      return { prevEntries, prevTournament, prevTournaments, tournamentId } as const;
+    },
+    onError: (_err, _doc, ctx) => {
+      if (!ctx?.tournamentId) return;
+      const tid = ctx.tournamentId;
+      if (ctx.prevEntries !== undefined) {
+        queryClient.setQueryData(['entries', { tournamentId: tid }], ctx.prevEntries);
       }
-      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      if (ctx.prevTournament !== undefined) {
+        queryClient.setQueryData(['tournament', tid], ctx.prevTournament);
+      }
+      if (ctx.prevTournaments !== undefined) {
+        queryClient.setQueryData(['tournaments'], ctx.prevTournaments);
+      }
+    },
+    onSuccess: (_data, variables) => {
+      hapticSuccess();
+      const v = variables as CreateEntryDoc;
+      if (v.tournamentId) {
+        queryClient.invalidateQueries({ queryKey: ['entries'] });
+        queryClient.invalidateQueries({ queryKey: ['tournament', v.tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ['waitlist', v.tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['entries'] });
+        queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      }
     },
   });
 }

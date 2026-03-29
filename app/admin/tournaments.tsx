@@ -1,14 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter, Stack } from 'expo-router';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
@@ -78,7 +71,7 @@ export default function AdminTournamentsScreen() {
             <Text style={styles.muted}>{t('common.loading')}</Text>
           </View>
         ) : (
-          <FlatList
+          <FlashList
             style={styles.list}
             data={items}
             keyExtractor={(row) => row._id}

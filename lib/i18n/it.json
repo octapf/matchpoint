@@ -15,7 +15,8 @@
     "done": "Fatto",
     "copy": "Copia",
     "requiredSuffix": " *",
-    "networkError": "Controlla la connessione e riprova."
+    "networkError": "Controlla la connessione e riprova.",
+    "offlineBanner": "Sei offline — riconnettiti per aggiornare i dati e salvare."
   },
   "apiErrors": {
     "alreadyRegistered": "Sei già iscritto a questo torneo.",

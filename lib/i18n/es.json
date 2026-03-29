@@ -15,7 +15,8 @@
     "done": "Listo",
     "copy": "Copiar",
     "requiredSuffix": " *",
-    "networkError": "Revisá tu conexión e intentá de nuevo."
+    "networkError": "Revisá tu conexión e intentá de nuevo.",
+    "offlineBanner": "Sin conexión — reconectá para actualizar datos y guardar cambios."
   },
   "apiErrors": {
     "alreadyRegistered": "Ya estás inscripto en este torneo.",

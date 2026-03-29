@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
@@ -24,6 +25,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const topPad = Math.max(insets.top, 12) + 8;
   const user = useUserStore((s) => s.user);
+  const hasHydrated = useUserStore((s) => s._hasHydrated);
   const signOut = useUserStore((s) => s.signOut);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
@@ -61,6 +63,23 @@ export default function ProfileScreen() {
       { text: t('common.delete'), style: 'destructive', onPress: () => void runDeleteAccount() },
     ]);
   };
+
+  if (!hasHydrated) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.content, { paddingTop: topPad }]}>
+          <TabScreenHeader title={t('profile.screenTitle')} />
+          <View style={styles.hydrateSkeleton}>
+            <Skeleton height={80} width={80} borderRadius={40} style={{ marginBottom: 16 }} />
+            <Skeleton height={22} width="55%" style={{ marginBottom: 8 }} />
+            <Skeleton height={14} width="70%" style={{ marginBottom: 28 }} />
+            <Skeleton height={52} width="100%" borderRadius={14} style={{ marginBottom: 12 }} />
+            <Skeleton height={52} width="100%" borderRadius={14} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (!user) {
     return (
@@ -192,6 +211,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 48,
+  },
+  hydrateSkeleton: {
+    alignItems: 'center',
+    paddingTop: 8,
   },
   avatarSection: {
     alignItems: 'center',

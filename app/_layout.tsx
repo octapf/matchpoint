@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -15,6 +15,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { queryClient } from '@/lib/queryClient';
 import { I18nProvider, i18n, useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -83,7 +84,10 @@ function RootLayoutNav() {
     <Wrapper style={{ flex: 1 }}>
       <I18nProvider>
         <QueryClientProvider client={queryClient}>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <View style={styles.rootFill}>
+            <OfflineBanner />
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <View style={styles.rootFill}>
           <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
@@ -133,9 +137,15 @@ function RootLayoutNav() {
         <Stack.Screen name="profile/change-password" options={{ headerShown: true, title: t('profile.changePassword') }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
+              </View>
         </ThemeProvider>
+          </View>
       </QueryClientProvider>
       </I18nProvider>
     </Wrapper>
   );
 }
+
+const styles = StyleSheet.create({
+  rootFill: { flex: 1 },
+});

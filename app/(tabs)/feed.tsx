@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform, RefreshControl } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +18,7 @@ import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
 import type { Tournament } from '@/types';
 import { weatherCodeToSkyKey, type WeatherPayload } from '@/lib/weather/openMeteo';
+import { prefetchTournament } from '@/lib/prefetchTournament';
 
 function formatHourLabel(iso: string, locale: string): string {
   try {
@@ -75,6 +78,7 @@ function WeatherGlyph({
 }
 
 export default function FeedScreen() {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -95,7 +99,7 @@ export default function FeedScreen() {
       if (!usedDeviceLocation) {
         void refreshLocation();
       }
-    }, [usedDeviceLocation, refreshLocation, refetchTournaments])
+    }, [usedDeviceLocation, refreshLocation, refetchTournaments]),
   );
 
   const dateLabel = useMemo(() => {
@@ -119,236 +123,135 @@ export default function FeedScreen() {
   const skyLabel = t(`feed.sky.${skyKey}`);
   const weatherReady = current != null;
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) + 8 }]}
-      keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled
-      refreshControl={
-        <RefreshControl
-          refreshing={isFetchingTournaments}
-          onRefresh={() => void refetchTournaments()}
-          tintColor={Colors.yellow}
-        />
-      }
-    >
-      <TabScreenHeader title={t('feed.homeTitle')} />
+  const topPad = Math.max(insets.top, 12) + 8;
+  const scrollContentStyle = useMemo(
+    () => [styles.content, { paddingTop: topPad }],
+    [topPad],
+  );
 
-      <View style={styles.weatherCard}>
-        {isLoading && !weatherReady ? (
-          <View style={styles.weatherBody}>
-            <Skeleton height={44} width="45%" style={{ marginBottom: 8 }} />
-            <Skeleton height={16} width="70%" style={{ marginBottom: 12 }} />
-            <Skeleton height={14} width="90%" />
-          </View>
-        ) : isError || !weatherReady ? (
-          <View style={styles.weatherBody}>
-            <Text style={styles.errorText}>{error instanceof Error ? error.message : t('feed.error')}</Text>
-            <Button title={t('feed.retry')} onPress={() => void refetch()} variant="secondary" />
-          </View>
-        ) : (
-          <View style={styles.weatherBody}>
-            <View style={styles.weatherTopRow}>
-              <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={44} />
-              <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+  const listHeader = useMemo(
+    () => (
+      <>
+        <TabScreenHeader title={t('feed.homeTitle')} />
+
+        <View style={styles.weatherCard}>
+          {isLoading && !weatherReady ? (
+            <View style={styles.weatherBody}>
+              <Skeleton height={44} width="45%" style={{ marginBottom: 8 }} />
+              <Skeleton height={16} width="70%" style={{ marginBottom: 12 }} />
+              <Skeleton height={14} width="90%" />
             </View>
-            <Text style={styles.skyText}>{skyLabel}</Text>
+          ) : isError || !weatherReady ? (
+            <View style={styles.weatherBody}>
+              <Text style={styles.errorText}>{error instanceof Error ? error.message : t('feed.error')}</Text>
+              <Button title={t('feed.retry')} onPress={() => void refetch()} variant="secondary" />
+            </View>
+          ) : (
+            <View style={styles.weatherBody}>
+              <View style={styles.weatherTopRow}>
+                <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={44} />
+                <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+              </View>
+              <Text style={styles.skyText}>{skyLabel}</Text>
 
-            <View style={styles.weatherMetaBlock}>
-              <Text style={styles.weatherDateLine}>
-                {t('feed.today')} · {dateLabel}
-              </Text>
-              {usedDeviceLocation ? (
-                <Text style={styles.locationHint}>
-                  {locationAreaName ?? t('feed.locationNearby')}
+              <View style={styles.weatherMetaBlock}>
+                <Text style={styles.weatherDateLine}>
+                  {t('feed.today')} · {dateLabel}
                 </Text>
-              ) : Platform.OS !== 'web' ? (
-                <Pressable
-                  onPress={() => void Linking.openSettings()}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('feed.locationEnableHint')}
-                >
-                  <Text style={[styles.locationHint, styles.locationHintLink]}>{t('feed.locationEnableHint')}</Text>
-                </Pressable>
-              ) : (
-                <Text style={styles.locationHint}>{t('feed.locationFallback')}</Text>
-              )}
-              {isFetching && !isLoading && weatherReady ? (
-                <Text style={styles.updating}>{t('feed.loading')}</Text>
+                {usedDeviceLocation ? (
+                  <Text style={styles.locationHint}>{locationAreaName ?? t('feed.locationNearby')}</Text>
+                ) : Platform.OS !== 'web' ? (
+                  <Pressable
+                    onPress={() => void Linking.openSettings()}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('feed.locationEnableHint')}
+                  >
+                    <Text style={[styles.locationHint, styles.locationHintLink]}>{t('feed.locationEnableHint')}</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.locationHint}>{t('feed.locationFallback')}</Text>
+                )}
+                {isFetching && !isLoading && weatherReady ? (
+                  <Text style={styles.updating}>{t('feed.loading')}</Text>
+                ) : null}
+              </View>
+
+              {hourly.length > 0 ? (
+                <>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    nestedScrollEnabled
+                    contentContainerStyle={styles.hourlyScrollContent}
+                    style={styles.hourlyScroll}
+                  >
+                    {hourly.map((h, i) => {
+                      const hk = weatherCodeToSkyKey(h.weatherCode);
+                      return (
+                        <View key={`w-${h.timeIso}-${i}`} style={styles.hourSlot}>
+                          <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
+                          <WeatherGlyph skyKey={hk} isDay={isDayHour(h.timeIso)} size={22} />
+                          <Text style={styles.hourlyTemp}>{Math.round(h.temperatureC)}°</Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    nestedScrollEnabled
+                    contentContainerStyle={styles.hourlyScrollContent}
+                    style={[styles.hourlyScroll, styles.hourlyWindRow]}
+                  >
+                    {hourly.map((h, i) => (
+                      <View key={`wind-${h.timeIso}-${i}`} style={styles.hourSlot}>
+                        <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
+                        <MaterialCommunityIcons
+                          name="weather-windy"
+                          size={18}
+                          color={Colors.violet}
+                          style={styles.hourlyWindIcon}
+                        />
+                        <View style={styles.hourlyWindSpeedRow}>
+                          <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
+                          <Text style={styles.hourlyWindUnit}>km/h</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </>
               ) : null}
             </View>
+          )}
+        </View>
 
-            {hourly.length > 0 ? (
-              <>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator
-                  nestedScrollEnabled
-                  contentContainerStyle={styles.hourlyScrollContent}
-                  style={styles.hourlyScroll}
-                >
-                  {hourly.map((h, i) => {
-                    const hk = weatherCodeToSkyKey(h.weatherCode);
-                    return (
-                      <View key={`w-${h.timeIso}-${i}`} style={styles.hourSlot}>
-                        <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
-                        <WeatherGlyph skyKey={hk} isDay={isDayHour(h.timeIso)} size={22} />
-                        <Text style={styles.hourlyTemp}>{Math.round(h.temperatureC)}°</Text>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
+        <View style={styles.tournamentsSection}>
+          <Text style={styles.sectionTitle}>{t('feed.tournamentsPreview')}</Text>
+        </View>
+      </>
+    ),
+    [
+      t,
+      isLoading,
+      weatherReady,
+      isError,
+      error,
+      refetch,
+      skyKey,
+      skyLabel,
+      current,
+      hourly,
+      dateLabel,
+      usedDeviceLocation,
+      locationAreaName,
+      isFetching,
+      localeTag,
+    ],
+  );
 
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator
-                  nestedScrollEnabled
-                  contentContainerStyle={styles.hourlyScrollContent}
-                  style={[styles.hourlyScroll, styles.hourlyWindRow]}
-                >
-                  {hourly.map((h, i) => (
-                    <View key={`wind-${h.timeIso}-${i}`} style={styles.hourSlot}>
-                      <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
-                      <MaterialCommunityIcons
-                        name="weather-windy"
-                        size={18}
-                        color={Colors.violet}
-                        style={styles.hourlyWindIcon}
-                      />
-                      <View style={styles.hourlyWindSpeedRow}>
-                        <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
-                        <Text style={styles.hourlyWindUnit}>km/h</Text>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-              </>
-            ) : null}
-          </View>
-        )}
-      </View>
-
-      <View style={styles.tournamentsSection}>
-        <Text style={styles.sectionTitle}>{t('feed.tournamentsPreview')}</Text>
-        {loadingTournaments && (tournaments as Tournament[]).length === 0 ? (
-          <View style={styles.tournamentCard}>
-            <Skeleton height={20} width="65%" style={{ marginBottom: 10 }} />
-            <Skeleton height={14} width="45%" style={{ marginBottom: 6 }} />
-            <Skeleton height={14} width="55%" style={{ marginBottom: 8 }} />
-            <Skeleton height={12} width="35%" />
-          </View>
-        ) : tournamentsQueryError ? (
-          <Text style={styles.tournamentError}>{t('tournaments.failedToLoad')}</Text>
-        ) : (tournaments as Tournament[]).length === 0 ? (
-          <Text style={styles.tournamentEmpty}>{t('feed.noTournamentsYet')}</Text>
-        ) : (
-          (tournaments as Tournament[]).map((tournament) => {
-            const dateLabel = tournament.date || tournament.startDate;
-            const totalGroups = normalizeGroupCount(tournament.groupCount);
-            const isCancelled = tournament.status === 'cancelled';
-            const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
-            const divisionCount = Math.max(1, divisions.length);
-            const totalTeams = tournament.maxTeams ?? 16;
-            const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
-            const currentPlayers = tournament.entriesCount ?? 0;
-            const currentTeams = tournament.teamsCount ?? 0;
-            const currentGroups = tournament.groupsWithTeamsCount ?? 0;
-            const waitlistCount = tournament.waitlistCount ?? 0;
-            return (
-              <Pressable
-                key={tournament._id}
-                style={[styles.tournamentCard, isCancelled && styles.tournamentCardCancelled]}
-                onPress={() => router.push(`/tournament/${tournament._id}` as never)}
-              >
-                <View style={styles.tournamentTitleRow}>
-                  <Text style={styles.tournamentTitle}>{tournament.name}</Text>
-                  {(tournament.visibility ?? 'public') === 'private' ? (
-                    <View style={styles.privateBadge}>
-                      <Text style={styles.privateBadgeText}>{t('tournaments.privateBadge')}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                {isCancelled ? (
-                  <View style={styles.cancelledRow}>
-                    <Ionicons name="close-circle" size={16} color={Colors.error} />
-                    <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
-                  </View>
-                ) : null}
-                <Text style={styles.tournamentMeta}>
-                  {formatTournamentDate(dateLabel) || '—'} · {tournament.location?.trim() || '—'}
-                </Text>
-                <View style={styles.categoryRow}>
-                  <View style={styles.categoryMedals}>
-                    {tournament.categories?.includes('Gold') ? (
-                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
-                    ) : null}
-                    {tournament.categories?.includes('Silver') ? (
-                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.textSecondary} />
-                    ) : null}
-                    {tournament.categories?.includes('Bronze') ? (
-                      <MaterialCommunityIcons name="medal-outline" size={16} color={BRONZE} />
-                    ) : null}
-                    {!tournament.categories?.length ? (
-                      <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
-                    ) : null}
-                  </View>
-                  <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
-                    {tournament.categories?.length
-                      ? tournament.categories.length === 2 &&
-                        tournament.categories.includes('Gold') &&
-                        tournament.categories.includes('Silver')
-                        ? t('tournaments.categoryGoldSilver')
-                        : tournament.categories.length === 3 &&
-                            tournament.categories.includes('Gold') &&
-                            tournament.categories.includes('Silver') &&
-                            tournament.categories.includes('Bronze')
-                          ? t('tournaments.categoryGoldSilverBronze')
-                          : tournament.categories.join(' · ')
-                      : t('tournaments.categoryNone')}
-                  </Text>
-                </View>
-                <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
-                  {`${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`}
-                </Text>
-                <View style={styles.tournamentStatsWrap}>
-                  {divisions.map((division, idx) => {
-                    const divisionLabel =
-                      division === 'men'
-                        ? t('tournaments.divisionMen')
-                        : division === 'women'
-                          ? t('tournaments.divisionWomen')
-                          : t('tournaments.divisionMixed');
-                    return (
-                      <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
-                        <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
-                          {divisionLabel}
-                        </Text>
-                        <TournamentStatsBlock
-                          compact
-                          horizontal
-                          muted={isCancelled}
-                          currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
-                          totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
-                          currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
-                          totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
-                          currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
-                          totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
-                          waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-                {isCancelled ? (
-                  <Text style={styles.tournamentCancelledHint}>{t('tournaments.cancelledListHint')}</Text>
-                ) : null}
-              </Pressable>
-            );
-          })
-        )}
-      </View>
-
+  const listFooter = useMemo(
+    () => (
       <View style={styles.feedSection}>
         <Text style={styles.sectionTitle}>{t('feed.moreComing')}</Text>
         <Pressable
@@ -356,13 +259,175 @@ export default function FeedScreen() {
           onPress={() => {
             router.push('/(tabs)/index' as never);
           }}
+          accessibilityRole="button"
+          accessibilityLabel={t('feed.goTournaments')}
         >
           <Ionicons name="trophy-outline" size={22} color={Colors.yellow} />
           <Text style={styles.linkCardText}>{t('feed.goTournaments')}</Text>
           <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
         </Pressable>
       </View>
-    </ScrollView>
+    ),
+    [t, router],
+  );
+
+  const listEmpty = useMemo(() => {
+    if (tournamentsQueryError) {
+      return (
+        <View style={styles.tournamentsSection}>
+          <Text style={styles.tournamentError}>{t('tournaments.failedToLoad')}</Text>
+        </View>
+      );
+    }
+    if (loadingTournaments && (tournaments as Tournament[]).length === 0) {
+      return (
+        <View style={styles.tournamentsSection}>
+          <View style={styles.tournamentCard}>
+            <Skeleton height={20} width="65%" style={{ marginBottom: 10 }} />
+            <Skeleton height={14} width="45%" style={{ marginBottom: 6 }} />
+            <Skeleton height={14} width="55%" style={{ marginBottom: 8 }} />
+            <Skeleton height={12} width="35%" />
+          </View>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.tournamentsSection}>
+        <Text style={styles.tournamentEmpty}>{t('feed.noTournamentsYet')}</Text>
+      </View>
+    );
+  }, [t, tournamentsQueryError, loadingTournaments, tournaments]);
+
+  const renderTournamentItem = useCallback(
+    ({ item: tournament }: { item: Tournament }) => {
+      const dateStr = tournament.date || tournament.startDate;
+      const totalGroups = normalizeGroupCount(tournament.groupCount);
+      const isCancelled = tournament.status === 'cancelled';
+      const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
+      const divisionCount = Math.max(1, divisions.length);
+      const totalTeams = tournament.maxTeams ?? 16;
+      const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
+      const currentPlayers = tournament.entriesCount ?? 0;
+      const currentTeams = tournament.teamsCount ?? 0;
+      const currentGroups = tournament.groupsWithTeamsCount ?? 0;
+      const waitlistCount = tournament.waitlistCount ?? 0;
+      return (
+        <View style={styles.tournamentRow}>
+          <Pressable
+            style={[styles.tournamentCard, isCancelled && styles.tournamentCardCancelled]}
+            onPressIn={() => prefetchTournament(queryClient, tournament._id)}
+            onPress={() => router.push(`/tournament/${tournament._id}` as never)}
+            accessibilityRole="button"
+            accessibilityLabel={`${tournament.name}. ${t('common.tournament')}`}
+          >
+            <View style={styles.tournamentTitleRow}>
+              <Text style={styles.tournamentTitle}>{tournament.name}</Text>
+              {(tournament.visibility ?? 'public') === 'private' ? (
+                <View style={styles.privateBadge}>
+                  <Text style={styles.privateBadgeText}>{t('tournaments.privateBadge')}</Text>
+                </View>
+              ) : null}
+            </View>
+            {isCancelled ? (
+              <View style={styles.cancelledRow}>
+                <Ionicons name="close-circle" size={16} color={Colors.error} />
+                <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
+              </View>
+            ) : null}
+            <Text style={styles.tournamentMeta}>
+              {formatTournamentDate(dateStr) || '—'} · {tournament.location?.trim() || '—'}
+            </Text>
+            <View style={styles.categoryRow}>
+              <View style={styles.categoryMedals}>
+                {tournament.categories?.includes('Gold') ? (
+                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                ) : null}
+                {tournament.categories?.includes('Silver') ? (
+                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.textSecondary} />
+                ) : null}
+                {tournament.categories?.includes('Bronze') ? (
+                  <MaterialCommunityIcons name="medal-outline" size={16} color={BRONZE} />
+                ) : null}
+                {!tournament.categories?.length ? (
+                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
+                ) : null}
+              </View>
+              <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
+                {tournament.categories?.length
+                  ? tournament.categories.length === 2 &&
+                    tournament.categories.includes('Gold') &&
+                    tournament.categories.includes('Silver')
+                    ? t('tournaments.categoryGoldSilver')
+                    : tournament.categories.length === 3 &&
+                        tournament.categories.includes('Gold') &&
+                        tournament.categories.includes('Silver') &&
+                        tournament.categories.includes('Bronze')
+                      ? t('tournaments.categoryGoldSilverBronze')
+                      : tournament.categories.join(' · ')
+                  : t('tournaments.categoryNone')}
+              </Text>
+            </View>
+            <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
+              {`${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`}
+            </Text>
+            <View style={styles.tournamentStatsWrap}>
+              {divisions.map((division, idx) => {
+                const divisionLabel =
+                  division === 'men'
+                    ? t('tournaments.divisionMen')
+                    : division === 'women'
+                      ? t('tournaments.divisionWomen')
+                      : t('tournaments.divisionMixed');
+                return (
+                  <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
+                    <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
+                      {divisionLabel}
+                    </Text>
+                    <TournamentStatsBlock
+                      compact
+                      horizontal
+                      muted={isCancelled}
+                      currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
+                      totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
+                      currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
+                      totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
+                      currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
+                      totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
+                      waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+            {isCancelled ? (
+              <Text style={styles.tournamentCancelledHint}>{t('tournaments.cancelledListHint')}</Text>
+            ) : null}
+          </Pressable>
+        </View>
+      );
+    },
+    [t, queryClient, router],
+  );
+
+  return (
+    <FlashList
+      data={tournaments as Tournament[]}
+      keyExtractor={(item) => item._id}
+      renderItem={renderTournamentItem}
+      ListHeaderComponent={listHeader}
+      ListFooterComponent={listFooter}
+      ListEmptyComponent={listEmpty}
+      style={styles.container}
+      contentContainerStyle={scrollContentStyle}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={
+        <RefreshControl
+          refreshing={isFetchingTournaments}
+          onRefresh={() => void refetchTournaments()}
+          tintColor={Colors.yellow}
+        />
+      }
+    />
   );
 }
 
@@ -480,11 +545,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   tournamentsSection: { gap: 10, marginBottom: 22 },
+  tournamentRow: {
+    marginBottom: 10,
+  },
   tournamentCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
     padding: 16,
-    marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
