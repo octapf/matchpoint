@@ -56,15 +56,8 @@ export function useUpdateTeam() {
 export function useDeleteTeam() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      actingUserId,
-      tournamentId,
-    }: {
-      id: string;
-      actingUserId: string;
-      tournamentId: string;
-    }) => teamsApi.deleteOne(id, actingUserId),
+    mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
+      teamsApi.deleteOne(id),
     onSuccess: (_, { tournamentId }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });

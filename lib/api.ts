@@ -85,16 +85,14 @@ export const tournamentsApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string, actingUserId: string) =>
+  deleteOne: (id: string) =>
     apiRequest<void>(`/api/tournaments/${id}`, {
       method: 'DELETE',
-      params: { actingUserId },
     }),
 
-  rebalanceTeams: (id: string, actingUserId: string) =>
+  rebalanceTeams: (id: string) =>
     apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}/rebalance-teams`, {
       method: 'POST',
-      body: JSON.stringify({ actingUserId }),
     }),
 };
 
@@ -117,8 +115,7 @@ export const entriesApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string, actingUserId: string) =>
-    apiRequest<void>(`/api/entries/${id}`, { method: 'DELETE', params: { actingUserId } }),
+  deleteOne: (id: string) => apiRequest<void>(`/api/entries/${id}`, { method: 'DELETE' }),
 };
 
 export const waitlistApi = {
@@ -133,10 +130,10 @@ export const waitlistApi = {
       body: JSON.stringify({ tournamentId, userId }),
     }),
 
-  leave: (tournamentId: string, actingUserId: string) =>
+  leave: (tournamentId: string) =>
     apiRequest<void>('/api/waitlist', {
       method: 'DELETE',
-      params: { tournamentId, actingUserId },
+      params: { tournamentId },
     }),
 };
 
@@ -159,8 +156,7 @@ export const teamsApi = {
       body: JSON.stringify(update),
     }),
 
-  deleteOne: (id: string, actingUserId: string) =>
-    apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE', params: { actingUserId } }),
+  deleteOne: (id: string) => apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE' }),
 };
 
 // Auth
@@ -200,10 +196,10 @@ export const authApi = {
       body: JSON.stringify({ token, password }),
     }),
 
-  changePassword: (userId: string, currentPassword: string, newPassword: string) =>
+  changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<{ message: string }>('/api/auth/email?action=change-password', {
       method: 'POST',
-      body: JSON.stringify({ userId, currentPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
   /** Current user from Bearer session (requires accessToken in store). */
@@ -220,12 +216,6 @@ export const usersApi = {
       '/api/users',
       { params: { ids: ids.filter(Boolean).join(',') } }
     ),
-
-  insertOne: (document: Record<string, unknown>) =>
-    apiRequest<unknown>('/api/users', {
-      method: 'POST',
-      body: JSON.stringify(document),
-    }),
 
   updateOne: (id: string, update: Record<string, unknown>) =>
     apiRequest<unknown>(`/api/users?id=${encodeURIComponent(id)}`, {

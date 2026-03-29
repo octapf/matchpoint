@@ -56,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const actingUserId = resolveActorUserId(req);
       if (!actingUserId) {
-        return corsRes.status(401).json({ error: 'Sign in required or pass actingUserId' });
+        return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const entry = await col.findOne({ _id: oid });
       if (!entry) return corsRes.status(404).json({ error: 'Entry not found' });

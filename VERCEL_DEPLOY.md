@@ -77,7 +77,6 @@ Restart Expo: `npx expo start --tunnel`
 | PATCH  | /api/teams/:id          | Update team              |
 | DELETE | /api/teams/:id          | Delete team              |
 | GET    | /api/users?id= or ?email=| Get user by id or email  |
-| POST   | /api/users              | Create/find user         |
 | PATCH  | /api/users?id=          | Update user              |
 
 ---

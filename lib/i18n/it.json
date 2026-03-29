@@ -442,5 +442,46 @@
     "italian": "Italiano",
     "chooseLanguage": "Scegli la tua lingua",
     "continue": "Continua"
+  },
+  "passwordChange": {
+    "emailOnly": "Solo chi ha effettuato l’accesso con email può cambiare la password.",
+    "screenTitle": "Cambia password",
+    "currentPassword": "Password attuale",
+    "newPassword": "Nuova password",
+    "confirmPassword": "Conferma nuova password",
+    "placeholderMask": "••••••••",
+    "placeholderRules": "Min. 8 caratteri, maiuscola, minuscola e numero",
+    "saving": "Salvataggio...",
+    "save": "Salva",
+    "errorCurrentRequired": "Inserisci la password attuale.",
+    "errorNewRules": "La nuova password deve avere almeno 8 caratteri, una maiuscola, una minuscola e un numero.",
+    "errorMismatch": "Le password non coincidono.",
+    "successMessage": "Password aggiornata.",
+    "updateFailed": "Impossibile aggiornare la password."
+  },
+  "emailVerify": {
+    "verifying": "Verifica in corso...",
+    "success": "Email verificata correttamente.",
+    "invalidLink": "Link non valido",
+    "connectionError": "Errore di connessione",
+    "verifyFailed": "Impossibile verificare l’email. Il link potrebbe essere non valido o scaduto.",
+    "openMatchpoint": "Apri Matchpoint"
+  },
+  "passwordReset": {
+    "headingNew": "Nuova password",
+    "subtitleNew": "Inserisci la nuova password per Matchpoint.",
+    "placeholderNew": "Nuova password",
+    "placeholderConfirm": "Conferma password",
+    "errorRules": "Almeno 8 caratteri, una maiuscola, una minuscola e un numero.",
+    "errorMismatch": "Le password non coincidono.",
+    "errorTokenInvalid": "Link non valido o scaduto.",
+    "errorLinkExpired": "Il link è scaduto o non è valido. Richiedine uno nuovo.",
+    "successHeading": "Password aggiornata",
+    "successSubtitleWeb": "Password aggiornata. Apri l’app per accedere.",
+    "successSubtitleApp": "Ora puoi accedere con la nuova password.",
+    "openMatchpoint": "Apri Matchpoint",
+    "goToSignIn": "Vai all’accesso",
+    "saving": "Salvataggio...",
+    "savePassword": "Salva password"
   }
 }

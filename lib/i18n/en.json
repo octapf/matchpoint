@@ -442,5 +442,46 @@
     "italian": "Italiano",
     "chooseLanguage": "Choose your language",
     "continue": "Continue"
+  },
+  "passwordChange": {
+    "emailOnly": "Only users who signed in with email can change their password.",
+    "screenTitle": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "placeholderMask": "••••••••",
+    "placeholderRules": "Min. 8 characters, uppercase, lowercase, and number",
+    "saving": "Saving...",
+    "save": "Save",
+    "errorCurrentRequired": "Enter your current password.",
+    "errorNewRules": "New password must be at least 8 characters with uppercase, lowercase, and a number.",
+    "errorMismatch": "Passwords do not match.",
+    "successMessage": "Password updated.",
+    "updateFailed": "Could not update password."
+  },
+  "emailVerify": {
+    "verifying": "Verifying...",
+    "success": "Email verified successfully.",
+    "invalidLink": "Invalid link",
+    "connectionError": "Connection error",
+    "verifyFailed": "Could not verify your email. The link may be invalid or expired.",
+    "openMatchpoint": "Open Matchpoint"
+  },
+  "passwordReset": {
+    "headingNew": "New password",
+    "subtitleNew": "Enter your new password for Matchpoint.",
+    "placeholderNew": "New password",
+    "placeholderConfirm": "Confirm password",
+    "errorRules": "At least 8 characters, one uppercase, one lowercase, and one number.",
+    "errorMismatch": "Passwords do not match.",
+    "errorTokenInvalid": "Invalid or expired link.",
+    "errorLinkExpired": "This link expired or is invalid. Request a new one.",
+    "successHeading": "Password updated",
+    "successSubtitleWeb": "Your password was updated. Open the app to sign in.",
+    "successSubtitleApp": "You can now sign in with your new password.",
+    "openMatchpoint": "Open Matchpoint",
+    "goToSignIn": "Go to sign in",
+    "saving": "Saving...",
+    "savePassword": "Save password"
   }
 }

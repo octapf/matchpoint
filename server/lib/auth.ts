@@ -47,20 +47,12 @@ export async function loadActorUserWithAdminRefresh(
   return user as Record<string, unknown> | null;
 }
 
-/**
- * Prefer Bearer session token; fall back to actingUserId in body/query (legacy clients).
- */
-export function resolveActorUserId(req: VercelRequest, body?: Record<string, unknown>): string | null {
+/** Actor identity from verified Bearer session JWT only (never from client-supplied ids). */
+export function resolveActorUserId(req: VercelRequest, _body?: Record<string, unknown>): string | null {
   const token = getBearerToken(req);
-  if (token) {
-    const v = verifySessionToken(token);
-    if (v) return v.sub;
-  }
-  if (body && typeof body.actingUserId === 'string') return body.actingUserId;
-  const q = req.query?.actingUserId;
-  if (typeof q === 'string') return q;
-  if (Array.isArray(q) && typeof q[0] === 'string') return q[0];
-  return null;
+  if (!token) return null;
+  const v = verifySessionToken(token);
+  return v?.sub ?? null;
 }
 
 export function requireAuth(req: VercelRequest, res: VercelResponse): { userId: string } | null {

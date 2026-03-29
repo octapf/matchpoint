@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Pressable, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
+import { useTranslation } from '@/lib/i18n';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
 
 export default function ResetPasswordScreen() {
+  const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
 
@@ -18,15 +20,15 @@ export default function ResetPasswordScreen() {
   async function handleSubmit() {
     setError('');
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      setError('Mínimo 8 caracteres, una mayúscula, una minúscula y un número.');
+      setError(t('passwordReset.errorRules'));
       return;
     }
     if (password !== confirm) {
-      setError('Las contraseñas no coinciden.');
+      setError(t('passwordReset.errorMismatch'));
       return;
     }
     if (!token) {
-      setError('Token inválido o expirado.');
+      setError(t('passwordReset.errorTokenInvalid'));
       return;
     }
     setLoading(true);
@@ -37,10 +39,10 @@ export default function ResetPasswordScreen() {
         body: JSON.stringify({ token, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error');
+      if (!res.ok) throw new Error(data.error || 'err');
       setDone(true);
     } catch {
-      setError('El link expiró o es inválido. Pedí uno nuevo.');
+      setError(t('passwordReset.errorLinkExpired'));
     } finally {
       setLoading(false);
     }
@@ -50,27 +52,22 @@ export default function ResetPasswordScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.emoji}>✅</Text>
-        <Text style={styles.heading}>Contraseña actualizada</Text>
+        <Text style={styles.heading}>{t('passwordReset.successHeading')}</Text>
         <Text style={styles.subtitle}>
-          {Platform.OS === 'web'
-            ? 'Tu contraseña fue actualizada. Abrí la app para iniciar sesión.'
-            : 'Ya podés iniciar sesión con tu nueva contraseña.'}
+          {Platform.OS === 'web' ? t('passwordReset.successSubtitleWeb') : t('passwordReset.successSubtitleApp')}
         </Text>
         {Platform.OS === 'web' ? (
           <Pressable
             style={styles.button}
             onPress={() => {
-              // Try deep link first; if app not installed, fall back to Play Store
-              Linking.openURL('com.miralab.matchpoint://sign-in').catch(() =>
-                Linking.openURL(PLAY_STORE_URL)
-              );
+              Linking.openURL('com.miralab.matchpoint://sign-in').catch(() => Linking.openURL(PLAY_STORE_URL));
             }}
           >
-            <Text style={styles.buttonText}>Abrir Matchpoint</Text>
+            <Text style={styles.buttonText}>{t('passwordReset.openMatchpoint')}</Text>
           </Pressable>
         ) : (
           <Pressable style={styles.button} onPress={() => router.replace('/(auth)/sign-in')}>
-            <Text style={styles.buttonText}>Ir al inicio de sesión</Text>
+            <Text style={styles.buttonText}>{t('passwordReset.goToSignIn')}</Text>
           </Pressable>
         )}
       </View>
@@ -80,12 +77,12 @@ export default function ResetPasswordScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
-        <Text style={styles.heading}>Nueva contraseña</Text>
-        <Text style={styles.subtitle}>Ingresá tu nueva contraseña para Matchpoint.</Text>
+        <Text style={styles.heading}>{t('passwordReset.headingNew')}</Text>
+        <Text style={styles.subtitle}>{t('passwordReset.subtitleNew')}</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Nueva contraseña"
+          placeholder={t('passwordReset.placeholderNew')}
           placeholderTextColor={Colors.textMuted}
           value={password}
           onChangeText={setPassword}
@@ -94,7 +91,7 @@ export default function ResetPasswordScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Confirmar contraseña"
+          placeholder={t('passwordReset.placeholderConfirm')}
           placeholderTextColor={Colors.textMuted}
           value={confirm}
           onChangeText={setConfirm}
@@ -109,7 +106,7 @@ export default function ResetPasswordScreen() {
           onPress={handleSubmit}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>{loading ? 'Guardando...' : 'Guardar contraseña'}</Text>
+          <Text style={styles.buttonText}>{loading ? t('passwordReset.saving') : t('passwordReset.savePassword')}</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

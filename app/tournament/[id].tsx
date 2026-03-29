@@ -235,7 +235,7 @@ export default function TournamentDetailScreen() {
           style: 'destructive',
           onPress: () =>
             deleteTournament.mutate(
-              { id, actingUserId: userId },
+              { id },
               {
                 onError: (err: unknown) =>
                   alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -355,7 +355,7 @@ export default function TournamentDetailScreen() {
         onPress: () => {
           const next = [...new Set([...(tournament.organizerIds ?? []), targetUserId])];
           updateTournament.mutate(
-            { id, actingUserId: userId, organizerIds: next },
+            { id, organizerIds: next },
             {
               onError: (err: unknown) =>
                 alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -385,7 +385,7 @@ export default function TournamentDetailScreen() {
           onPress: () => {
             const next = prev.filter((x) => x !== targetUserId);
             updateTournament.mutate(
-              { id, actingUserId: userId, organizerIds: next },
+              { id, organizerIds: next },
               {
                 onError: (err: unknown) =>
                   alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -409,7 +409,7 @@ export default function TournamentDetailScreen() {
           style: 'destructive',
           onPress: () =>
             deleteEntry.mutate(
-              { id: entry._id, actingUserId: userId, tournamentId: id },
+              { id: entry._id, tournamentId: id },
               {
                 onError: (err: unknown) =>
                   alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -431,7 +431,7 @@ export default function TournamentDetailScreen() {
         style: 'destructive',
             onPress: () =>
           deleteEntry.mutate(
-            { id: ownEntry._id, actingUserId: userId, tournamentId: id },
+            { id: ownEntry._id, tournamentId: id },
             {
               onError: (err: unknown) =>
                 alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -453,7 +453,7 @@ export default function TournamentDetailScreen() {
           style: 'destructive',
           onPress: () =>
             deleteTeam.mutate(
-              { id: team._id, actingUserId: userId, tournamentId: id },
+              { id: team._id, tournamentId: id },
               {
                 onError: (err: unknown) =>
                   alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -923,7 +923,7 @@ export default function TournamentDetailScreen() {
                             text: t('common.ok'),
                             onPress: () =>
                               rebalanceGroupsMutation.mutate(
-                                { id, actingUserId: userId },
+                                { id },
                                 {
                                   onError: (err: unknown) =>
                                     alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -1116,7 +1116,7 @@ export default function TournamentDetailScreen() {
               onPress={() => {
                 if (!userId || !id) return;
                 leaveWaitlist.mutate(
-                  { tournamentId: id, actingUserId: userId },
+                  { tournamentId: id },
                   {
                     onError: (err: unknown) =>
                       alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),

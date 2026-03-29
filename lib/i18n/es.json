@@ -440,7 +440,48 @@
     "english": "English",
     "spanish": "Español",
     "italian": "Italiano",
-    "chooseLanguage": "Choose your language",
+    "chooseLanguage": "Elige tu idioma",
     "continue": "Continuar"
+  },
+  "passwordChange": {
+    "emailOnly": "Solo quienes iniciaron sesión con email pueden cambiar la contraseña.",
+    "screenTitle": "Cambiar contraseña",
+    "currentPassword": "Contraseña actual",
+    "newPassword": "Nueva contraseña",
+    "confirmPassword": "Confirmar nueva contraseña",
+    "placeholderMask": "••••••••",
+    "placeholderRules": "Mín. 8 caracteres, mayúscula, minúscula y número",
+    "saving": "Guardando...",
+    "save": "Guardar",
+    "errorCurrentRequired": "Ingresá tu contraseña actual.",
+    "errorNewRules": "La nueva contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.",
+    "errorMismatch": "Las contraseñas no coinciden.",
+    "successMessage": "Contraseña actualizada.",
+    "updateFailed": "No se pudo actualizar la contraseña."
+  },
+  "emailVerify": {
+    "verifying": "Verificando...",
+    "success": "Email verificado correctamente.",
+    "invalidLink": "Enlace no válido",
+    "connectionError": "Error de conexión",
+    "verifyFailed": "No pudimos verificar tu email. El enlace puede ser inválido o haber caducado.",
+    "openMatchpoint": "Abrir Matchpoint"
+  },
+  "passwordReset": {
+    "headingNew": "Nueva contraseña",
+    "subtitleNew": "Ingresá tu nueva contraseña para Matchpoint.",
+    "placeholderNew": "Nueva contraseña",
+    "placeholderConfirm": "Confirmar contraseña",
+    "errorRules": "Mínimo 8 caracteres, una mayúscula, una minúscula y un número.",
+    "errorMismatch": "Las contraseñas no coinciden.",
+    "errorTokenInvalid": "Enlace inválido o caducado.",
+    "errorLinkExpired": "El enlace expiró o no es válido. Pedí uno nuevo.",
+    "successHeading": "Contraseña actualizada",
+    "successSubtitleWeb": "Tu contraseña fue actualizada. Abrí la app para iniciar sesión.",
+    "successSubtitleApp": "Ya podés iniciar sesión con tu nueva contraseña.",
+    "openMatchpoint": "Abrir Matchpoint",
+    "goToSignIn": "Ir al inicio de sesión",
+    "saving": "Guardando...",
+    "savePassword": "Guardar contraseña"
   }
 }

@@ -20,8 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const actingUserId = resolveActorUserId(req, body);
+    const actingUserId = resolveActorUserId(req);
     if (!actingUserId) {
       return corsRes.status(401).json({ error: 'Authentication required' });
     }

@@ -163,7 +163,7 @@ export default function AdminTournamentRosterScreen() {
         style: 'destructive',
         onPress: () => {
           void deleteEntry
-            .mutateAsync({ id: entry._id, actingUserId: adminId, tournamentId: id })
+            .mutateAsync({ id: entry._id, tournamentId: id })
             .then(() => {
               void refetchEntries();
               void refetchTeams();
@@ -257,7 +257,7 @@ export default function AdminTournamentRosterScreen() {
         style: 'destructive',
         onPress: () => {
           void deleteTeam
-            .mutateAsync({ id: team._id, actingUserId: adminId, tournamentId: id })
+            .mutateAsync({ id: team._id, tournamentId: id })
             .then(() => {
               void refetchEntries();
               void refetchTeams();

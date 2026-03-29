@@ -29,8 +29,7 @@ export function useJoinWaitlist() {
 export function useLeaveWaitlist() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ tournamentId, actingUserId }: { tournamentId: string; actingUserId: string }) =>
-      waitlistApi.leave(tournamentId, actingUserId),
+    mutationFn: ({ tournamentId }: { tournamentId: string }) => waitlistApi.leave(tournamentId),
     onSuccess: (_, { tournamentId }) => {
       queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });

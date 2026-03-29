@@ -85,32 +85,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return corsRes.status(400).json({ error: 'Provide id, email, or ids' });
     }
 
-    if (req.method === 'POST') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { email, firstName, lastName, phone, gender, authProvider } = body;
-      if (!email || !firstName || !lastName || !authProvider) {
-        return corsRes.status(400).json({ error: 'Missing required fields' });
-      }
-      const existing = await col.findOne({ email });
-      if (existing) {
-        return corsRes.status(200).json(serializeDoc(existing as Record<string, unknown>));
-      }
-      const now = new Date().toISOString();
-      const doc = {
-        email,
-        firstName,
-        lastName,
-        phone: phone || '',
-        gender: gender === 'male' || gender === 'female' ? gender : undefined,
-        authProvider,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const result = await col.insertOne(doc);
-      const inserted = await col.findOne({ _id: result.insertedId });
-      return corsRes.status(201).json(serializeDoc(inserted as Record<string, unknown>));
-    }
-
     if (req.method === 'DELETE') {
       const { id } = req.query;
       if (!id || typeof id !== 'string' || !ObjectId.isValid(id)) {

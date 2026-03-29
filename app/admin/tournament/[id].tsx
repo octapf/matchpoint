@@ -20,7 +20,6 @@ import { DatePickerField } from '@/components/ui/DatePickerField';
 import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { MaxTeamsSelect } from '@/components/ui/MaxTeamsSelect';
 import { useTournament, useUpdateTournament } from '@/lib/hooks/useTournaments';
-import { useUserStore } from '@/store/useUserStore';
 import type { Tournament, TournamentDivision } from '@/types';
 import {
   normalizeGroupCount,
@@ -144,7 +143,6 @@ export default function AdminEditTournamentScreen() {
 
   const { data: tournament, isLoading, isError, error: loadError } = useTournament(id);
   const updateTournament = useUpdateTournament();
-  const actingUserId = useUserStore((s) => s.user?._id ?? null);
 
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -220,9 +218,6 @@ export default function AdminEditTournamentScreen() {
           id,
           status: cancelledEff ? 'cancelled' : 'open',
         };
-        if (actingUserId) {
-          payload.actingUserId = actingUserId;
-        }
         setSaving(true);
         updateTournament.mutate(
           payload as { id: string } & Record<string, unknown>,
@@ -284,9 +279,6 @@ export default function AdminEditTournamentScreen() {
         description: description.trim() || undefined,
         visibility: visibilityPrivate ? 'private' : 'public',
       };
-      if (actingUserId) {
-        payload.actingUserId = actingUserId;
-      }
       if (cancelledEff !== serverCancelled) {
         payload.status = cancelledEff ? 'cancelled' : 'open';
       }
@@ -316,7 +308,6 @@ export default function AdminEditTournamentScreen() {
       categoryPreset,
       cancelledLocal,
       visibilityPrivate,
-      actingUserId,
       t,
       updateTournament,
     ],

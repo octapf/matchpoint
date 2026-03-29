@@ -89,8 +89,7 @@ export function useUpdateTournament() {
 export function useRebalanceTournamentGroups() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, actingUserId }: { id: string; actingUserId: string }) =>
-      tournamentsApi.rebalanceTeams(id, actingUserId),
+    mutationFn: ({ id }: { id: string }) => tournamentsApi.rebalanceTeams(id),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
@@ -102,8 +101,7 @@ export function useDeleteTournament() {
   const queryClient = useQueryClient();
   const router = useRouter();
   return useMutation({
-    mutationFn: ({ id, actingUserId }: { id: string; actingUserId: string }) =>
-      tournamentsApi.deleteOne(id, actingUserId),
+    mutationFn: ({ id }: { id: string }) => tournamentsApi.deleteOne(id),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });

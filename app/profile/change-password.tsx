@@ -5,8 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
 import { authApi } from '@/lib/api';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ChangePasswordScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
 
@@ -18,27 +20,29 @@ export default function ChangePasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   function validate() {
-    if (!currentPassword) return 'Ingresá tu contraseña actual';
+    if (!currentPassword) return t('passwordChange.errorCurrentRequired');
     if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      return 'La nueva contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.';
+      return t('passwordChange.errorNewRules');
     }
-    if (newPassword !== confirmPassword) return 'Las contraseñas no coinciden';
+    if (newPassword !== confirmPassword) return t('passwordChange.errorMismatch');
     return null;
   }
 
   async function handleSubmit() {
     const err = validate();
     if (err) {
-      Alert.alert('Error', err);
+      Alert.alert(t('common.error'), err);
       return;
     }
     if (!user?._id) return;
     setLoading(true);
     try {
-      await authApi.changePassword(user._id, currentPassword, newPassword);
-      Alert.alert('Listo', 'Contraseña actualizada.', [{ text: 'OK', onPress: () => router.back() }]);
+      await authApi.changePassword(currentPassword, newPassword);
+      Alert.alert(t('common.done'), t('passwordChange.successMessage'), [
+        { text: t('common.ok'), onPress: () => router.back() },
+      ]);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo actualizar');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('passwordChange.updateFailed'));
     } finally {
       setLoading(false);
     }
@@ -47,7 +51,7 @@ export default function ChangePasswordScreen() {
   if (!user || user.authProvider !== 'email') {
     return (
       <View style={styles.container}>
-        <Text style={styles.errorText}>Solo los usuarios con email pueden cambiar la contraseña.</Text>
+        <Text style={styles.errorText}>{t('passwordChange.emailOnly')}</Text>
       </View>
     );
   }
@@ -55,14 +59,14 @@ export default function ChangePasswordScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
-        <Text style={styles.title}>Cambiar contraseña</Text>
+        <Text style={styles.title}>{t('passwordChange.screenTitle')}</Text>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Contraseña actual</Text>
+          <Text style={styles.label}>{t('passwordChange.currentPassword')}</Text>
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder="••••••••"
+              placeholder={t('passwordChange.placeholderMask')}
               placeholderTextColor={Colors.textMuted}
               value={currentPassword}
               onChangeText={setCurrentPassword}
@@ -76,11 +80,11 @@ export default function ChangePasswordScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Nueva contraseña</Text>
+          <Text style={styles.label}>{t('passwordChange.newPassword')}</Text>
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder="Mín. 8 chars, mayúscula, minúscula y número"
+              placeholder={t('passwordChange.placeholderRules')}
               placeholderTextColor={Colors.textMuted}
               value={newPassword}
               onChangeText={setNewPassword}
@@ -94,10 +98,10 @@ export default function ChangePasswordScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Confirmar nueva contraseña</Text>
+          <Text style={styles.label}>{t('passwordChange.confirmPassword')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="••••••••"
+            placeholder={t('passwordChange.placeholderMask')}
             placeholderTextColor={Colors.textMuted}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
@@ -111,7 +115,7 @@ export default function ChangePasswordScreen() {
           onPress={handleSubmit}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>{loading ? 'Guardando...' : 'Guardar'}</Text>
+          <Text style={styles.buttonText}>{loading ? t('passwordChange.saving') : t('passwordChange.save')}</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

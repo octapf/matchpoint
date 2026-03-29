@@ -86,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const actingUserId = resolveActorUserId(req, body);
       if (!actingUserId) {
-        return corsRes.status(401).json({ error: 'Sign in required or pass actingUserId' });
+        return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const current = await col.findOne({ _id: oid });
       if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
@@ -277,7 +277,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const actingUserId = resolveActorUserId(req);
       if (!actingUserId) {
-        return corsRes.status(401).json({ error: 'Sign in required or pass actingUserId' });
+        return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });

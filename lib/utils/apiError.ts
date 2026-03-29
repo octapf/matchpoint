@@ -60,7 +60,7 @@ export function apiErrorMessage(
   if (err instanceof Error && err.message) {
     const key = API_ERROR_I18N[err.message];
     if (key) return t(key);
-    return err.message;
+    return t('apiErrors.internal');
   }
   return t(fallbackKey);
 }

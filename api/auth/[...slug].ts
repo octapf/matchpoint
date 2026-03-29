@@ -7,6 +7,7 @@ import { withCors } from '../../server/lib/cors';
 import { requireAuth } from '../../server/lib/auth';
 import { issueSessionAndUser } from '../../server/lib/authResponse';
 import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
+import { getJwtSecret } from '../../server/lib/jwtSecret';
 
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -198,7 +199,7 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
   const appUrl = process.env.APP_URL || 'https://matchpoint-neon-delta.vercel.app';
   const verifyToken = jwt.sign(
     { userId: result.insertedId.toString(), purpose: 'verify' },
-    process.env.JWT_SECRET || 'matchpoint-reset-secret',
+    getJwtSecret(),
     { expiresIn: '24h' }
   );
   const verifyUrl = `${appUrl}/verify-email?token=${verifyToken}`;
@@ -290,7 +291,7 @@ async function handleForgotPassword(req: VercelRequest, body: Record<string, unk
     return res.status(200).json({ message: 'If that email exists, a reset link was sent' });
   }
 
-  const secret = process.env.JWT_SECRET || 'matchpoint-reset-secret';
+  const secret = getJwtSecret();
   const jti = randomUUID();
   const token = jwt.sign(
     { userId: String((user as { _id: ObjectId })._id), email: (user as { email?: string }).email, jti },
@@ -343,7 +344,7 @@ async function handleResetPassword(_req: VercelRequest, body: Record<string, unk
   const pwError = validatePassword(password);
   if (pwError) return res.status(400).json({ error: pwError });
 
-  const secret = process.env.JWT_SECRET || 'matchpoint-reset-secret';
+  const secret = getJwtSecret();
   let payload: { userId: string; email: string; jti?: string };
 
   try {
@@ -374,10 +375,12 @@ async function handleResetPassword(_req: VercelRequest, body: Record<string, unk
   return res.status(200).json({ message: 'Password updated successfully' });
 }
 
-async function handleChangePassword(body: Record<string, unknown>, res: VercelResponse) {
-  const { userId, currentPassword, newPassword } = body as Record<string, string>;
+async function handleChangePassword(req: VercelRequest, body: Record<string, unknown>, res: VercelResponse) {
+  const auth = requireAuth(req, res);
+  if (!auth) return;
 
-  if (!userId || !currentPassword || !newPassword) {
+  const { currentPassword, newPassword } = body as Record<string, string>;
+  if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Faltan datos' });
   }
   const pwError = validatePassword(newPassword);
@@ -385,7 +388,7 @@ async function handleChangePassword(body: Record<string, unknown>, res: VercelRe
 
   const db = await getDb();
   const col = db.collection('users');
-  const user = await col.findOne({ _id: new ObjectId(userId), authProvider: 'email' });
+  const user = await col.findOne({ _id: new ObjectId(auth.userId), authProvider: 'email' });
 
   const currentHash = (user as { passwordHash?: unknown } | null)?.passwordHash;
   if (!user || typeof currentHash !== 'string' || !currentHash) {
@@ -404,7 +407,7 @@ async function handleVerifyEmail(body: Record<string, unknown>, res: VercelRespo
   const { token } = body as Record<string, string>;
   if (!token) return res.status(400).json({ error: 'Token requerido' });
 
-  const secret = process.env.JWT_SECRET || 'matchpoint-reset-secret';
+  const secret = getJwtSecret();
   let payload: { userId: string; purpose: string };
   try {
     payload = jwt.verify(token, secret) as { userId: string; purpose: string };
@@ -437,7 +440,7 @@ async function handleEmail(req: VercelRequest, res: VercelResponse) {
       case 'reset-password':
         return handleResetPassword(req, body, res);
       case 'change-password':
-        return handleChangePassword(body, res);
+        return handleChangePassword(req, body, res);
       case 'verify-email':
         return handleVerifyEmail(body, res);
       default:
