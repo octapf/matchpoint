@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, TextInput, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Alert, Pressable, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -18,6 +18,7 @@ import {
   getValidGroupCountsForMaxTeams,
   pickGroupCountForMaxTeams,
 } from '@/lib/tournamentGroups';
+import { alertApiError } from '@/lib/utils/apiError';
 
 const MIN_DATE = new Date(2000, 0, 1);
 
@@ -50,6 +51,7 @@ export default function CreateTournamentScreen() {
   const [setsPerMatch, setSetsPerMatch] = useState('1');
   const [groupCount, setGroupCount] = useState('4');
   const [description, setDescription] = useState('');
+  const [visibilityPrivate, setVisibilityPrivate] = useState(false);
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
   const [categoryPreset, setCategoryPreset] = useState<CategoryPreset>('none');
 
@@ -128,14 +130,13 @@ export default function CreateTournamentScreen() {
         inviteLink: inviteToken,
         organizerIds: [userId],
         groupCount: vg.groupCount,
+        visibility: visibilityPrivate ? 'private' : 'public',
       },
       {
         onSuccess: (data) => {
           router.replace(`/tournament/${data._id}`);
         },
-        onError: (err) => {
-          Alert.alert(t('common.error'), err instanceof Error ? err.message : t('tournaments.failedToCreate'));
-        },
+        onError: (err: unknown) => alertApiError(t, err, 'tournaments.failedToCreate'),
       }
     );
   };
@@ -174,6 +175,24 @@ export default function CreateTournamentScreen() {
           value={description}
           onChangeText={setDescription}
         />
+      </View>
+
+      <View style={styles.field}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.label}>{t('tournaments.visibilityLabel')}</Text>
+            <Text style={styles.hint}>
+              {visibilityPrivate ? t('tournaments.visibilityPrivate') : t('tournaments.visibilityPublic')}
+            </Text>
+          </View>
+          <Switch
+            value={visibilityPrivate}
+            trackColor={{ false: Colors.surfaceLight, true: Colors.violet }}
+            thumbColor="#f4f4f5"
+            onValueChange={setVisibilityPrivate}
+          />
+        </View>
+        <Text style={styles.hint}>{t('tournaments.visibilityHint')}</Text>
       </View>
 
       <View style={styles.field}>
@@ -398,4 +417,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  switchTextCol: { flex: 1 },
+  hint: { fontSize: 12, color: Colors.textMuted, marginTop: 4, lineHeight: 16 },
 });

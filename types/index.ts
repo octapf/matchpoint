@@ -56,6 +56,8 @@ export interface Tournament {
   /** Number of groups (min 2, default 4). maxTeams ÷ groupCount must be ≥ 2 (default capacity 4 per group with 16 max teams). */
   groupCount?: number;
   inviteLink: string;
+  /** `public` = listed in app browse/feed for everyone. `private` = discoverable only via invite link (organizers still see theirs in lists). */
+  visibility?: 'public' | 'private';
   status: TournamentStatus;
   organizerIds: string[];
   /** Populated by GET /api/tournaments list (count of entry documents). */

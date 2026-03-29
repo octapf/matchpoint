@@ -11,6 +11,7 @@ import { useTournament } from '@/lib/hooks/useTournaments';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { useEntries, useUpdateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
+import { alertApiError } from '@/lib/utils/apiError';
 
 export default function CreateTeamScreen() {
   const { t } = useTranslation();
@@ -79,14 +80,17 @@ export default function CreateTeamScreen() {
           if (myEntry?._id && team?._id) {
             updateEntry.mutate(
               { id: myEntry._id, update: { teamId: team._id } },
-              { onSettled: () => router.back() }
+              {
+                onSuccess: () => router.back(),
+                onError: (err: unknown) => alertApiError(t, err, 'team.failedToLinkEntry'),
+              }
             );
           } else {
             router.back();
           }
         },
-        onError: (err) => {
-          Alert.alert(t('common.error'), err instanceof Error ? err.message : t('team.failedToCreate'));
+        onError: (err: unknown) => {
+          alertApiError(t, err, 'team.failedToCreate');
         },
       }
     );

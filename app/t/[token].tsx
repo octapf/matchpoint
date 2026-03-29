@@ -10,6 +10,7 @@ import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
 import { useUserStore } from '@/store/useUserStore';
 import { config } from '@/lib/config';
 import i18n from '@/lib/i18n';
+import { alertApiError } from '@/lib/utils/apiError';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.miralab.matchpoint';
 
@@ -62,7 +63,7 @@ export default function JoinViaLinkScreen() {
       { tournamentId, userId, lookingForPartner: true },
       {
         onSuccess: () => router.replace(`/tournament/${tournamentId}`),
-        onError: () => router.replace(`/tournament/${tournamentId}`),
+        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed'),
       }
     );
   };

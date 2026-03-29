@@ -3,6 +3,36 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+
+/** Broad tournament lists: hide `private` unless admin, or (with auth) the user is an organizer of that event. Skipped for `organizerId` queries (my tournaments) or `inviteLink` queries. */
+function applyVisibilityListFilter(
+  filter: Record<string, unknown>,
+  actorId: string | null,
+  actorIsAdmin: boolean,
+  skip: boolean,
+): void {
+  if (skip || actorIsAdmin) return;
+
+  const visClause: Record<string, unknown> = actorId
+    ? {
+        $or: [
+          { visibility: 'public' },
+          { visibility: { $exists: false } },
+          { organizerIds: actorId },
+        ],
+      }
+    : {
+        $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
+      };
+
+  const existing = { ...filter };
+  Object.keys(filter).forEach((k) => delete filter[k]);
+  if (Object.keys(existing).length === 0) {
+    Object.assign(filter, visClause);
+  } else {
+    filter.$and = [existing, visClause];
+  }
+}
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../lib/tournamentGroups';
 import {
   buildInviteOgHtml,
@@ -80,7 +110,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const filter: Record<string, unknown> = {};
       if (hasStatus) filter.status = status;
       if (hasOrg) filter.organizerIds = { $in: [organizerId] };
-      if (hasInvite) filter.inviteLink = inviteLink.trim();
+      if (hasInvite) filter.inviteLink = inviteLink!.trim();
+
+      const actorId = getSessionUserId(req);
+      let actorIsAdmin = false;
+      if (actorId && ObjectId.isValid(actorId)) {
+        const u = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
+        actorIsAdmin = !!(u && isUserAdmin(u as { role?: string; email?: string }));
+      }
+      applyVisibilityListFilter(filter, actorId, actorIsAdmin, hasOrg || !!hasInvite);
 
       const docs = await col.find(filter).sort({ startDate: 1, date: 1 }).toArray();
       const entriesCol = db.collection('entries');
@@ -187,6 +225,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         groupCount: rawGroups,
         inviteLink,
         organizerIds,
+        visibility: rawVisibility,
       } = body;
       const sDate = startDate || date;
       const eDate = endDate || date || sDate;
@@ -246,6 +285,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Invalid category value' });
       }
       const now = new Date().toISOString();
+      const visibility = rawVisibility === 'private' ? 'private' : 'public';
       const doc = {
         name,
         date: sDate,
@@ -260,6 +300,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         setsPerMatch: Math.floor(setsPerMatch),
         groupCount: vg.groupCount,
         inviteLink,
+        visibility,
         status: 'open',
         organizerIds: orgIds,
         createdAt: now,

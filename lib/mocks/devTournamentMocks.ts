@@ -23,6 +23,7 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   setsPerMatch: 1,
   groupCount: 4,
   inviteLink: 'dev-invite',
+  visibility: 'public',
   status: 'open',
   organizerIds: ['mock-u-1'],
   waitlistCount: 0,

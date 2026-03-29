@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
-import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
+import { getSessionUserId, isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 
@@ -30,6 +30,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const vis = (doc as { visibility?: string }).visibility;
+      if (vis === 'private') {
+        const actorId = getSessionUserId(req);
+        if (!actorId) {
+          return corsRes.status(404).json({ error: 'Tournament not found' });
+        }
+        const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
+        const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+        const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
+        if (!actorIsAdmin && !isOrg) {
+          const entriesCol = db.collection('entries');
+          const hasEntry = await entriesCol.findOne({
+            tournamentId: { $in: [id, oid] },
+            userId: actorId,
+          });
+          if (!hasEntry) {
+            return corsRes.status(404).json({ error: 'Tournament not found' });
+          }
+        }
+      }
+
       const serialized = serializeDoc(doc as Record<string, unknown>)!;
 
       // Attach the same count fields as the list endpoint so cards and detail stay consistent.
@@ -92,11 +113,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'groupCount',
         'status',
         'organizerIds',
+        'visibility',
       ];
       const update: Record<string, unknown> = {};
       const curStatus = (cur as { status?: string }).status;
       for (const k of allowed) {
         if (body[k] === undefined) continue;
+        if (k === 'visibility') {
+          const v = body[k];
+          const s = typeof v === 'string' ? v.trim() : '';
+          if (s === 'private' || s === 'public') {
+            update.visibility = s;
+          }
+          continue;
+        }
         if (k === 'status') {
           const s = body[k];
           const st = typeof s === 'string' ? s.trim() : s;

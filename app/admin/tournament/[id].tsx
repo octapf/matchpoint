@@ -28,6 +28,7 @@ import {
   getValidGroupCountsForMaxTeams,
   pickGroupCountForMaxTeams,
 } from '@/lib/tournamentGroups';
+import { alertApiError } from '@/lib/utils/apiError';
 
 const MIN_DATE = new Date(2000, 0, 1);
 const SAVE_DEBOUNCE_MS = 750;
@@ -71,6 +72,7 @@ function formFieldsMatchServer(
   description: string,
   divisions: TournamentDivision[],
   categoryPreset: CategoryPreset,
+  visibilityPrivate: boolean,
 ): boolean {
   const max = parseInt(maxTeamsStr, 10) || 16;
   const p2w = parseInt(pointsToWinStr, 10) || 21;
@@ -82,6 +84,7 @@ function formFieldsMatchServer(
   const serverDivisions = (t.divisions ?? []) as TournamentDivision[];
   const serverCategories = (t.categories ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
   const localCategories = presetToCategories(categoryPreset);
+  const serverPrivate = (t.visibility ?? 'public') === 'private';
   return (
     (t.name ?? '') === name.trim() &&
     sd === startDate &&
@@ -93,7 +96,8 @@ function formFieldsMatchServer(
     (t.groupCount ?? 4) === gc &&
     (t.description ?? '') === description.trim() &&
     sameStringSet(serverDivisions, divisions) &&
-    sameStringSet(serverCategories, localCategories)
+    sameStringSet(serverCategories, localCategories) &&
+    serverPrivate === visibilityPrivate
   );
 }
 
@@ -110,6 +114,7 @@ function serverMatchesForm(
   description: string,
   divisions: TournamentDivision[],
   categoryPreset: CategoryPreset,
+  visibilityPrivate: boolean,
   cancelledLocal: boolean,
 ): boolean {
   return (
@@ -125,7 +130,8 @@ function serverMatchesForm(
       groupCountStr,
       description,
       divisions,
-      categoryPreset
+      categoryPreset,
+      visibilityPrivate
     ) &&
     (t.status === 'cancelled') === cancelledLocal
   );
@@ -152,6 +158,7 @@ export default function AdminEditTournamentScreen() {
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
   const [categoryPreset, setCategoryPreset] = useState<CategoryPreset>('none');
   const [cancelledLocal, setCancelledLocal] = useState(false);
+  const [visibilityPrivate, setVisibilityPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,6 +179,7 @@ export default function AdminEditTournamentScreen() {
     setDivisions(((tournament.divisions ?? ['mixed']) as TournamentDivision[]).filter(Boolean));
     setCategoryPreset(categoriesToPreset(tournament.categories));
     setCancelledLocal(tournament.status === 'cancelled');
+    setVisibilityPrivate((tournament.visibility ?? 'public') === 'private');
   }, [tournament]);
 
   const maxTeamsForSelect = useMemo(() => {
@@ -204,6 +212,7 @@ export default function AdminEditTournamentScreen() {
           description,
           divisions,
           categoryPreset,
+          visibilityPrivate,
         ) && cancelledEff !== serverCancelled;
 
       if (onlyStatusChange) {
@@ -219,8 +228,7 @@ export default function AdminEditTournamentScreen() {
           payload as { id: string } & Record<string, unknown>,
           {
             onSettled: () => setSaving(false),
-            onError: (err) =>
-              Alert.alert(t('common.error'), err instanceof Error ? err.message : t('tournamentDetail.failedToLoad')),
+            onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.failedToLoad'),
           },
         );
         return;
@@ -252,6 +260,7 @@ export default function AdminEditTournamentScreen() {
           description,
           divisions,
           categoryPreset,
+          visibilityPrivate,
           cancelledEff,
         )
       ) {
@@ -273,6 +282,7 @@ export default function AdminEditTournamentScreen() {
         setsPerMatch: spm,
         groupCount: vg.groupCount,
         description: description.trim() || undefined,
+        visibility: visibilityPrivate ? 'private' : 'public',
       };
       if (actingUserId) {
         payload.actingUserId = actingUserId;
@@ -286,8 +296,7 @@ export default function AdminEditTournamentScreen() {
         payload as { id: string } & Record<string, unknown>,
         {
           onSettled: () => setSaving(false),
-          onError: (err) =>
-            Alert.alert(t('common.error'), err instanceof Error ? err.message : t('tournamentDetail.failedToLoad')),
+          onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.failedToLoad'),
         },
       );
     },
@@ -306,6 +315,7 @@ export default function AdminEditTournamentScreen() {
       divisions,
       categoryPreset,
       cancelledLocal,
+      visibilityPrivate,
       actingUserId,
       t,
       updateTournament,
@@ -420,6 +430,27 @@ export default function AdminEditTournamentScreen() {
             }}
             onBlur={flushSave}
           />
+        </View>
+
+        <View style={styles.field}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchTextCol}>
+              <Text style={styles.label}>{t('tournaments.visibilityLabel')}</Text>
+              <Text style={styles.hintInline}>
+                {visibilityPrivate ? t('tournaments.visibilityPrivate') : t('tournaments.visibilityPublic')}
+              </Text>
+            </View>
+            <Switch
+              value={visibilityPrivate}
+              trackColor={{ false: Colors.surfaceLight, true: Colors.violet }}
+              thumbColor="#f4f4f5"
+              onValueChange={(v) => {
+                setVisibilityPrivate(v);
+                setTimeout(() => flushSave(), 0);
+              }}
+            />
+          </View>
+          <Text style={styles.hintInline}>{t('tournaments.visibilityHint')}</Text>
         </View>
 
         <View style={styles.field}>
@@ -698,9 +729,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 4,
     paddingVertical: 4,
   },
+  switchTextCol: { flex: 1 },
   switchRowText: { flex: 1 },
   muted: { color: Colors.textMuted },
   savingRow: {

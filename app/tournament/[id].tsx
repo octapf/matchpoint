@@ -35,6 +35,7 @@ import {
   teamGroupIndex,
   validateTournamentGroups,
 } from '@/lib/tournamentGroups';
+import { alertApiError } from '@/lib/utils/apiError';
 
 function TeamCard({
   team,
@@ -232,7 +233,14 @@ export default function TournamentDetailScreen() {
         {
           text: t('common.delete'),
           style: 'destructive',
-          onPress: () => deleteTournament.mutate({ id, actingUserId: userId }),
+          onPress: () =>
+            deleteTournament.mutate(
+              { id, actingUserId: userId },
+              {
+                onError: (err: unknown) =>
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+              }
+            ),
         },
       ]
     );
@@ -349,7 +357,8 @@ export default function TournamentDetailScreen() {
           updateTournament.mutate(
             { id, actingUserId: userId, organizerIds: next },
             {
-              onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+              onError: (err: unknown) =>
+                alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
             }
           );
         },
@@ -378,7 +387,8 @@ export default function TournamentDetailScreen() {
             updateTournament.mutate(
               { id, actingUserId: userId, organizerIds: next },
               {
-                onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+                onError: (err: unknown) =>
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
               }
             );
           },
@@ -401,7 +411,8 @@ export default function TournamentDetailScreen() {
             deleteEntry.mutate(
               { id: entry._id, actingUserId: userId, tournamentId: id },
               {
-                onError: () => Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed')),
+                onError: (err: unknown) =>
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
               }
             ),
         },
@@ -423,10 +434,7 @@ export default function TournamentDetailScreen() {
             { id: ownEntry._id, actingUserId: userId, tournamentId: id },
             {
               onError: (err: unknown) =>
-                Alert.alert(
-                  t('common.error'),
-                  err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
-                ),
+                alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
             }
           ),
       },
@@ -448,10 +456,7 @@ export default function TournamentDetailScreen() {
               { id: team._id, actingUserId: userId, tournamentId: id },
               {
                 onError: (err: unknown) =>
-                  Alert.alert(
-                    t('common.error'),
-                    err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
-                  ),
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
               }
             ),
         },
@@ -644,6 +649,12 @@ export default function TournamentDetailScreen() {
           <View style={styles.cancelledBanner} accessibilityRole="alert">
             <Ionicons name="close-circle-outline" size={22} color={Colors.error} />
             <Text style={styles.cancelledBannerText}>{t('tournamentDetail.cancelledBanner')}</Text>
+          </View>
+        ) : null}
+        {(tournament.visibility ?? 'public') === 'private' ? (
+          <View style={styles.privateBanner} accessibilityRole="text">
+            <Ionicons name="lock-closed-outline" size={20} color={Colors.violet} />
+            <Text style={styles.privateBannerText}>{t('tournamentDetail.privateVisibilityBanner')}</Text>
           </View>
         ) : null}
         <View style={styles.headerTopRow}>
@@ -915,10 +926,7 @@ export default function TournamentDetailScreen() {
                                 { id, actingUserId: userId },
                                 {
                                   onError: (err: unknown) =>
-                                    Alert.alert(
-                                      t('common.error'),
-                                      err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
-                                    ),
+                                    alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
                                 }
                               ),
                           },
@@ -1068,7 +1076,12 @@ export default function TournamentDetailScreen() {
             title={t('tournamentDetail.joinTournament')}
             onPress={() => {
               if (!userId || !id) return;
-              createEntry.mutate({ tournamentId: id, userId, lookingForPartner: true });
+              createEntry.mutate(
+                { tournamentId: id, userId, lookingForPartner: true },
+                {
+                  onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed'),
+                }
+              );
             }}
             disabled={createEntry.isPending}
             fullWidth
@@ -1084,10 +1097,7 @@ export default function TournamentDetailScreen() {
                 { tournamentId: id, userId },
                 {
                   onError: (err: unknown) =>
-                    Alert.alert(
-                      t('common.error'),
-                      err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
-                    ),
+                    alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
                 }
               );
             }}
@@ -1109,10 +1119,7 @@ export default function TournamentDetailScreen() {
                   { tournamentId: id, actingUserId: userId },
                   {
                     onError: (err: unknown) =>
-                      Alert.alert(
-                        t('common.error'),
-                        err instanceof Error ? err.message : t('tournamentDetail.organizerActionFailed')
-                      ),
+                      alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
                   }
                 );
               }}
@@ -1201,6 +1208,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text,
     lineHeight: 21,
+  },
+  privateBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.35)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  privateBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    lineHeight: 20,
   },
   dateLocationRow: {
     flexDirection: 'row',

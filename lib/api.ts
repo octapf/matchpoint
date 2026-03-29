@@ -5,6 +5,7 @@
 
 import { config } from './config';
 import { useUserStore } from '@/store/useUserStore';
+import { isNetworkError, NETWORK_ERROR_SENTINEL } from '@/lib/utils/apiError';
 
 const baseUrl = config.api.baseUrl;
 
@@ -37,7 +38,12 @@ function apiRequest<T>(
   return fetch(url, {
     ...fetchOptions,
     headers,
-  }).then(async (res) => {
+  })
+    .catch((e: unknown) => {
+      if (isNetworkError(e)) throw new Error(NETWORK_ERROR_SENTINEL);
+      throw e;
+    })
+    .then(async (res) => {
     if (res.status === 204 || res.status === 205) return undefined as T;
     const text = await res.text();
     if (!text) {

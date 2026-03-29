@@ -161,7 +161,14 @@ export default function TournamentsScreen() {
                 ]}
                 onPress={() => router.push(`/tournament/${tournament._id}`)}
               >
-                <Text style={styles.cardTitle}>{tournament.name}</Text>
+                <View style={styles.cardTitleRow}>
+                  <Text style={styles.cardTitle}>{tournament.name}</Text>
+                  {(tournament.visibility ?? 'public') === 'private' ? (
+                    <View style={styles.privateBadge}>
+                      <Text style={styles.privateBadgeText}>{t('tournaments.privateBadge')}</Text>
+                    </View>
+                  ) : null}
+                </View>
                 {isCancelled ? (
                   <View style={styles.cancelledRow} accessibilityRole="text">
                     <Ionicons name="close-circle" size={16} color={Colors.error} />
@@ -334,11 +341,34 @@ const styles = StyleSheet.create({
     right: 6,
     zIndex: 2,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 4,
+    flex: 1,
+    minWidth: 0,
+  },
+  privateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.45)',
+  },
+  privateBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.violet,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   cardDate: {
     fontSize: 14,

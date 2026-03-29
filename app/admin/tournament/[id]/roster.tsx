@@ -24,6 +24,7 @@ import { useUserStore } from '@/store/useUserStore';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import type { Entry, Team, User } from '@/types';
 import { normalizeGroupCount, teamGroupIndex, validateTournamentGroups } from '@/lib/tournamentGroups';
+import { alertApiError } from '@/lib/utils/apiError';
 
 const MAX_TEAM_PLAYERS = 2;
 
@@ -148,7 +149,7 @@ export default function AdminTournamentRosterScreen() {
       setEmail('');
       void refetchEntries();
     } catch (e) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('admin.rosterAddFailed'));
+      alertApiError(t, e, 'admin.rosterAddFailed');
     }
   };
 
@@ -161,10 +162,13 @@ export default function AdminTournamentRosterScreen() {
         text: t('common.delete'),
         style: 'destructive',
         onPress: () => {
-          void deleteEntry.mutateAsync({ id: entry._id, actingUserId: adminId, tournamentId: id }).then(() => {
-            void refetchEntries();
-            void refetchTeams();
-          });
+          void deleteEntry
+            .mutateAsync({ id: entry._id, actingUserId: adminId, tournamentId: id })
+            .then(() => {
+              void refetchEntries();
+              void refetchTeams();
+            })
+            .catch((e: unknown) => alertApiError(t, e, 'tournamentDetail.organizerActionFailed'));
         },
       },
     ]);
@@ -205,7 +209,7 @@ export default function AdminTournamentRosterScreen() {
       void refetchEntries();
       void refetchTeams();
     } catch (e) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('admin.rosterCreateTeamFailed'));
+      alertApiError(t, e, 'admin.rosterCreateTeamFailed');
     }
   };
 
@@ -240,7 +244,7 @@ export default function AdminTournamentRosterScreen() {
       void refetchEntries();
       void refetchTeams();
     } catch (e) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('admin.rosterSaveTeamFailed'));
+      alertApiError(t, e, 'admin.rosterSaveTeamFailed');
     }
   };
 
@@ -259,9 +263,7 @@ export default function AdminTournamentRosterScreen() {
               void refetchTeams();
               if (editingTeamId === team._id) setEditingTeamId(null);
             })
-            .catch((e: unknown) =>
-              Alert.alert(t('common.error'), e instanceof Error ? e.message : t('admin.rosterSaveTeamFailed'))
-            );
+            .catch((e: unknown) => alertApiError(t, e, 'admin.rosterSaveTeamFailed'));
         },
       },
     ]);

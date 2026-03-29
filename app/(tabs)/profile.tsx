@@ -126,14 +126,14 @@ export default function ProfileScreen() {
 
         {isAdminUser(user.role) ? (
           <Pressable
-            style={styles.menuRow}
+            style={[styles.menuRow, styles.menuRowAdmin]}
             onPress={() => router.push('/admin' as never)}
             accessibilityRole="button"
             accessibilityLabel={t('profile.openAdmin')}
           >
-            <Ionicons name="settings-outline" size={22} color={Colors.yellow} />
-            <Text style={styles.menuRowText}>{t('profile.openAdmin')}</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            <Ionicons name="settings-outline" size={22} color={Colors.violet} />
+            <Text style={[styles.menuRowText, styles.menuRowTextAdmin]}>{t('profile.openAdmin')}</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.violetOutline} />
           </Pressable>
         ) : null}
 
@@ -225,6 +225,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text,
+  },
+  menuRowAdmin: {
+    backgroundColor: Colors.violetMuted,
+    borderColor: Colors.violetOutline,
+  },
+  menuRowTextAdmin: {
+    color: '#ffffff',
   },
   footer: {
     fontSize: 14,
