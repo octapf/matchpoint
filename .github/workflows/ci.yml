@@ -20,5 +20,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Typecheck and lint
         run: npm run verify

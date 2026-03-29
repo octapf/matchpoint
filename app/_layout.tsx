@@ -1,14 +1,12 @@
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
@@ -34,25 +32,9 @@ export default function RootLayout() {
   useEffect(() => {
     WebBrowser.maybeCompleteAuthSession();
   }, []);
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded || Platform.OS === 'web') {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  // On web, don't block on font loading - useFonts can hang and cause blank screen
-  if (!loaded && Platform.OS !== 'web') {
-    return null;
-  }
+    void SplashScreen.hideAsync();
+  }, []);
 
   return <RootLayoutNav />;
 }
@@ -135,7 +117,6 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen name="profile/change-password" options={{ headerShown: true, title: t('profile.changePassword') }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
               </View>
         </ThemeProvider>

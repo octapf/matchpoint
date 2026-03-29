@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from '@/lib/i18n';
-import Colors from '@/constants/Colors';
 
 /**
  * Thin banner when the device has no network (native + web via NetInfo).

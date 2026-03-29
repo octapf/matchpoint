@@ -11,11 +11,9 @@ import Colors from '@/constants/Colors';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { TournamentStatsBlock } from '@/components/ui/TournamentStatsBlock';
+import { TournamentListRow } from '@/components/tournament/TournamentListRow';
 import { useWeather } from '@/lib/hooks/useWeather';
 import { useTournaments } from '@/lib/hooks/useTournaments';
-import { formatTournamentDate } from '@/lib/utils/dateFormat';
-import { maxPlayerSlotsForTournament, normalizeGroupCount } from '@/lib/tournamentGroups';
 import type { Tournament } from '@/types';
 import { weatherCodeToSkyKey, type WeatherPayload } from '@/lib/weather/openMeteo';
 import { prefetchTournament } from '@/lib/prefetchTournament';
@@ -37,15 +35,6 @@ function formatWindSpeedValue(kmh: number): string {
   const r = Math.round(kmh * 10) / 10;
   return r % 1 === 0 ? String(r) : r.toFixed(1);
 }
-
-function splitAcrossDivisions(total: number, parts: number, index: number) {
-  const safeParts = Math.max(1, parts);
-  const base = Math.floor(total / safeParts);
-  const remainder = total % safeParts;
-  return base + (index < remainder ? 1 : 0);
-}
-
-const BRONZE = '#cd7f32';
 
 function WeatherGlyph({
   skyKey,
@@ -282,7 +271,7 @@ export default function FeedScreen() {
     if (loadingTournaments && (tournaments as Tournament[]).length === 0) {
       return (
         <View style={styles.tournamentsSection}>
-          <View style={styles.tournamentCard}>
+          <View style={styles.skeletonCard}>
             <Skeleton height={20} width="65%" style={{ marginBottom: 10 }} />
             <Skeleton height={14} width="45%" style={{ marginBottom: 6 }} />
             <Skeleton height={14} width="55%" style={{ marginBottom: 8 }} />
@@ -299,114 +288,15 @@ export default function FeedScreen() {
   }, [t, tournamentsQueryError, loadingTournaments, tournaments]);
 
   const renderTournamentItem = useCallback(
-    ({ item: tournament }: { item: Tournament }) => {
-      const dateStr = tournament.date || tournament.startDate;
-      const totalGroups = normalizeGroupCount(tournament.groupCount);
-      const isCancelled = tournament.status === 'cancelled';
-      const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
-      const divisionCount = Math.max(1, divisions.length);
-      const totalTeams = tournament.maxTeams ?? 16;
-      const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
-      const currentPlayers = tournament.entriesCount ?? 0;
-      const currentTeams = tournament.teamsCount ?? 0;
-      const currentGroups = tournament.groupsWithTeamsCount ?? 0;
-      const waitlistCount = tournament.waitlistCount ?? 0;
-      return (
-        <View style={styles.tournamentRow}>
-          <Pressable
-            style={[styles.tournamentCard, isCancelled && styles.tournamentCardCancelled]}
-            onPressIn={() => prefetchTournament(queryClient, tournament._id)}
-            onPress={() => router.push(`/tournament/${tournament._id}` as never)}
-            accessibilityRole="button"
-            accessibilityLabel={`${tournament.name}. ${t('common.tournament')}`}
-          >
-            <View style={styles.tournamentTitleRow}>
-              <Text style={styles.tournamentTitle}>{tournament.name}</Text>
-              {(tournament.visibility ?? 'public') === 'private' ? (
-                <View style={styles.privateBadge}>
-                  <Text style={styles.privateBadgeText}>{t('tournaments.privateBadge')}</Text>
-                </View>
-              ) : null}
-            </View>
-            {isCancelled ? (
-              <View style={styles.cancelledRow}>
-                <Ionicons name="close-circle" size={16} color={Colors.error} />
-                <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
-              </View>
-            ) : null}
-            <Text style={styles.tournamentMeta}>
-              {formatTournamentDate(dateStr) || '—'} · {tournament.location?.trim() || '—'}
-            </Text>
-            <View style={styles.categoryRow}>
-              <View style={styles.categoryMedals}>
-                {tournament.categories?.includes('Gold') ? (
-                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
-                ) : null}
-                {tournament.categories?.includes('Silver') ? (
-                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.textSecondary} />
-                ) : null}
-                {tournament.categories?.includes('Bronze') ? (
-                  <MaterialCommunityIcons name="medal-outline" size={16} color={BRONZE} />
-                ) : null}
-                {!tournament.categories?.length ? (
-                  <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
-                ) : null}
-              </View>
-              <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
-                {tournament.categories?.length
-                  ? tournament.categories.length === 2 &&
-                    tournament.categories.includes('Gold') &&
-                    tournament.categories.includes('Silver')
-                    ? t('tournaments.categoryGoldSilver')
-                    : tournament.categories.length === 3 &&
-                        tournament.categories.includes('Gold') &&
-                        tournament.categories.includes('Silver') &&
-                        tournament.categories.includes('Bronze')
-                      ? t('tournaments.categoryGoldSilverBronze')
-                      : tournament.categories.join(' · ')
-                  : t('tournaments.categoryNone')}
-              </Text>
-            </View>
-            <Text style={styles.tournamentMetaSecondary} numberOfLines={1}>
-              {`${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`}
-            </Text>
-            <View style={styles.tournamentStatsWrap}>
-              {divisions.map((division, idx) => {
-                const divisionLabel =
-                  division === 'men'
-                    ? t('tournaments.divisionMen')
-                    : division === 'women'
-                      ? t('tournaments.divisionWomen')
-                      : t('tournaments.divisionMixed');
-                return (
-                  <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
-                    <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
-                      {divisionLabel}
-                    </Text>
-                    <TournamentStatsBlock
-                      compact
-                      horizontal
-                      muted={isCancelled}
-                      currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
-                      totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
-                      currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
-                      totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
-                      currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
-                      totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
-                      waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
-                    />
-                  </View>
-                );
-              })}
-            </View>
-            {isCancelled ? (
-              <Text style={styles.tournamentCancelledHint}>{t('tournaments.cancelledListHint')}</Text>
-            ) : null}
-          </Pressable>
-        </View>
-      );
-    },
-    [t, queryClient, router],
+    ({ item: tournament }: { item: Tournament }) => (
+      <TournamentListRow
+        variant="feed"
+        tournament={tournament}
+        onPressIn={() => prefetchTournament(queryClient, tournament._id)}
+        onPress={() => router.push(`/tournament/${tournament._id}` as never)}
+      />
+    ),
+    [queryClient, router],
   );
 
   return (
@@ -545,103 +435,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   tournamentsSection: { gap: 10, marginBottom: 22 },
-  tournamentRow: {
-    marginBottom: 10,
-  },
-  tournamentCard: {
+  skeletonCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
-  },
-  tournamentCardCancelled: {
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.error,
-  },
-  tournamentTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 4,
-  },
-  tournamentTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: Colors.text,
-    flex: 1,
-    minWidth: 0,
-  },
-  privateBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.45)',
-  },
-  privateBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.violet,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  cancelledRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  cancelledBadge: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.error,
-  },
-  tournamentMeta: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
-  tournamentMetaSecondary: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginBottom: 8,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  categoryMedals: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    minWidth: 18,
-  },
-  tournamentStatsWrap: {
-    marginBottom: 4,
-    gap: 8,
-  },
-  divisionStatsSection: {
-    gap: 4,
-  },
-  divisionStatsTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.violet,
-    textTransform: 'uppercase',
-    fontStyle: 'italic',
-  },
-  divisionStatsTitleMuted: {
-    color: Colors.textSecondary,
-  },
-  tournamentCancelledHint: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginTop: 4,
   },
   tournamentEmpty: {
     fontSize: 14,

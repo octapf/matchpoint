@@ -116,3 +116,11 @@ export function shouldOfferGroupRebalance(
   if (nonEmpty.length === 1 && nonEmpty[0] === 0 && teams.length > 1) return true;
   return false;
 }
+
+/** Split an integer total across `parts` buckets (e.g. divisions) with remainder spread across first indices. */
+export function splitAcrossDivisions(total: number, parts: number, index: number): number {
+  const safeParts = Math.max(1, parts);
+  const base = Math.floor(total / safeParts);
+  const remainder = total % safeParts;
+  return base + (index < remainder ? 1 : 0);
+}

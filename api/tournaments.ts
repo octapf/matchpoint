@@ -3,6 +3,13 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../lib/tournamentGroups';
+import {
+  buildInviteOgHtml,
+  injectInviteOgIntoIndexHtml,
+  parseOgLang,
+  siteOrigin,
+} from '../server/lib/inviteOgHtml';
 
 /** Broad tournament lists: hide `private` unless admin, or (with auth) the user is an organizer of that event. Skipped for `organizerId` queries (my tournaments) or `inviteLink` queries. */
 function applyVisibilityListFilter(
@@ -33,13 +40,6 @@ function applyVisibilityListFilter(
     filter.$and = [existing, visClause];
   }
 }
-import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../lib/tournamentGroups';
-import {
-  buildInviteOgHtml,
-  injectInviteOgIntoIndexHtml,
-  parseOgLang,
-  siteOrigin,
-} from '../server/lib/inviteOgHtml';
 
 async function fetchDeployedIndexHtml(origin: string): Promise<string | null> {
   for (const path of ['/index.html', '/']) {
