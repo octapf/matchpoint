@@ -73,7 +73,6 @@ module.exports = {
             'Matchpoint uses your location to show today’s weather on the Feed.',
         },
       ],
-      'expo-apple-authentication',
       [
         '@react-native-google-signin/google-signin',
         iosUrlScheme ? { iosUrlScheme } : {},

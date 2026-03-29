@@ -165,16 +165,6 @@ export const authApi = {
       body: JSON.stringify({ idToken }),
     }),
 
-  signInWithApple: (identityToken: string, user?: { firstName?: string; lastName?: string }) =>
-    apiRequest<unknown>('/api/auth/apple', {
-      method: 'POST',
-      body: JSON.stringify({
-        identityToken,
-        firstName: user?.firstName,
-        lastName: user?.lastName,
-      }),
-    }),
-
   signUp: (data: {
     email: string;
     password: string;

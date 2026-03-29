@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { OAuth2Client } from 'google-auth-library';
-import verifyAppleToken from 'verify-apple-id-token';
 
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
@@ -91,74 +90,6 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ...u, accessToken });
   } catch (err) {
     console.error('Google auth error:', err);
-    return res.status(401).json({ error: 'Authentication failed' });
-  }
-}
-
-// ------------------------
-// Apple auth (/auth/apple)
-// ------------------------
-async function handleApple(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  const clientId = process.env.APPLE_CLIENT_ID;
-  if (!clientId) {
-    return res.status(500).json({ error: 'Apple auth not configured' });
-  }
-
-  try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const { identityToken, firstName: givenFirstName, lastName: givenLastName } = body;
-    if (!identityToken || typeof identityToken !== 'string') {
-      return res.status(400).json({ error: 'Missing identityToken' });
-    }
-
-    const jwtClaims = await verifyAppleToken({
-      idToken: identityToken,
-      clientId,
-    });
-
-    const email = (jwtClaims as { email?: string }).email;
-    if (!email) {
-      return res.status(400).json({ error: 'Email not provided by Apple' });
-    }
-
-    const db = await getDb();
-    const col = db.collection('users');
-    let user = await col.findOne({ email });
-
-    const now = new Date().toISOString();
-    if (user) {
-      const update: Record<string, unknown> = { updatedAt: now, authProvider: 'apple' };
-      const u = user as { firstName?: string; lastName?: string; username?: unknown; _id: ObjectId };
-      if (givenFirstName && !u.firstName) update.firstName = givenFirstName;
-      if (givenLastName && !u.lastName) update.lastName = givenLastName;
-      if (typeof u.username !== 'string' || !u.username.trim()) {
-        update.username = await allocateUniqueUsernameFromEmail(col, email);
-      }
-      await col.updateOne({ _id: u._id }, { $set: update });
-      user = await col.findOne({ _id: u._id });
-    } else {
-      const firstName = givenFirstName || '';
-      const lastName = givenLastName || '';
-      const username = await allocateUniqueUsernameFromEmail(col, email);
-      const result = await col.insertOne({
-        email,
-        username,
-        firstName,
-        lastName,
-        phone: '',
-        authProvider: 'apple',
-        createdAt: now,
-        updatedAt: now,
-      });
-      user = await col.findOne({ _id: result.insertedId });
-    }
-
-    const { user: u, accessToken } = await issueSessionAndUser(db, String((user as { _id: ObjectId })._id), email);
-    return res.status(200).json({ ...u, accessToken });
-  } catch (err) {
-    console.error('Apple auth error:', err);
     return res.status(401).json({ error: 'Authentication failed' });
   }
 }
@@ -527,7 +458,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const route = parts[0] ?? '';
 
   if (route === 'google') return handleGoogle(req, corsRes);
-  if (route === 'apple') return handleApple(req, corsRes);
   if (route === 'email') return handleEmail(req, corsRes);
   if (route === 'me') return handleMe(req, corsRes);
 

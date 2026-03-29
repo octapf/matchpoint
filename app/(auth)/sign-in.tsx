@@ -6,7 +6,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { config } from '@/lib/config';
@@ -60,38 +59,6 @@ export default function SignInScreen() {
       }
     } catch (err) {
       Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.googleSignInFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleApplePress() {
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      if (!credential.identityToken) {
-        Alert.alert(t('common.error'), t('auth.appleTokenMissing'));
-        return;
-      }
-      setLoading(true);
-      const raw = (await authApi.signInWithApple(credential.identityToken, {
-        firstName: credential.fullName?.givenName ?? undefined,
-        lastName: credential.fullName?.familyName ?? undefined,
-      })) as Record<string, unknown>;
-      const { user, accessToken } = parseAuthPayload(raw);
-      setSession({
-        user: { ...user, sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 },
-        accessToken,
-      });
-      router.replace(nextRoute as never);
-    } catch (err: unknown) {
-      const e = err as { code?: string };
-      if (e?.code === 'ERR_REQUEST_CANCELED') return;
-      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('auth.appleSignInFailed'));
     } finally {
       setLoading(false);
     }
@@ -215,17 +182,6 @@ export default function SignInScreen() {
               {loading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
             </Text>
           </Pressable>
-
-          {Platform.OS === 'ios' && (
-            <Pressable
-              style={({ pressed }) => [styles.googleButton, pressed && styles.googleButtonPressed]}
-              onPress={handleApplePress}
-              disabled={loading}
-            >
-              <Ionicons name="logo-apple" size={22} color="#e3e3e3" />
-              <Text style={styles.googleButtonText}>{t('auth.continueWithApple')}</Text>
-            </Pressable>
-          )}
         </View>
 
         {/* Sign up */}
