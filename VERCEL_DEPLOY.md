@@ -37,9 +37,9 @@ In **Vercel Dashboard** → Your Project → **Settings** → **Environment Vari
 
 | Name         | Value                                                                 |
 |--------------|-----------------------------------------------------------------------|
-| `MONGODB_URI`| `<redacted-mongodb-uri> |
+| `MONGODB_URI` | Paste from MongoDB Atlas → Connect → Drivers (do not commit). |
 
-Use your Atlas connection string. Replace `<password>` with the real password.
+Use your Atlas connection string in Vercel only. Replace `<password>` in Atlas with a strong value.
 
 ---
 
