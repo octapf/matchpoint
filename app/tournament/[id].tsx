@@ -1505,9 +1505,11 @@ const styles = StyleSheet.create({
   groupHeading: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.violet,
+    color: Colors.yellow,
     marginBottom: 8,
     marginTop: 4,
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
   },
   emptyGroup: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', marginBottom: 8 },
   teamCard: {
