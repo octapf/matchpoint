@@ -66,13 +66,13 @@ export function validateTournamentGroups(
   | { ok: true; teamsPerGroup: number; groupCount: number }
   | { ok: false; reason: 'divisible' | 'minTeams' | 'minPerGroup' } {
   const mt = Math.floor(Number(maxTeams));
-  if (!Number.isFinite(mt) || mt < 2) return { ok: false, reason: 'minTeams' };
+  if (!Number.isFinite(mt) || mt < 2) return { ok: false as const, reason: 'minTeams' as const };
   const gc = Math.max(MIN_GROUP_COUNT, Math.min(MAX_GROUP_COUNT, Math.floor(groupCount)));
-  if (mt % gc !== 0) return { ok: false, reason: 'divisible' };
+  if (mt % gc !== 0) return { ok: false as const, reason: 'divisible' as const };
   const teamsPerGroup = mt / gc;
-  if (teamsPerGroup < 1) return { ok: false, reason: 'divisible' };
-  if (teamsPerGroup < MIN_TEAMS_PER_GROUP) return { ok: false, reason: 'minPerGroup' };
-  return { ok: true, teamsPerGroup, groupCount: gc };
+  if (teamsPerGroup < 1) return { ok: false as const, reason: 'divisible' as const };
+  if (teamsPerGroup < MIN_TEAMS_PER_GROUP) return { ok: false as const, reason: 'minPerGroup' as const };
+  return { ok: true as const, teamsPerGroup, groupCount: gc };
 }
 
 /** Effective group index for a team doc (legacy docs without field → 0). */
