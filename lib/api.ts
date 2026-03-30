@@ -94,6 +94,15 @@ export const tournamentsApi = {
     apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}/rebalance-teams`, {
       method: 'POST',
     }),
+
+  start: (id: string, body?: { matchesPerOpponent?: number }) =>
+    apiRequest<{ startedAt: string; matches: { created: number; total: number } }>(`/api/tournaments/${id}/start`, {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    }),
+
+  randomizeGroups: (id: string) =>
+    apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}/randomize-groups`, { method: 'POST' }),
 };
 
 // Entries
@@ -157,6 +166,17 @@ export const teamsApi = {
     }),
 
   deleteOne: (id: string) => apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE' }),
+};
+
+// Matches
+export const matchesApi = {
+  find: (params: { tournamentId: string; stage?: string; division?: string; category?: string; groupIndex?: string }) =>
+    apiRequest<unknown[]>('/api/matches', { params: params as Record<string, string> }),
+
+  findOne: (id: string) => apiRequest<unknown>(`/api/matches/${id}`),
+
+  updateOne: (id: string, update: Record<string, unknown>) =>
+    apiRequest<unknown>(`/api/matches/${id}`, { method: 'PATCH', body: JSON.stringify(update) }),
 };
 
 // Auth

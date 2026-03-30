@@ -65,6 +65,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Invalid createdBy' });
       }
 
+      const playerIdList = Array.isArray(playerIds) ? playerIds : [playerIds];
+      const cleanPlayerIds = playerIdList
+        .map((x) => (typeof x === 'string' ? x.trim() : ''))
+        .filter(Boolean)
+        .filter((x, i, arr) => arr.indexOf(x) === i);
+      if (cleanPlayerIds.length !== 2) {
+        return corsRes.status(400).json({ error: 'Teams must have exactly 2 distinct players' });
+      }
+      for (const pid of cleanPlayerIds) {
+        if (!ObjectId.isValid(pid)) {
+          return corsRes.status(400).json({ error: 'Invalid player id' });
+        }
+      }
+
       const maxT = Number((tournament as { maxTeams?: number }).maxTeams);
       const gc = normalizeGroupCount((tournament as { groupCount?: number }).groupCount);
       const vg = validateTournamentGroups(maxT, gc);
@@ -88,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'This group is full' });
       }
 
-      const playerIdSet = new Set(Array.isArray(playerIds) ? playerIds : [playerIds]);
+      const playerIdSet = new Set(cleanPlayerIds);
       const existing = await col.findOne({
         tournamentId,
         playerIds: { $in: Array.from(playerIdSet) },
@@ -96,11 +110,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (existing) {
         return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
       }
+
+      // Organizers/admins can only form teams from players already signed up (entries exist),
+      // and players cannot already be assigned to a team.
+      const entriesCol = db.collection('entries');
+      const [existingEntries, alreadyInTeam] = await Promise.all([
+        entriesCol
+          .find({ tournamentId, userId: { $in: Array.from(playerIdSet) } })
+          .project({ userId: 1, teamId: 1 })
+          .toArray(),
+        entriesCol.countDocuments({
+          tournamentId,
+          userId: { $in: Array.from(playerIdSet) },
+          teamId: { $ne: null },
+        }),
+      ]);
+      if (existingEntries.length !== cleanPlayerIds.length) {
+        return corsRes.status(400).json({ error: 'All players must be registered in this tournament' });
+      }
+      if (alreadyInTeam > 0) {
+        return corsRes.status(400).json({ error: 'One or more players are already in a team' });
+      }
+
       const now = new Date().toISOString();
       const doc = {
         tournamentId,
         name,
-        playerIds: Array.isArray(playerIds) ? playerIds : [playerIds],
+        playerIds: cleanPlayerIds,
         groupIndex,
         createdBy,
         createdAt: now,
@@ -108,6 +144,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
       const result = await col.insertOne(doc);
       const inserted = await col.findOne({ _id: result.insertedId });
+
+      // Attach entries to the team.
+      await entriesCol.updateMany(
+        { tournamentId, userId: { $in: cleanPlayerIds } },
+        {
+          $set: {
+            teamId: result.insertedId.toString(),
+            status: 'in_team',
+            lookingForPartner: false,
+            updatedAt: now,
+          },
+        }
+      );
+
       return corsRes.status(201).json(serializeDoc(inserted as Record<string, unknown>));
     }
 

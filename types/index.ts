@@ -32,6 +32,10 @@ export type TournamentStatus = 'open' | 'full' | 'cancelled';
 
 export type TournamentDivision = 'men' | 'women' | 'mixed';
 
+export type TournamentPhase = 'registration' | 'classification' | 'categories' | 'completed';
+
+export type TournamentCategory = 'Gold' | 'Silver' | 'Bronze';
+
 export interface Tournament {
   _id: string;
   name: string;
@@ -59,6 +63,19 @@ export interface Tournament {
   /** `public` = listed in app browse/feed for everyone. `private` = discoverable only via invite link (organizers still see theirs in lists). */
   visibility?: 'public' | 'private';
   status: TournamentStatus;
+  /** Tournament lifecycle; defaults to registration until started. */
+  phase?: TournamentPhase;
+  startedAt?: string;
+  /** Classification configuration. */
+  classificationMatchesPerOpponent?: number;
+  /**
+   * Category distribution config. Example:
+   * { Gold: 0.34, Silver: 0.33, Bronze: 0.33 } (fractions are normalized).
+   * If categories are empty/omitted, single-category behavior uses `singleCategoryAdvanceFraction`.
+   */
+  categoryFractions?: Partial<Record<TournamentCategory, number>>;
+  /** When only one (or no) category is configured, fraction of teams that advance (default 0.5). */
+  singleCategoryAdvanceFraction?: number;
   organizerIds: string[];
   /** Populated by GET /api/tournaments list (count of entry documents). */
   entriesCount?: number;
@@ -68,6 +85,35 @@ export interface Tournament {
   groupsWithTeamsCount?: number;
   /** Populated by GET /api/tournaments list (waitlist entries). */
   waitlistCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MatchStage = 'classification' | 'category';
+
+export type MatchStatus = 'scheduled' | 'completed';
+
+export interface Match {
+  _id: string;
+  tournamentId: string;
+  stage: MatchStage;
+  division?: TournamentDivision;
+  groupIndex?: number;
+  category?: TournamentCategory;
+  teamAId: string;
+  teamBId: string;
+  /** 1 = single set, 3 = best-of-3, etc. */
+  setsPerMatch: number;
+  pointsToWin: number;
+  status: MatchStatus;
+  /** Stored as total sets won; points are optional (if you later store per-set). */
+  setsWonA?: number;
+  setsWonB?: number;
+  pointsA?: number;
+  pointsB?: number;
+  winnerId?: string;
+  startedAt?: string;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -16,10 +16,13 @@ import {
   useDeleteTournament,
   useUpdateTournament,
   useRebalanceTournamentGroups,
+  useRandomizeTournamentGroups,
+  useStartTournament,
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
 import { useWaitlist, useJoinWaitlist, useLeaveWaitlist } from '@/lib/hooks/useWaitlist';
+import { useMatches } from '@/lib/hooks/useMatches';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
@@ -166,6 +169,12 @@ export default function TournamentDetailScreen() {
   const deleteEntry = useDeleteEntry();
   const deleteTeam = useDeleteTeam();
   const rebalanceGroupsMutation = useRebalanceTournamentGroups();
+  const randomizeGroupsMutation = useRandomizeTournamentGroups();
+  const startTournamentMutation = useStartTournament();
+
+  const { data: classificationMatches = [] } = useMatches(
+    id ? { tournamentId: id, stage: 'classification' } : undefined
+  );
 
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
   const entryUserIds = entries.map((e) => e.userId);
@@ -267,6 +276,12 @@ export default function TournamentDetailScreen() {
 
     if (!tournament) return list;
 
+    const started =
+      !!(tournament as { startedAt?: unknown }).startedAt ||
+      (tournament as { phase?: unknown }).phase === 'classification' ||
+      (tournament as { phase?: unknown }).phase === 'categories' ||
+      (tournament as { phase?: unknown }).phase === 'completed';
+
     if (id) {
       list.push(
         {
@@ -282,6 +297,57 @@ export default function TournamentDetailScreen() {
           icon: 'person-add-outline',
           color: Colors.yellow,
           onPress: () => router.push(`/admin/tournament/${id}/roster` as never),
+        }
+      );
+    }
+
+    if (!started && id && !shouldUseDevMocks()) {
+      list.push(
+        {
+          key: 'randomizeGroups',
+          label: t('tournamentDetail.menuRandomizeGroups'),
+          icon: 'shuffle-outline',
+          color: Colors.violet,
+          disabled: randomizeGroupsMutation.isPending,
+          onPress: () =>
+            Alert.alert(
+              t('tournamentDetail.menuRandomizeGroups'),
+              t('tournamentDetail.randomizeGroupsConfirm'),
+              [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.ok'),
+                  onPress: () =>
+                    randomizeGroupsMutation.mutate(
+                      { id },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    ),
+                },
+              ]
+            ),
+        },
+        {
+          key: 'start',
+          label: t('tournamentDetail.menuStartTournament'),
+          icon: 'play-outline',
+          color: Colors.success,
+          disabled: startTournamentMutation.isPending,
+          onPress: () =>
+            Alert.alert(
+              t('tournamentDetail.menuStartTournament'),
+              t('tournamentDetail.startTournamentConfirm'),
+              [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.ok'),
+                  onPress: () =>
+                    startTournamentMutation.mutate(
+                      { id },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    ),
+                },
+              ]
+            ),
         }
       );
     }
@@ -307,7 +373,17 @@ export default function TournamentDetailScreen() {
     });
 
     return list;
-  }, [id, tournament, t, router, handleShareInvite, handleDelete, deleteTournament.isPending]);
+  }, [
+    id,
+    tournament,
+    t,
+    router,
+    handleShareInvite,
+    handleDelete,
+    deleteTournament.isPending,
+    randomizeGroupsMutation,
+    startTournamentMutation,
+  ]);
 
   if (isLoading || !tournament) {
     return (
@@ -640,7 +716,18 @@ export default function TournamentDetailScreen() {
     updateTournament.isPending ||
     deleteTeam.isPending ||
     deleteTournament.isPending ||
-    rebalanceGroupsMutation.isPending;
+    rebalanceGroupsMutation.isPending ||
+    randomizeGroupsMutation.isPending ||
+    startTournamentMutation.isPending;
+
+  const tournamentStarted = !!tournament.startedAt || tournament.phase === 'classification' || tournament.phase === 'categories' || tournament.phase === 'completed';
+  const matchProgress = (() => {
+    if (!tournamentStarted) return null;
+    const total = classificationMatches.length;
+    if (total === 0) return { total: 0, completed: 0, ratio: 0 };
+    const completed = classificationMatches.filter((m) => m.status === 'completed').length;
+    return { total, completed, ratio: completed / total };
+  })();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -668,6 +755,16 @@ export default function TournamentDetailScreen() {
               {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}:{' '}
               {tournament.setsPerMatch ?? 1}
             </Text>
+            {matchProgress ? (
+              <View style={styles.progressWrap} accessibilityRole="text">
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.round(matchProgress.ratio * 100)}%` }]} />
+                </View>
+                <Text style={styles.progressLabel}>
+                  {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
+                </Text>
+              </View>
+            ) : null}
           </View>
           {canManageTournament ? (
             <View style={styles.headerTopActions}>
@@ -1152,6 +1249,19 @@ const styles = StyleSheet.create({
   headerTopRowEnd: { justifyContent: 'flex-end' },
   headerTopActions: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
   dateLocationLeft: { flex: 1, minWidth: 0 },
+  progressWrap: { marginTop: 10, gap: 6 },
+  progressTrack: {
+    height: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 8,
+    backgroundColor: Colors.yellow,
+    borderRadius: 999,
+  },
+  progressLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
   tabsSection: { marginBottom: 16, overflow: 'visible' },
   divisionTabBar: {
     flexDirection: 'row',

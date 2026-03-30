@@ -316,6 +316,11 @@
     "waitlistYouAre": "You are #%{n} on the waiting list"
   },
   "tournamentDetail": {
+    "menuStartTournament": "Start tournament",
+    "startTournamentConfirm": "This will start the classification round and generate matches. You can still manually move teams between groups, but you won’t be able to randomize groups anymore.",
+    "menuRandomizeGroups": "Randomize groups",
+    "randomizeGroupsConfirm": "Randomly reshuffle team groups before the tournament starts?",
+    "progressLabel": "%{done}/%{total} matches completed",
     "cancelledBanner": "This tournament has been cancelled.",
     "privateVisibilityBanner": "Invite-only: not shown in public lists. Share the invite link to bring players in.",
     "teams": "Teams",

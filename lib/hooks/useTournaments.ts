@@ -101,6 +101,29 @@ export function useRebalanceTournamentGroups() {
   });
 }
 
+export function useStartTournament() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, matchesPerOpponent }: { id: string; matchesPerOpponent?: number }) =>
+      tournamentsApi.start(id, { matchesPerOpponent }),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
+export function useRandomizeTournamentGroups() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => tournamentsApi.randomizeGroups(id),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+    },
+  });
+}
+
 export function useDeleteTournament() {
   const queryClient = useQueryClient();
   const router = useRouter();
