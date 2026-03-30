@@ -774,6 +774,52 @@ export default function TournamentDetailScreen() {
         </View>
       </View>
 
+      {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
+      {!hasJoined && canEnroll && !isCancelled && isFull ? (
+        <View style={styles.waitlistActions}>
+          {waitlistPosition == null ? (
+            <Button
+              title={t('tournaments.waitlistJoin')}
+              variant="secondary"
+              onPress={() => {
+                if (!userId || !id) return;
+                joinWaitlist.mutate(
+                  { tournamentId: id, userId },
+                  {
+                    onError: (err: unknown) =>
+                      alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+                  }
+                );
+              }}
+              disabled={joinWaitlist.isPending}
+              fullWidth
+            />
+          ) : (
+            <View style={styles.waitlistRow}>
+              <Text style={styles.waitlistPositionText}>
+                {t('tournaments.waitlistYouAre', { n: waitlistPosition })}
+              </Text>
+              <Button
+                title={t('tournaments.waitlistLeave')}
+                variant="outline"
+                onPress={() => {
+                  if (!userId || !id) return;
+                  leaveWaitlist.mutate(
+                    { tournamentId: id },
+                    {
+                      onError: (err: unknown) =>
+                        alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+                    }
+                  );
+                }}
+                disabled={leaveWaitlist.isPending}
+                fullWidth
+              />
+            </View>
+          )}
+        </View>
+      ) : null}
+
       <View style={styles.tabsSection}>
         <View style={styles.divisionTabBar} accessibilityRole="tablist">
           {availableDivisions.map((division) => {
@@ -1184,47 +1230,6 @@ export default function TournamentDetailScreen() {
             fullWidth
           />
         )}
-        {!hasJoined && canEnroll && !isCancelled && isFull && waitlistPosition == null && (
-          <Button
-            title={t('tournaments.waitlistJoin')}
-            variant="secondary"
-            onPress={() => {
-              if (!userId || !id) return;
-              joinWaitlist.mutate(
-                { tournamentId: id, userId },
-                {
-                  onError: (err: unknown) =>
-                    alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-                }
-              );
-            }}
-            disabled={joinWaitlist.isPending}
-            fullWidth
-          />
-        )}
-        {!hasJoined && canEnroll && !isCancelled && isFull && waitlistPosition != null && (
-          <View style={styles.waitlistRow}>
-            <Text style={styles.waitlistPositionText}>
-              {t('tournaments.waitlistYouAre', { n: waitlistPosition })}
-            </Text>
-            <Button
-              title={t('tournaments.waitlistLeave')}
-              variant="outline"
-              onPress={() => {
-                if (!userId || !id) return;
-                leaveWaitlist.mutate(
-                  { tournamentId: id },
-                  {
-                    onError: (err: unknown) =>
-                      alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-                  }
-                );
-              }}
-              disabled={leaveWaitlist.isPending}
-              fullWidth
-            />
-          </View>
-        )}
         {userHasTeam && (
           <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
         )}
@@ -1262,6 +1267,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   progressLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+  waitlistActions: { marginBottom: 16 },
   tabsSection: { marginBottom: 16, overflow: 'visible' },
   divisionTabBar: {
     flexDirection: 'row',
