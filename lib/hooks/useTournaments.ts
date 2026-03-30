@@ -105,7 +105,7 @@ export function useStartTournament() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, matchesPerOpponent }: { id: string; matchesPerOpponent?: number }) =>
-      tournamentsApi.start(id, { matchesPerOpponent }),
+      tournamentsApi.action(id, { action: 'start', matchesPerOpponent }),
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
@@ -116,7 +116,7 @@ export function useStartTournament() {
 export function useRandomizeTournamentGroups() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id }: { id: string }) => tournamentsApi.randomizeGroups(id),
+    mutationFn: ({ id }: { id: string }) => tournamentsApi.action(id, { action: 'randomizeGroups' }),
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });

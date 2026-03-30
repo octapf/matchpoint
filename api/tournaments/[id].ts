@@ -6,6 +6,7 @@ import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { getSessionUserId, isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
+import { generateClassificationMatches, randomizeTeamGroups } from '../../server/lib/classificationMatches';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -73,13 +74,127 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         groupsSet.add(clamped);
       }
 
+      const includeMatches = String(req.query.includeMatches ?? '') === '1';
+      let matches: unknown[] | undefined = undefined;
+      if (includeMatches) {
+        matches = await db
+          .collection('matches')
+          .find({ tournamentId: id })
+          .sort({ createdAt: 1, _id: 1 })
+          .toArray();
+      }
+
       return corsRes.status(200).json({
         ...serialized,
         entriesCount,
         teamsCount,
         groupsWithTeamsCount: groupsSet.size,
         waitlistCount,
+        ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
       });
+    }
+
+    if (req.method === 'POST') {
+      const actingUserId = resolveActorUserId(req);
+      if (!actingUserId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      const current = await col.findOne({ _id: oid });
+      if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const cur = current as Record<string, unknown>;
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      const isOrg = isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId);
+      if (!isOrg && !actorIsAdmin) {
+        return corsRes.status(403).json({ error: 'Only organizers can manage this tournament' });
+      }
+
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const action = typeof body?.action === 'string' ? body.action.trim() : '';
+
+      if (action === 'randomizeGroups') {
+        const result = await randomizeTeamGroups(db, id);
+        return corsRes.status(200).json(result);
+      }
+
+      if (action === 'start') {
+        const startedAt = (cur as { startedAt?: unknown }).startedAt;
+        const phase = String((cur as { phase?: unknown }).phase ?? '');
+        if (startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed') {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+        const matchesPerOpponentRaw = Number(
+          body?.matchesPerOpponent ?? (cur as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1
+        );
+        const matchesPerOpponent = Math.max(1, Math.min(5, Math.floor(matchesPerOpponentRaw) || 1));
+        const pointsToWin = Math.max(1, Math.min(99, Number((cur as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
+        const setsPerMatch = Math.max(1, Math.min(7, Number((cur as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
+
+        await db.collection('matches').deleteMany({ tournamentId: id, stage: 'classification' });
+
+        const now = new Date().toISOString();
+        await col.updateOne(
+          { _id: oid },
+          {
+            $set: {
+              phase: 'classification',
+              startedAt: now,
+              classificationMatchesPerOpponent: matchesPerOpponent,
+              updatedAt: now,
+            },
+          }
+        );
+
+        const gen = await generateClassificationMatches(db, id, {
+          matchesPerOpponent,
+          pointsToWin,
+          setsPerMatch,
+        });
+        return corsRes.status(200).json({ startedAt: now, matches: gen });
+      }
+
+      if (action === 'updateMatch') {
+        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
+        if (!matchId || !ObjectId.isValid(matchId)) {
+          return corsRes.status(400).json({ error: 'Invalid matchId' });
+        }
+        const matchOid = new ObjectId(matchId);
+        const match = await db.collection('matches').findOne({ _id: matchOid });
+        if (!match) return corsRes.status(404).json({ error: 'Match not found' });
+        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
+          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+        }
+        const setsWonA = Number(body?.setsWonA);
+        const setsWonB = Number(body?.setsWonB);
+        const pointsA = body?.pointsA != null ? Number(body.pointsA) : undefined;
+        const pointsB = body?.pointsB != null ? Number(body.pointsB) : undefined;
+        if (!Number.isFinite(setsWonA) || !Number.isFinite(setsWonB) || setsWonA < 0 || setsWonB < 0) {
+          return corsRes.status(400).json({ error: 'Invalid setsWonA/setsWonB' });
+        }
+        const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
+        const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
+        const winnerId = setsWonA === setsWonB ? '' : setsWonA > setsWonB ? teamAId : teamBId;
+        if (!winnerId) return corsRes.status(400).json({ error: 'Matches cannot end in a tie' });
+
+        const now = new Date().toISOString();
+        const update: Record<string, unknown> = {
+          setsWonA: Math.floor(setsWonA),
+          setsWonB: Math.floor(setsWonB),
+          winnerId,
+          status: 'completed',
+          completedAt: now,
+          updatedAt: now,
+        };
+        if (Number.isFinite(pointsA)) update.pointsA = Math.floor(pointsA!);
+        if (Number.isFinite(pointsB)) update.pointsB = Math.floor(pointsB!);
+        const result = await db
+          .collection('matches')
+          .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
+        if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+        return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+      }
+
+      return corsRes.status(400).json({ error: 'Invalid action' });
     }
 
     if (req.method === 'PATCH') {
