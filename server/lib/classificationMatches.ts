@@ -2,6 +2,7 @@ import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import type { Match, TournamentDivision } from '../../types';
 import { normalizeGroupCount, teamGroupIndex, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { deriveTournamentGroupConfig } from './tournamentConfig';
 
 function fisherYates<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -137,10 +138,15 @@ export function buildClassificationPairs(teamIds: string[], matchesPerOpponent: 
 export async function generateClassificationMatches(
   db: Db,
   tournamentId: string,
-  opts: { division?: TournamentDivision; matchesPerOpponent: number; pointsToWin: number; setsPerMatch: number }
+  opts: { matchesPerOpponent: number; pointsToWin: number; setsPerMatch: number }
 ): Promise<{ created: number; total: number }> {
   const teamsCol = db.collection('teams');
   const matchesCol = db.collection('matches');
+
+  const t = await db.collection('tournaments').findOne({ _id: new ObjectId(tournamentId) });
+  if (!t) throw new Error('Tournament not found');
+  const cfg = deriveTournamentGroupConfig(t as { maxTeams?: unknown; groupCount?: unknown; divisions?: unknown });
+  const divisions = cfg.divisions.length ? cfg.divisions : (['mixed'] as TournamentDivision[]);
 
   const teams = await teamsCol.find({ tournamentId }).toArray();
   // Group buckets based on current groupIndex (clamped).
@@ -154,6 +160,12 @@ export async function generateClassificationMatches(
     groups.set(gi, list);
   }
 
+  const divisionForGroupIndex = (groupIndex: number): TournamentDivision | undefined => {
+    if (divisions.length <= 1) return divisions[0];
+    const di = cfg.divisionIndexForGroupIndex(groupIndex);
+    return divisions[di] ?? divisions[0];
+  };
+
   const now = new Date().toISOString();
   let created = 0;
   let total = 0;
@@ -165,7 +177,7 @@ export async function generateClassificationMatches(
       const doc: Omit<Match, '_id'> = {
         tournamentId,
         stage: 'classification',
-        division: opts.division,
+        division: divisionForGroupIndex(groupIndex),
         groupIndex,
         category: undefined,
         teamAId: a,

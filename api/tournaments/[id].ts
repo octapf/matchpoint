@@ -6,7 +6,14 @@ import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { getSessionUserId, isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
-import { actionPublishCategoryMatches, actionRandomizeGroups, actionStartTournament } from '../../server/lib/tournamentLifecycle';
+import { deriveTournamentGroupConfig } from '../../server/lib/tournamentConfig';
+import { computeStandingsForGroup } from '../../server/lib/tournamentStandings';
+import {
+  actionFinalizeClassification,
+  actionPublishCategoryMatches,
+  actionRandomizeGroups,
+  actionStartTournament,
+} from '../../server/lib/tournamentLifecycle';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -42,10 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
         if (!actorIsAdmin && !isOrg) {
           const entriesCol = db.collection('entries');
-          const hasEntry = await entriesCol.findOne({
-            tournamentId: { $in: [id, oid] },
-            userId: actorId,
-          });
+          const hasEntry = await entriesCol.findOne({ tournamentId: id, userId: actorId });
           if (!hasEntry) {
             return corsRes.status(404).json({ error: 'Tournament not found' });
           }
@@ -60,9 +64,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const waitCol = db.collection('waitlist');
 
       const [entriesCount, teamsList, waitlistCount] = await Promise.all([
-        entriesCol.countDocuments({ tournamentId: { $in: [id, oid] } }),
-        teamsCol.find({ tournamentId: { $in: [id, oid] } }).project({ groupIndex: 1 }).toArray(),
-        waitCol.countDocuments({ tournamentId: { $in: [id, oid] } }),
+        entriesCol.countDocuments({ tournamentId: id }),
+        teamsCol.find({ tournamentId: id }).project({ groupIndex: 1 }).toArray(),
+        waitCol.countDocuments({ tournamentId: id }),
       ]);
 
       const teamsCount = teamsList.length;
@@ -75,6 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const includeMatches = String(req.query.includeMatches ?? '') === '1';
+      const includeStandings = String(req.query.includeStandings ?? '') === '1';
       let matches: unknown[] | undefined = undefined;
       if (includeMatches) {
         matches = await db
@@ -84,6 +89,101 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .toArray();
       }
 
+      let standings: unknown | undefined = undefined;
+      let fixture: unknown | undefined = undefined;
+      if (includeStandings) {
+        const teams = await db
+          .collection('teams')
+          .find({ tournamentId: id })
+          .project({ _id: 1, name: 1, groupIndex: 1, division: 1, category: 1 })
+          .toArray();
+
+        const classificationMatches = await db
+          .collection('matches')
+          .find({ tournamentId: id, stage: 'classification' })
+          .project({ _id: 1, groupIndex: 1, teamAId: 1, teamBId: 1, status: 1, winnerId: 1, pointsA: 1, pointsB: 1 })
+          .toArray();
+
+        const cfg = deriveTournamentGroupConfig(doc as { maxTeams?: unknown; groupCount?: unknown; divisions?: unknown });
+        const divisions = cfg.divisions.length ? cfg.divisions : (['mixed'] as const);
+
+        const byGroup = new Map<number, { _id: string; name: string }[]>();
+        for (const tm of teams as unknown as Array<{ _id: ObjectId; name?: unknown; groupIndex?: unknown }>) {
+          const gi = teamGroupIndex({ groupIndex: typeof tm.groupIndex === 'number' ? tm.groupIndex : 0 });
+          const list = byGroup.get(gi) ?? [];
+          list.push({ _id: tm._id.toString(), name: String(tm.name ?? '') });
+          byGroup.set(gi, list);
+        }
+
+        standings = divisions.map((division, di) => {
+          const base = cfg.divisionGroupOffset(di);
+          const perDiv = cfg.groupsPerDivision(di);
+          const groups = Array.from({ length: perDiv }, (_, i) => {
+            const gi = base + i;
+            const groupTeams = byGroup.get(gi) ?? [];
+            const groupMatches = classificationMatches.filter(
+              (m) => Number((m as { groupIndex?: unknown }).groupIndex ?? -1) === gi
+            );
+            return {
+              groupIndex: gi,
+              standings: computeStandingsForGroup({ teams: groupTeams, matches: groupMatches as any }),
+            };
+          });
+          return { division, groups };
+        });
+
+        const allMatches = await db
+          .collection('matches')
+          .find({ tournamentId: id })
+          .project({
+            _id: 1,
+            stage: 1,
+            division: 1,
+            groupIndex: 1,
+            category: 1,
+            teamAId: 1,
+            teamBId: 1,
+            status: 1,
+            setsWonA: 1,
+            setsWonB: 1,
+            pointsA: 1,
+            pointsB: 1,
+            winnerId: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          })
+          .sort({ createdAt: 1, _id: 1 })
+          .toArray();
+
+        fixture = {
+          classification: divisions.map((division, di) => {
+            const base = cfg.divisionGroupOffset(di);
+            const perDiv = cfg.groupsPerDivision(di);
+            const groups = Array.from({ length: perDiv }, (_, i) => {
+              const gi = base + i;
+              const matches = allMatches.filter(
+                (m) =>
+                  (m as { stage?: unknown }).stage === 'classification' &&
+                  Number((m as { groupIndex?: unknown }).groupIndex ?? -1) === gi
+              );
+              return { groupIndex: gi, matches: matches.map((m) => serializeDoc(m as Record<string, unknown>)) };
+            });
+            return { division, groups };
+          }),
+          categories: divisions.map((division, di) => {
+            const matches = allMatches.filter(
+              (m) => (m as { stage?: unknown }).stage === 'category' && String((m as { division?: unknown }).division ?? '') === division
+            );
+            const byCategory: Record<string, unknown[]> = { Gold: [], Silver: [], Bronze: [] };
+            for (const m of matches) {
+              const c = String((m as { category?: unknown }).category ?? '');
+              if (c === 'Gold' || c === 'Silver' || c === 'Bronze') byCategory[c].push(serializeDoc(m as Record<string, unknown>));
+            }
+            return { division, byCategory };
+          }),
+        };
+      }
+
       return corsRes.status(200).json({
         ...serialized,
         entriesCount,
@@ -91,6 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         groupsWithTeamsCount: groupsSet.size,
         waitlistCount,
         ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
+        ...(includeStandings ? { standings, fixture } : null),
       });
     }
 
@@ -137,6 +238,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      if (action === 'finalizeClassification') {
+        try {
+          const remaining = await db
+            .collection('matches')
+            .countDocuments({ tournamentId: id, stage: 'classification', status: { $ne: 'completed' } });
+          if (remaining > 0) {
+            return corsRes.status(400).json({ error: 'Classification is not completed', remaining });
+          }
+          const result = await actionFinalizeClassification(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not finalize classification';
+          return corsRes.status(400).json({ error: msg });
+        }
+      }
+
       if (action === 'updateMatch') {
         const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
         if (!matchId || !ObjectId.isValid(matchId)) {
@@ -155,8 +272,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!Number.isFinite(setsWonA) || !Number.isFinite(setsWonB) || setsWonA < 0 || setsWonB < 0) {
           return corsRes.status(400).json({ error: 'Invalid setsWonA/setsWonB' });
         }
+        if (!Number.isFinite(pointsA) || !Number.isFinite(pointsB) || (pointsA as number) < 0 || (pointsB as number) < 0) {
+          return corsRes.status(400).json({ error: 'Points are required to complete a match' });
+        }
+        const stage = String((match as { stage?: unknown }).stage ?? '');
+        const division = String((match as { division?: unknown }).division ?? '');
+        const groupIndex = (match as { groupIndex?: unknown }).groupIndex;
+        const category = String((match as { category?: unknown }).category ?? '');
+        if (stage !== 'classification' && stage !== 'category') {
+          return corsRes.status(400).json({ error: 'Invalid match stage' });
+        }
+        if (!division || (division !== 'men' && division !== 'women' && division !== 'mixed')) {
+          return corsRes.status(400).json({ error: 'Match division is missing' });
+        }
+        if (stage === 'classification' && !(typeof groupIndex === 'number' && Number.isFinite(groupIndex) && groupIndex >= 0)) {
+          return corsRes.status(400).json({ error: 'Classification matches must have a groupIndex' });
+        }
+        if (stage === 'category' && category && category !== 'Gold' && category !== 'Silver' && category !== 'Bronze') {
+          return corsRes.status(400).json({ error: 'Invalid match category' });
+        }
+        if (stage === 'category' && !category) {
+          return corsRes.status(400).json({ error: 'Category matches must have a category' });
+        }
         const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
         const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
+
+        if (stage === 'category') {
+          const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { categoriesSnapshot: 1 } });
+          const snap = (tdoc as { categoriesSnapshot?: unknown } | null)?.categoriesSnapshot as
+            | {
+                divisions?: { division: string; categories: { category: string; matchIds: string[] }[] }[];
+              }
+            | undefined;
+          const snapDiv = snap?.divisions?.find((d) => d.division === division);
+          const snapCat = snapDiv?.categories?.find((c) => c.category === category);
+          if (snapCat?.matchIds?.length && !snapCat.matchIds.includes(matchId)) {
+            return corsRes.status(400).json({ error: 'Category match not in published bracket snapshot' });
+          }
+
+          if (!ObjectId.isValid(teamAId) || !ObjectId.isValid(teamBId)) {
+            return corsRes.status(400).json({ error: 'Invalid team id(s) in match' });
+          }
+          const teams = await db
+            .collection('teams')
+            .find({ tournamentId: id, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
+            .project({ _id: 1, division: 1, category: 1 })
+            .toArray();
+          const map = new Map<string, { division?: unknown; category?: unknown }>();
+          for (const t of teams as unknown as Array<{ _id: ObjectId; division?: unknown; category?: unknown }>) {
+            map.set(t._id.toString(), { division: t.division, category: t.category });
+          }
+          const ta = map.get(teamAId);
+          const tb = map.get(teamBId);
+          if (!ta || !tb) {
+            return corsRes.status(400).json({ error: 'Category match teams not found' });
+          }
+          if (String(ta.division ?? '') !== division || String(tb.division ?? '') !== division) {
+            return corsRes.status(400).json({ error: 'Category match division mismatch' });
+          }
+          if (String(ta.category ?? '') !== category || String(tb.category ?? '') !== category) {
+            return corsRes.status(400).json({ error: 'Category match category mismatch' });
+          }
+        }
+
         const winnerId = setsWonA === setsWonB ? '' : setsWonA > setsWonB ? teamAId : teamBId;
         if (!winnerId) return corsRes.status(400).json({ error: 'Matches cannot end in a tie' });
 
@@ -168,9 +346,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           status: 'completed',
           completedAt: now,
           updatedAt: now,
+          pointsA: Math.floor(pointsA!),
+          pointsB: Math.floor(pointsB!),
         };
-        if (Number.isFinite(pointsA)) update.pointsA = Math.floor(pointsA!);
-        if (Number.isFinite(pointsB)) update.pointsB = Math.floor(pointsB!);
         const result = await db
           .collection('matches')
           .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
@@ -199,7 +377,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const allowed = [
         'name',
-        'date',
         'startDate',
         'endDate',
         'location',
@@ -256,7 +433,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         started &&
         (update.classificationMatchesPerOpponent !== undefined ||
           update.categoryFractions !== undefined ||
-          update.singleCategoryAdvanceFraction !== undefined)
+          update.singleCategoryAdvanceFraction !== undefined ||
+          update.divisions !== undefined ||
+          update.categories !== undefined ||
+          update.maxTeams !== undefined ||
+          update.groupCount !== undefined)
       ) {
         return corsRes.status(400).json({ error: 'Tournament already started' });
       }
@@ -280,7 +461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         update.groupCount = vg.groupCount;
         update.maxTeams = nextMax;
         const teamsCol = db.collection('teams');
-        const teamsList = await teamsCol.find({ tournamentId: { $in: [id, oid] } }).toArray();
+        const teamsList = await teamsCol.find({ tournamentId: id }).toArray();
         const perGroup = new Map<number, number>();
         for (const tm of teamsList) {
           const gi = teamGroupIndex(tm as { groupIndex?: number });
@@ -405,9 +586,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         if (!actorIsAdmin) {
           const entriesCol = db.collection('entries');
-          const entryUserIds = new Set(
-            (await entriesCol.find({ tournamentId: { $in: [id, oid] } }).toArray()).map((e) => e.userId as string)
-          );
+          const entryUserIds = new Set((await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string));
           for (const uid of nextOrganizers) {
             if (prevOrganizers.includes(uid)) continue;
             if (!entryUserIds.has(uid)) {
@@ -453,15 +632,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
       const entriesCol = db.collection('entries');
-      const entryCount = await entriesCol.countDocuments({ tournamentId: { $in: [id, oid] } });
+      const entryCount = await entriesCol.countDocuments({ tournamentId: id });
       if (entryCount > 0) {
         return corsRes.status(400).json({
           error:
             'Cannot delete tournament while players are registered. Remove all players from the roster first.',
         });
       }
-      await entriesCol.deleteMany({ tournamentId: { $in: [id, oid] } });
-      await db.collection('teams').deleteMany({ tournamentId: { $in: [id, oid] } });
+      await entriesCol.deleteMany({ tournamentId: id });
+      await db.collection('teams').deleteMany({ tournamentId: id });
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();
     }

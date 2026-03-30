@@ -35,6 +35,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const actingUserId = resolveActorUserId(req, body);
+      if (!actingUserId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      if (!ObjectId.isValid(actingUserId)) {
+        return corsRes.status(400).json({ error: 'Invalid acting user' });
+      }
+      const entry = await col.findOne({ _id: oid });
+      if (!entry) return corsRes.status(404).json({ error: 'Entry not found' });
+      const tournamentId = String((entry as { tournamentId?: unknown }).tournamentId ?? '');
+      const entryUserId = String((entry as { userId?: unknown }).userId ?? '');
+
+      const tournament = await db.collection('tournaments').findOne({ _id: new ObjectId(tournamentId) });
+      if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      const actorIsOrganizer = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
+      const self = actingUserId === entryUserId;
+      if (!self && !actorIsAdmin && !actorIsOrganizer) {
+        return corsRes.status(403).json({ error: 'Not allowed' });
+      }
+
       const allowed = ['teamId', 'lookingForPartner', 'status'];
       const update: Record<string, unknown> = {};
       for (const k of allowed) {
@@ -43,6 +65,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
+
+      // Validate teamId updates (string-only) and keep status consistent.
+      if (update.teamId !== undefined) {
+        const nextTeamId = typeof update.teamId === 'string' ? update.teamId.trim() : '';
+        if (!nextTeamId) {
+          update.teamId = null;
+          update.status = 'joined';
+          update.lookingForPartner = true;
+        } else {
+          if (!ObjectId.isValid(nextTeamId)) {
+            return corsRes.status(400).json({ error: 'Invalid teamId' });
+          }
+          const team = await db.collection('teams').findOne({ _id: new ObjectId(nextTeamId) });
+          if (!team) return corsRes.status(400).json({ error: 'Team not found' });
+          if (String((team as { tournamentId?: unknown }).tournamentId ?? '') !== tournamentId) {
+            return corsRes.status(400).json({ error: 'Team does not belong to this tournament' });
+          }
+          if (!actorIsAdmin && !actorIsOrganizer && !self) {
+            return corsRes.status(403).json({ error: 'Not allowed' });
+          }
+          update.teamId = nextTeamId;
+          update.status = 'in_team';
+          update.lookingForPartner = false;
+        }
+      }
+      if (update.status !== undefined) {
+        const s = typeof update.status === 'string' ? update.status.trim() : '';
+        if (s !== 'joined' && s !== 'in_team') {
+          return corsRes.status(400).json({ error: 'Invalid status' });
+        }
+        update.status = s;
+      }
+      if (update.lookingForPartner !== undefined) {
+        update.lookingForPartner = !!update.lookingForPartner;
+      }
+
       update.updatedAt = new Date().toISOString();
       const result = await col.findOneAndUpdate(
         { _id: oid },

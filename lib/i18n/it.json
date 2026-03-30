@@ -171,7 +171,19 @@
     "devSeedPurgeLineTournament": "Torneo seed eliminato.",
     "devSeedPurgeLineCounts": "Squadre: %{teams}, iscrizioni: %{entries}, lista d'attesa: %{waitlist}, utenti: %{users}.",
     "devSeedErrOldApi": "L’API online è vecchia: distribuisci l’ultimo codice su Vercel (GET ?type=devSeedInfo). Oppure \"npm run api:dev\" in locale e EXPO_PUBLIC_API_URL verso quell’URL (stessa Wi‑Fi del telefono).",
-    "devSeedErrPost405": "Il server ha rifiutato POST su /api/admin (405). Distribuisci l’API aggiornata o usa \"npm run api:dev\" locale con EXPO_PUBLIC_API_URL."
+    "devSeedErrPost405": "Il server ha rifiutato POST su /api/admin (405). Distribuisci l’API aggiornata o usa \"npm run api:dev\" locale con EXPO_PUBLIC_API_URL.",
+    "dbBackfillTitle": "Backfill database",
+    "dbBackfillHint": "Compila campi legacy (tournamentId string, division/category mancanti) per mantenere coerente la logica del torneo.",
+    "dbBackfillTournamentIdPlaceholder": "ID torneo (opzionale)",
+    "dbBackfillUseSeedTournament": "Usa ID torneo seed",
+    "dbBackfillRun": "Esegui backfill",
+    "dbBackfillConfirm": "Eseguire il backfill ora? Può richiedere un minuto su database grandi.",
+    "dbBackfillDone": "Backfill completato.",
+    "dbIndexesTitle": "Indici database",
+    "dbIndexesHint": "Crea indici MongoDB per performance e integrità (sicuro eseguirlo più volte).",
+    "dbIndexesRun": "Crea indici",
+    "dbIndexesConfirm": "Creare indici ora? È sicuro eseguirlo più volte.",
+    "dbIndexesDone": "Indici creati."
   },
   "auth": {
     "signIn": "Accedi",
@@ -316,6 +328,14 @@
     "waitlistYouAre": "Sei il n. %{n} in lista d’attesa"
   },
   "tournamentDetail": {
+    "bracketGeneratedAt": "Tabellone generato il",
+    "editMatchTitle": "Modifica partita",
+    "setsWonA": "Set vinti (A)",
+    "setsWonB": "Set vinti (B)",
+    "pointsA": "Punti (A)",
+    "pointsB": "Punti (B)",
+    "matchPointsRequired": "I punti sono obbligatori per completare una partita.",
+    "matchInvalidSets": "Inserisci valori validi per i set.",
     "cancelledBanner": "Questo torneo è stato annullato.",
     "privateVisibilityBanner": "Solo su invito: non compare in elenchi pubblici. Condividi il link per far entrare i giocatori.",
     "teams": "Squadre",

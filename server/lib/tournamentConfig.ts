@@ -1,5 +1,5 @@
 import type { TournamentDivision } from '../../types';
-import { normalizeGroupCount, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { normalizeGroupCount, splitAcrossDivisions, validateTournamentGroups } from '../../lib/tournamentGroups';
 
 export type TournamentGroupConfig = {
   maxTeams: number;
@@ -7,8 +7,11 @@ export type TournamentGroupConfig = {
   teamsPerGroup: number;
   divisions: TournamentDivision[];
   divisionCount: number;
-  groupsPerDivision: number;
+  /** Groups per division (remainder spread to first divisions). */
+  groupsPerDivision: (divisionIndex: number) => number;
   divisionGroupOffset: (divisionIndex: number) => number;
+  /** Map global groupIndex → division index (0..divisionCount-1). */
+  divisionIndexForGroupIndex: (groupIndex: number) => number;
 };
 
 export function parseDivisions(raw: unknown): TournamentDivision[] {
@@ -32,8 +35,26 @@ export function deriveTournamentGroupConfig(doc: { maxTeams?: unknown; groupCoun
   }
   const divisions = parseDivisions(doc.divisions);
   const divisionCount = Math.max(1, divisions.length || 1);
-  const groupsPerDivision =
-    divisionCount > 1 && vg.groupCount % divisionCount === 0 ? vg.groupCount / divisionCount : vg.groupCount;
+  const groupsPerDivision = (divisionIndex: number) =>
+    splitAcrossDivisions(vg.groupCount, divisionCount, Math.min(divisionCount - 1, Math.max(0, Math.floor(divisionIndex))));
+
+  const divisionGroupOffset = (divisionIndex: number) => {
+    const di = Math.min(divisionCount - 1, Math.max(0, Math.floor(divisionIndex)));
+    let offset = 0;
+    for (let i = 0; i < di; i++) offset += groupsPerDivision(i);
+    return offset;
+  };
+
+  const divisionIndexForGroupIndex = (groupIndex: number) => {
+    const gi = Math.max(0, Math.floor(groupIndex));
+    let cursor = 0;
+    for (let di = 0; di < divisionCount; di++) {
+      const size = groupsPerDivision(di);
+      if (gi < cursor + size) return di;
+      cursor += size;
+    }
+    return Math.max(0, divisionCount - 1);
+  };
 
   return {
     maxTeams,
@@ -42,10 +63,8 @@ export function deriveTournamentGroupConfig(doc: { maxTeams?: unknown; groupCoun
     divisions,
     divisionCount,
     groupsPerDivision,
-    divisionGroupOffset: (divisionIndex: number) => {
-      const di = Math.min(divisionCount - 1, Math.max(0, Math.floor(divisionIndex)));
-      return di * groupsPerDivision;
-    },
+    divisionGroupOffset,
+    divisionIndexForGroupIndex,
   };
 }
 

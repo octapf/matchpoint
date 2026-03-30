@@ -9,6 +9,8 @@ import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { requireAdmin } from '../server/lib/auth';
 import { getDevSeedInfo, purgeDevSeed, runDevSeed } from '../server/lib/seedDevTournament';
+import { runDbBackfill } from '../server/lib/dbBackfill';
+import { ensureDbIndexes } from '../server/lib/dbIndexes';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -39,8 +41,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const result = await purgeDevSeed(db);
         return corsRes.status(200).json(result);
       }
+      if (body.action === 'dbBackfill') {
+        const tournamentId = typeof body.tournamentId === 'string' ? body.tournamentId : null;
+        const result = await runDbBackfill(db, { tournamentId });
+        return corsRes.status(200).json(result);
+      }
+      if (body.action === 'dbIndexes') {
+        const result = await ensureDbIndexes(db);
+        return corsRes.status(200).json(result);
+      }
       if (body.action !== 'devSeed') {
-        return corsRes.status(400).json({ error: 'Invalid action (devSeed | devSeedPurge)' });
+        return corsRes.status(400).json({ error: 'Invalid action (devSeed | devSeedPurge | dbBackfill | dbIndexes)' });
       }
       const result = await runDevSeed(db, { force: !!body.force });
       return corsRes.status(200).json(result);

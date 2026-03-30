@@ -76,6 +76,18 @@ export interface Tournament {
   categoryFractions?: Partial<Record<TournamentCategory, number>>;
   /** When only one (or no) category is configured, fraction of teams that advance (default 0.5). */
   singleCategoryAdvanceFraction?: number;
+  /** Frozen category bracket (generated server-side on finalize classification). */
+  categoriesSnapshot?: {
+    computedAt: string;
+    divisions: {
+      division: TournamentDivision | string;
+      categories: {
+        category: TournamentCategory;
+        teamIds: string[];
+        matchIds: string[];
+      }[];
+    }[];
+  };
   organizerIds: string[];
   /** Populated by GET /api/tournaments list (count of entry documents). */
   entriesCount?: number;
@@ -125,6 +137,10 @@ export interface Team {
   playerIds: string[];
   /** 0-based; capacity per group = maxTeams / groupCount (at least 2). Omit on create to auto-fill least-loaded group. */
   groupIndex?: number;
+  /** Derived once the tournament is categorized (server-side). */
+  division?: TournamentDivision;
+  /** Derived once the tournament is categorized (server-side). */
+  category?: TournamentCategory;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

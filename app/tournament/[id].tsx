@@ -27,6 +27,7 @@ import {
   useRandomizeTournamentGroups,
   useStartTournament,
   useGenerateCategoryMatches,
+  useFinalizeClassification,
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
@@ -191,6 +192,7 @@ export default function TournamentDetailScreen() {
   const randomizeGroupsMutation = useRandomizeTournamentGroups();
   const startTournamentMutation = useStartTournament();
   const generateCategoryMatchesMutation = useGenerateCategoryMatches();
+  const finalizeClassificationMutation = useFinalizeClassification();
 
   const { data: allMatches = [] } = useMatches(id ? { tournamentId: id } : undefined);
   const classificationMatches = useMemo(
@@ -201,6 +203,8 @@ export default function TournamentDetailScreen() {
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'category'),
     [allMatches]
   );
+
+  const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
 
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
   const entryUserIds = entries.map((e) => e.userId);
@@ -403,11 +407,11 @@ export default function TournamentDetailScreen() {
       classificationMatches.length > 0 && classificationMatches.every((m) => m.status === 'completed');
     if (id && !shouldUseDevMocks() && phase === 'classification' && classificationComplete) {
       list.push({
-        key: 'generateCategoryMatches',
+        key: 'finalizeClassification',
         label: t('tournamentDetail.menuGenerateCategoryMatches'),
         icon: 'trophy-outline',
         color: Colors.violet,
-        disabled: generateCategoryMatchesMutation.isPending,
+        disabled: finalizeClassificationMutation.isPending,
         onPress: () =>
           Alert.alert(
             t('tournamentDetail.menuGenerateCategoryMatches'),
@@ -417,7 +421,7 @@ export default function TournamentDetailScreen() {
               {
                 text: t('common.ok'),
                 onPress: () =>
-                  generateCategoryMatchesMutation.mutate(
+                  finalizeClassificationMutation.mutate(
                     { id },
                     { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
                   ),
@@ -449,6 +453,7 @@ export default function TournamentDetailScreen() {
     randomizeGroupsMutation,
     startTournamentMutation,
     generateCategoryMatchesMutation,
+    finalizeClassificationMutation,
     classificationMatches,
   ]);
 
@@ -595,8 +600,12 @@ export default function TournamentDetailScreen() {
     // Shape expected by FixtureTab.
     return standingsByGroup.map((standings, localGi) => {
       const matches = (groupMatchesByLocal.get(localGi) ?? []).map((m) => {
-        const teamA = divisionTeamsByGroup[localGi]?.find((t) => t._id === m.teamAId) ?? { _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' };
-        const teamB = divisionTeamsByGroup[localGi]?.find((t) => t._id === m.teamBId) ?? { _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' };
+        const teamA =
+          teamById[m.teamAId] ??
+          ({ _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
+        const teamB =
+          teamById[m.teamBId] ??
+          ({ _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
         return {
           id: m._id,
           teamA,
@@ -604,6 +613,7 @@ export default function TournamentDetailScreen() {
           setsWonA: m.setsWonA ?? 0,
           setsWonB: m.setsWonB ?? 0,
           winnerId: m.winnerId ?? '',
+          status: m.status,
         };
       });
 
@@ -621,7 +631,71 @@ export default function TournamentDetailScreen() {
     matchCategoryTabs,
     tournament,
     id,
+    teamById,
   ]);
+
+  const categoryMatchesByCategory = useMemo(() => {
+    const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', any[]>> = {};
+    const cats: ('Gold' | 'Silver' | 'Bronze')[] = ['Gold', 'Silver', 'Bronze'];
+    for (const c of cats) out[c] = [];
+
+    const snapshot = (tournament as { categoriesSnapshot?: unknown } | undefined)?.categoriesSnapshot as
+      | {
+          divisions?: {
+            division: string;
+            categories: { category: 'Gold' | 'Silver' | 'Bronze'; matchIds: string[] }[];
+          }[];
+        }
+      | undefined;
+
+    // Build lookup for match rows from live data (no filtering).
+    const rowByMatchId = new Map<string, any>();
+    for (const m of categoryMatches) {
+      const teamA =
+        teamById[m.teamAId] ??
+        ({ _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
+      const teamB =
+        teamById[m.teamBId] ??
+        ({ _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
+      rowByMatchId.set(m._id, {
+        id: m._id,
+        teamA,
+        teamB,
+        setsWonA: m.setsWonA ?? 0,
+        setsWonB: m.setsWonB ?? 0,
+        winnerId: m.winnerId ?? '',
+        status: m.status,
+      });
+    }
+
+    // Prefer snapshot as the source-of-truth for what belongs in each category/division.
+    const snapDiv = snapshot?.divisions?.find((d) => d.division === currentDivision);
+    if (snapDiv) {
+      for (const c of cats) {
+        const catSnap = snapDiv.categories?.find((x) => x.category === c);
+        if (!catSnap?.matchIds?.length) continue;
+        const ordered: any[] = [];
+        for (const mid of catSnap.matchIds) {
+          const row = rowByMatchId.get(mid);
+          if (row) ordered.push(row);
+        }
+        out[c] = ordered;
+      }
+      return out;
+    }
+
+    // Fallback: derive from live match fields (older tournaments w/out snapshot).
+    for (const m of categoryMatches) {
+      const cat = (m as { category?: unknown }).category;
+      if (cat !== 'Gold' && cat !== 'Silver' && cat !== 'Bronze') continue;
+      const div = (m as { division?: unknown }).division;
+      if (div && div !== currentDivision) continue;
+      const row = rowByMatchId.get(m._id);
+      if (row) out[cat]!.push(row);
+    }
+
+    return out;
+  }, [categoryMatches, currentDivision, id, teamById, tournament]);
 
   const tournamentStarted =
     !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
@@ -1061,7 +1135,19 @@ export default function TournamentDetailScreen() {
             matchCategoryTabs={matchCategoryTabs}
             selectedMatchesSubtab={selectedMatchesSubtab}
             onSelectSubtab={setActiveMatchesSubtab}
+            snapshotHint={
+              (tournament as { categoriesSnapshot?: { computedAt?: unknown } } | undefined)?.categoriesSnapshot?.computedAt
+                ? `${t('tournamentDetail.bracketGeneratedAt')}: ${String(
+                    (tournament as { categoriesSnapshot?: { computedAt?: unknown } }).categoriesSnapshot?.computedAt
+                  )}`
+                : null
+            }
             classificationData={classificationData}
+            categoryMatchesByCategory={categoryMatchesByCategory}
+            onOpenMatch={(matchId) => {
+              if (!id) return;
+              router.push(`/tournament/${id}/match/${matchId}` as never);
+            }}
             emptyTextStyle={styles.emptyText}
             matchesSubtabBarStyle={styles.matchesSubtabBar}
             matchesSubtabItemStyle={styles.matchesSubtabItem}

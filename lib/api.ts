@@ -303,4 +303,16 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ action: 'devSeedPurge' }),
     }),
+
+  dbBackfill: (body?: { tournamentId?: string | null }) =>
+    apiRequest<unknown>('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'dbBackfill', ...(body?.tournamentId ? { tournamentId: body.tournamentId } : {}) }),
+    }),
+
+  dbIndexes: () =>
+    apiRequest<unknown>('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'dbIndexes' }),
+    }),
 };

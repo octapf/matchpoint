@@ -5,6 +5,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
+import { actionPublishCategoryMatches, actionStartTournament } from './tournamentLifecycle';
 
 export const DEV_SEED_INVITE_LINK = 'seed-dev-beach-cup';
 export const DEV_SEED_LOGIN_PASSWORD = 'SeedDev1!';
@@ -60,6 +61,12 @@ const PLAYERS: SeedPlayerSpec[] = [...MEN_PLAYERS, ...WOMEN_PLAYERS, ...MIXED_PL
 const SEEDED_TEAM_COUNT = TEAMS_PER_DIVISION * 3;
 const SEEDED_ENTRY_COUNT = SEEDED_TEAM_COUNT * PLAYERS_PER_TEAM;
 const SEEDED_WAITLIST_COUNT = PLAYERS.length - SEEDED_ENTRY_COUNT;
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
 
 function canonicalSeedEmail(oneBasedIndex: number): string {
   return `seed.player${String(oneBasedIndex).padStart(2, '0')}@matchpoint.dev`.toLowerCase();
@@ -219,11 +226,10 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
 
   if (existing && !options.force) {
     const tournamentId = (existing as { _id: { toString: () => string } })._id.toString();
-    const existingTidFilter = { tournamentId: { $in: [tournamentId, new ObjectId(tournamentId)] } };
     const [teamsCount, entriesCount, waitlistCount] = await Promise.all([
-      teams.countDocuments(existingTidFilter),
-      entries.countDocuments(existingTidFilter),
-      waitlist.countDocuments(existingTidFilter),
+      teams.countDocuments({ tournamentId }),
+      entries.countDocuments({ tournamentId }),
+      waitlist.countDocuments({ tournamentId }),
     ]);
     const currentDivisions = ((existing as { divisions?: unknown }).divisions ?? []) as string[];
     const currentCategories = ((existing as { categories?: unknown }).categories ?? []) as string[];
@@ -288,7 +294,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     endDate: '2026-07-15',
     location: 'Barceloneta Beach',
     description: 'Seeded data for tournament / team development.',
-    // Keep divisions available for UI, but seed uses default total team config (16 teams, 4 groups).
+    // Match tournament creation defaults (per division: 16 teams, 4 groups).
     divisions: ['men', 'women', 'mixed'],
     categories: ['Gold', 'Silver', 'Bronze'] as string[],
     maxTeams: SEEDED_TEAM_COUNT,
@@ -297,6 +303,11 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     groupCount: GROUPS_PER_DIVISION * 3,
     inviteLink: DEV_SEED_INVITE_LINK,
     status: 'open',
+    phase: 'registration',
+    startedAt: null,
+    classificationMatchesPerOpponent: 1,
+    categoryFractions: null,
+    singleCategoryAdvanceFraction: 0.5,
     organizerIds: [organizerId],
     createdAt: now,
     updatedAt: now,
@@ -409,6 +420,46 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   if (waitlistDocs.length) {
     await waitlist.insertMany(waitlistDocs);
   }
+
+  // Start tournament → generate classification matches.
+  await actionStartTournament(db, tournamentId, { matchesPerOpponent: 1 });
+
+  // Mock all classification results so standings + category distribution are visible immediately.
+  const matchesCol = db.collection('matches');
+  const classificationMatches = await matchesCol
+    .find({ tournamentId, stage: 'classification' })
+    .sort({ createdAt: 1, _id: 1 })
+    .toArray();
+  const pointsToWin = 21;
+  const now2 = new Date().toISOString();
+  if (classificationMatches.length) {
+    const ops: { updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }[] = [];
+    for (const m of classificationMatches as unknown as Array<{
+      _id: ObjectId;
+      teamAId: string;
+      teamBId: string;
+    }>) {
+      const seed = hashStr(`${m.teamAId}-${m.teamBId}-${m._id.toString()}`);
+      const aWins = seed % 2 === 0;
+      const loserPts = Math.max(0, pointsToWin - 2 - (seed % 8));
+      const update: Record<string, unknown> = {
+        status: 'completed',
+        setsWonA: aWins ? 1 : 0,
+        setsWonB: aWins ? 0 : 1,
+        pointsA: aWins ? pointsToWin : loserPts,
+        pointsB: aWins ? loserPts : pointsToWin,
+        winnerId: aWins ? m.teamAId : m.teamBId,
+        completedAt: now2,
+        updatedAt: now2,
+      };
+      ops.push({ updateOne: { filter: { _id: m._id }, update: { $set: update } } });
+    }
+    if (ops.length) await matchesCol.bulkWrite(ops, { ordered: false });
+  }
+
+  // Publish category phase matches based on those standings.
+  await actionPublishCategoryMatches(db, tournamentId);
+
   const info = await getDevSeedInfo(db);
 
   return {

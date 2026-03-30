@@ -135,6 +135,18 @@ export function useGenerateCategoryMatches() {
   });
 }
 
+export function useFinalizeClassification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => tournamentsApi.action(id, { action: 'finalizeClassification' }),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+    },
+  });
+}
+
 export function useDeleteTournament() {
   const queryClient = useQueryClient();
   const router = useRouter();

@@ -16,7 +16,8 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   endDate: '2026-07-15',
   location: 'Barceloneta Beach',
   description: 'Mock tournament for local development.',
-  divisions: ['men', 'women', 'mixed'],
+  // Keep mock data consistent with mock teams (mostly mixed pairs).
+  divisions: ['mixed'],
   categories: ['Gold', 'Silver'],
   maxTeams: 16,
   pointsToWin: 21,

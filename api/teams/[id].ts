@@ -18,6 +18,19 @@ function firstQueryString(q: string | string[] | undefined): string | undefined 
   return typeof q === 'string' ? q : q[0];
 }
 
+function normalizePlayerIds(raw: unknown): string[] | null {
+  const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  const clean = list
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .filter(Boolean)
+    .filter((x, i, arr) => arr.indexOf(x) === i);
+  if (clean.length !== 2) return null;
+  for (const pid of clean) {
+    if (!ObjectId.isValid(pid)) return null;
+  }
+  return clean;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(res).end();
 
@@ -94,6 +107,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      if (update.playerIds !== undefined) {
+        const clean = normalizePlayerIds(update.playerIds);
+        if (!clean) {
+          return corsRes.status(400).json({ error: 'Teams must have exactly 2 distinct players' });
+        }
+        // Prevent a player from being in 2 teams in the same tournament.
+        const conflict = await col.findOne({
+          _id: { $ne: oid },
+          tournamentId,
+          playerIds: { $in: clean },
+        });
+        if (conflict) {
+          return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
+        }
+        update.playerIds = clean;
+      }
+
       update.updatedAt = new Date().toISOString();
       const result = await col.findOneAndUpdate(
         { _id: oid },
@@ -132,9 +162,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const teamIdStr = id;
       const now = new Date().toISOString();
-      /** Match entries whether teamId was stored as string or ObjectId (legacy data). */
       await db.collection('entries').updateMany(
-        { $or: [{ teamId: teamIdStr }, { teamId: oid }] },
+        { teamId: teamIdStr, tournamentId },
         {
           $set: {
             teamId: null,

@@ -27,9 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !ObjectId.isValid(tournamentId)) {
         return corsRes.status(400).json({ error: 'Invalid or missing tournamentId' });
       }
-      const oid = new ObjectId(tournamentId);
-      const tournamentFilter = { tournamentId: { $in: [tournamentId, oid] } };
-      const rows = await col.find(tournamentFilter).sort({ createdAt: 1 }).toArray();
+      const rows = await col.find({ tournamentId }).sort({ createdAt: 1 }).toArray();
       const count = rows.length;
       const users = rows.map((r) => ({
         userId: String((r as { userId?: unknown }).userId ?? ''),

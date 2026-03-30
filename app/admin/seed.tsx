@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { setClipboardString } from '@/lib/clipboard';
@@ -66,6 +66,8 @@ export default function AdminSeedScreen() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backfillTournamentId, setBackfillTournamentId] = useState<string>('');
+  const [indexRunning, setIndexRunning] = useState(false);
 
   const load = useCallback(async () => {
     if (!config.api.isConfigured) {
@@ -162,6 +164,38 @@ export default function AdminSeedScreen() {
     ]);
   };
 
+  const runDbBackfill = async () => {
+    if (!config.api.isConfigured) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const tid = backfillTournamentId.trim();
+      await adminApi.dbBackfill(tid ? { tournamentId: tid } : undefined);
+      Alert.alert(t('admin.dbBackfillTitle'), t('admin.dbBackfillDone'));
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed';
+      setError(msg);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const runDbIndexes = async () => {
+    if (!config.api.isConfigured) return;
+    setIndexRunning(true);
+    setError(null);
+    try {
+      await adminApi.dbIndexes();
+      Alert.alert(t('admin.dbIndexesTitle'), t('admin.dbIndexesDone'));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed';
+      setError(msg);
+    } finally {
+      setIndexRunning(false);
+    }
+  };
+
   const copyUsername = async (username: string) => {
     await setClipboardString(username);
     Alert.alert('', t('admin.devSeedCopied'));
@@ -212,7 +246,64 @@ export default function AdminSeedScreen() {
         />
       ) : null}
 
+      <Text style={styles.section}>{t('admin.dbBackfillTitle')}</Text>
+      <Text style={styles.hint}>{t('admin.dbBackfillHint')}</Text>
+      <View style={styles.actions}>
+        <TextInput
+          style={styles.input}
+          placeholder={t('admin.dbBackfillTournamentIdPlaceholder')}
+          placeholderTextColor={Colors.textMuted}
+          value={backfillTournamentId}
+          onChangeText={setBackfillTournamentId}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Button
+          title={t('admin.dbBackfillUseSeedTournament')}
+          onPress={() => setBackfillTournamentId(info?.tournamentId ?? '')}
+          variant="outline"
+          disabled={running || !info?.tournamentId}
+          fullWidth
+        />
+        <Button
+          title={t('admin.dbBackfillRun')}
+          onPress={() =>
+            Alert.alert(t('admin.dbBackfillTitle'), t('admin.dbBackfillConfirm'), [
+              { text: t('common.cancel'), style: 'cancel' },
+              { text: t('common.ok'), onPress: () => void runDbBackfill() },
+            ])
+          }
+          disabled={running}
+          variant="danger"
+          fullWidth
+        />
+      </View>
+
+      <Text style={styles.section}>{t('admin.dbIndexesTitle')}</Text>
+      <Text style={styles.hint}>{t('admin.dbIndexesHint')}</Text>
+      <View style={styles.actions}>
+        <Button
+          title={t('admin.dbIndexesRun')}
+          onPress={() =>
+            Alert.alert(t('admin.dbIndexesTitle'), t('admin.dbIndexesConfirm'), [
+              { text: t('common.cancel'), style: 'cancel' },
+              { text: t('common.ok'), onPress: () => void runDbIndexes() },
+            ])
+          }
+          disabled={running || indexRunning}
+          variant="outline"
+          fullWidth
+        />
+      </View>
+
       {running ? (
+        <View style={styles.runningRow}>
+          <ActivityIndicator color={Colors.yellow} />
+          <Text style={styles.muted}>{t('common.loading')}</Text>
+        </View>
+      ) : null}
+
+      {indexRunning ? (
         <View style={styles.runningRow}>
           <ActivityIndicator color={Colors.yellow} />
           <Text style={styles.muted}>{t('common.loading')}</Text>
@@ -275,6 +366,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   hint: { fontSize: 13, color: Colors.textMuted, marginBottom: 12 },
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
+    color: Colors.text,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   muted: { fontSize: 14, color: Colors.textMuted },
   copyRow: {
     flexDirection: 'row',

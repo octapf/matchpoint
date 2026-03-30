@@ -1,8 +1,9 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import type { Match, TournamentCategory, TournamentDivision } from '../../types';
-import { normalizeGroupCount, teamGroupIndex, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { teamGroupIndex } from '../../lib/tournamentGroups';
 import { computeStandingsForGroup, assignCategoriesForDivision } from './tournamentStandings';
+import { deriveTournamentGroupConfig } from './tournamentConfig';
 
 function buildPairs(teamIds: string[]): Array<[string, string]> {
   const out: Array<[string, string]> = [];
@@ -25,10 +26,7 @@ export async function generateCategoryMatches(
   const phase = String((t as { phase?: unknown }).phase ?? '');
   if (phase !== 'classification') throw new Error('Tournament is not in classification phase');
 
-  const maxT = Number((t as { maxTeams?: unknown }).maxTeams);
-  const gc = normalizeGroupCount((t as { groupCount?: unknown }).groupCount);
-  const vg = validateTournamentGroups(maxT, gc);
-  if (!vg.ok) throw new Error('Invalid tournament group configuration');
+  const cfg = deriveTournamentGroupConfig(t as { maxTeams?: unknown; groupCount?: unknown; divisions?: unknown });
 
   const categories = Array.isArray((t as { categories?: unknown }).categories)
     ? ((t as { categories?: unknown }).categories as unknown[])
@@ -48,8 +46,7 @@ export async function generateCategoryMatches(
   const divisions = divisionsRaw
     .map((d) => (typeof d === 'string' ? d.trim() : ''))
     .filter((d): d is TournamentDivision => d === 'men' || d === 'women' || d === 'mixed');
-  const divisionCount = Math.max(1, divisions.length || 1);
-  const groupsPerDivision = divisionCount > 1 && vg.groupCount % divisionCount === 0 ? vg.groupCount / divisionCount : vg.groupCount;
+  const divisionCount = cfg.divisionCount;
 
   const teams = await teamsCol.find({ tournamentId }).toArray();
   const allMatches = await matchesCol.find({ tournamentId }).toArray();
@@ -66,9 +63,15 @@ export async function generateCategoryMatches(
   let created = 0;
   let total = 0;
 
+  const snapshotDivisions: Array<{
+    division: TournamentDivision | string;
+    categories: Array<{ category: TournamentCategory; teamIds: string[]; matchIds: string[] }>;
+  }> = [];
+
   for (let di = 0; di < divisionCount; di++) {
-    const base = di * groupsPerDivision;
-    const groupIndices = Array.from({ length: groupsPerDivision }, (_, i) => base + i);
+    const base = cfg.divisionGroupOffset(di);
+    const perDiv = cfg.groupsPerDivision(di);
+    const groupIndices = Array.from({ length: perDiv }, (_, i) => base + i);
 
     const teamsByGroup = new Map<number, { _id: string; name: string }[]>();
     for (const gi of groupIndices) teamsByGroup.set(gi, []);
@@ -95,6 +98,21 @@ export async function generateCategoryMatches(
       singleCategoryAdvanceFraction,
     });
 
+    // Persist derived category/division on teams for stability and easier UI.
+    const teamsOps: { updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }[] = [];
+    const divKey = divisions[di] ?? cfg.divisions[di] ?? undefined;
+    for (const [tid, cat] of teamCategory.entries()) {
+      teamsOps.push({
+        updateOne: {
+          filter: { _id: new ObjectId(tid) },
+          update: { $set: { category: cat, division: divKey, updatedAt: now } },
+        },
+      });
+    }
+    if (teamsOps.length) {
+      await teamsCol.bulkWrite(teamsOps, { ordered: false });
+    }
+
     // Generate round-robin matches within each category across the whole division.
     const teamsByCategory = new Map<TournamentCategory, string[]>();
     for (const [tid, cat] of teamCategory.entries()) {
@@ -106,10 +124,16 @@ export async function generateCategoryMatches(
     const pointsToWin = Math.max(1, Math.min(99, Number((t as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
     const setsPerMatch = Math.max(1, Math.min(7, Number((t as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
 
+    const divisionSnapshot = {
+      division: (divisions[di] ?? cfg.divisions[di] ?? 'mixed') as TournamentDivision | string,
+      categories: [] as Array<{ category: TournamentCategory; teamIds: string[]; matchIds: string[] }>,
+    };
+
     for (const [cat, teamIds] of teamsByCategory.entries()) {
       if (teamIds.length < 2) continue;
       const pairs = buildPairs(teamIds);
       total += pairs.length;
+      const matchIds: string[] = [];
       for (const [a, b] of pairs) {
         const doc: Omit<Match, '_id'> = {
           tournamentId,
@@ -125,15 +149,28 @@ export async function generateCategoryMatches(
           createdAt: now,
           updatedAt: now,
         };
-        await matchesCol.insertOne(doc as unknown as Record<string, unknown>);
+        const ins = await matchesCol.insertOne(doc as unknown as Record<string, unknown>);
+        matchIds.push(ins.insertedId.toString());
         created++;
       }
+      divisionSnapshot.categories.push({ category: cat, teamIds, matchIds });
     }
+
+    snapshotDivisions.push(divisionSnapshot);
   }
 
   await tournamentsCol.updateOne(
     { _id: new ObjectId(tournamentId) },
-    { $set: { phase: 'categories', updatedAt: now } }
+    {
+      $set: {
+        phase: 'categories',
+        categoriesSnapshot: {
+          computedAt: now,
+          divisions: snapshotDivisions,
+        },
+        updatedAt: now,
+      },
+    }
   );
 
   return { created, total, categories };

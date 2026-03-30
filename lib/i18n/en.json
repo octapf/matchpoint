@@ -171,7 +171,19 @@
     "devSeedPurgeLineTournament": "Seed tournament deleted.",
     "devSeedPurgeLineCounts": "Teams: %{teams}, entries: %{entries}, waiting list: %{waitlist}, users: %{users}.",
     "devSeedErrOldApi": "This app expects a newer API: deploy the latest matchpoint code to Vercel (GET ?type=devSeedInfo). Or run \"npm run api:dev\" locally and set EXPO_PUBLIC_API_URL to that URL (same Wi‑Fi as your phone).",
-    "devSeedErrPost405": "The server rejected POST on /api/admin (405). Deploy the latest API, or use local \"npm run api:dev\" with EXPO_PUBLIC_API_URL pointing to it."
+    "devSeedErrPost405": "The server rejected POST on /api/admin (405). Deploy the latest API, or use local \"npm run api:dev\" with EXPO_PUBLIC_API_URL pointing to it.",
+    "dbBackfillTitle": "Database backfill",
+    "dbBackfillHint": "Backfills legacy fields (tournamentId string, missing division/category fields) to keep tournament logic consistent.",
+    "dbBackfillTournamentIdPlaceholder": "Tournament ID (optional)",
+    "dbBackfillUseSeedTournament": "Use seeded tournament ID",
+    "dbBackfillRun": "Run backfill",
+    "dbBackfillConfirm": "Run the backfill now? This may take a minute on large databases.",
+    "dbBackfillDone": "Backfill completed.",
+    "dbIndexesTitle": "Database indexes",
+    "dbIndexesHint": "Creates MongoDB indexes for performance and data integrity (safe to run multiple times).",
+    "dbIndexesRun": "Create indexes",
+    "dbIndexesConfirm": "Create indexes now? This is safe to run multiple times.",
+    "dbIndexesDone": "Indexes created."
   },
   "auth": {
     "signIn": "Sign in",
@@ -316,6 +328,14 @@
     "waitlistYouAre": "You are #%{n} on the waiting list"
   },
   "tournamentDetail": {
+    "bracketGeneratedAt": "Bracket generated at",
+    "editMatchTitle": "Edit match",
+    "setsWonA": "Sets won (A)",
+    "setsWonB": "Sets won (B)",
+    "pointsA": "Points (A)",
+    "pointsB": "Points (B)",
+    "matchPointsRequired": "Points are required to complete a match.",
+    "matchInvalidSets": "Enter valid set counts.",
     "menuClassificationSettings": "Classification settings",
     "classificationSettingsTitle": "Classification settings",
     "classificationSettingsHint": "Configure classification matches and how teams advance into categories. Changes are locked once the tournament starts.",

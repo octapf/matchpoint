@@ -171,7 +171,19 @@
     "devSeedPurgeLineTournament": "Torneo seed eliminado.",
     "devSeedPurgeLineCounts": "Equipos: %{teams}, inscripciones: %{entries}, lista de espera: %{waitlist}, usuarios: %{users}.",
     "devSeedErrOldApi": "La API desplegada está desactualizada: desplegá el último código en Vercel (GET ?type=devSeedInfo). O ejecutá \"npm run api:dev\" en la PC y poné EXPO_PUBLIC_API_URL a esa URL (misma Wi‑Fi que el teléfono).",
-    "devSeedErrPost405": "El servidor rechazó POST en /api/admin (405). Desplegá la API nueva o usá \"npm run api:dev\" local con EXPO_PUBLIC_API_URL apuntando ahí."
+    "devSeedErrPost405": "El servidor rechazó POST en /api/admin (405). Desplegá la API nueva o usá \"npm run api:dev\" local con EXPO_PUBLIC_API_URL apuntando ahí.",
+    "dbBackfillTitle": "Backfill de base de datos",
+    "dbBackfillHint": "Completa campos legacy (tournamentId string, division/category faltantes) para mantener consistente la lógica del torneo.",
+    "dbBackfillTournamentIdPlaceholder": "ID de torneo (opcional)",
+    "dbBackfillUseSeedTournament": "Usar ID del torneo seed",
+    "dbBackfillRun": "Ejecutar backfill",
+    "dbBackfillConfirm": "¿Ejecutar el backfill ahora? Puede tardar un minuto en bases grandes.",
+    "dbBackfillDone": "Backfill completado.",
+    "dbIndexesTitle": "Índices de base de datos",
+    "dbIndexesHint": "Crea índices de MongoDB para rendimiento e integridad (es seguro ejecutarlo varias veces).",
+    "dbIndexesRun": "Crear índices",
+    "dbIndexesConfirm": "¿Crear índices ahora? Es seguro ejecutarlo varias veces.",
+    "dbIndexesDone": "Índices creados."
   },
   "auth": {
     "signIn": "Iniciar sesión",
@@ -316,6 +328,14 @@
     "waitlistYouAre": "Eres el n.º %{n} en la lista de espera"
   },
   "tournamentDetail": {
+    "bracketGeneratedAt": "Cuadro generado el",
+    "editMatchTitle": "Editar partido",
+    "setsWonA": "Sets ganados (A)",
+    "setsWonB": "Sets ganados (B)",
+    "pointsA": "Puntos (A)",
+    "pointsB": "Puntos (B)",
+    "matchPointsRequired": "Los puntos son obligatorios para completar un partido.",
+    "matchInvalidSets": "Introduce valores válidos de sets.",
     "cancelledBanner": "Este torneo ha sido cancelado.",
     "privateVisibilityBanner": "Solo por invitación: no aparece en listas públicas. Compartí el enlace para sumar jugadores.",
     "teams": "Equipos",
