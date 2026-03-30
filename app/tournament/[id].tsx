@@ -855,7 +855,7 @@ export default function TournamentDetailScreen() {
                   : tabId === 'groups'
                   ? `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
                     : tabId === 'waitinglist'
-                      ? `${Math.floor((tournament.waitlistCount ?? waitlistCountForStats) / divisionCount)}`
+                      ? `${filteredWaitlist.length}`
                       : '';
 
             const isWaitingListTab = tabId === 'waitinglist';
