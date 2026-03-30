@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Avatar } from '@/components/ui/Avatar';
 import { getPlayerListName } from '@/lib/utils/userDisplay';
 import type { User } from '@/types';
@@ -32,12 +33,14 @@ export function WaitingListTab({
   }
 
   return (
-    <>
-      {filteredWaitlist.map((row, idx) => {
+    <FlashList
+      data={filteredWaitlist}
+      keyExtractor={(row, idx) => `${row.userId}-${idx}`}
+      renderItem={({ item: row, index: idx }) => {
         const u = userMap[row.userId];
         const playerName = getPlayerListName(u) || t('common.player');
         return (
-          <View key={`${row.userId}-${idx}`} style={playerRowStyle as never}>
+          <View style={playerRowStyle as never}>
             <Pressable
               style={playerRowMainStyle as never}
               onPress={() => onOpenProfile(row.userId)}
@@ -57,8 +60,8 @@ export function WaitingListTab({
             </Pressable>
           </View>
         );
-      })}
-    </>
+      }}
+    />
   );
 }
 

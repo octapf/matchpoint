@@ -1,13 +1,14 @@
 import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, Share, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Share, Alert, Pressable } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type { Gender, User, TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { TournamentOrganizerMenu, type OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
+import type { OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
 import { config, shouldUseDevMocks } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -38,7 +39,6 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import i18n from '@/lib/i18n';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
-import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Team, Entry } from '@/types';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup } from '@/lib/tournamentStandings';
@@ -170,6 +170,7 @@ export default function TournamentDetailScreen() {
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
   const [activeDivision, setActiveDivision] = useState<DivisionTab>('mixed');
   const [activeMatchesSubtab, setActiveMatchesSubtab] = useState<MatchSubTab>('classification');
+  const [onlyMyClassificationMatches, setOnlyMyClassificationMatches] = useState(false);
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const storedLanguage = useLanguageStore((s) => s.language);
@@ -423,7 +424,22 @@ export default function TournamentDetailScreen() {
                 onPress: () =>
                   finalizeClassificationMutation.mutate(
                     { id },
-                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    {
+                      onError: (err: unknown) => {
+                        const remaining =
+                          err instanceof Error && typeof (err as Error & { remaining?: unknown }).remaining === 'number'
+                            ? (err as Error & { remaining: number }).remaining
+                            : null;
+                        if (remaining != null) {
+                          Alert.alert(
+                            t('tournamentDetail.menuGenerateCategoryMatches'),
+                            t('tournamentDetail.classificationRemaining', { n: remaining })
+                          );
+                          return;
+                        }
+                        alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
+                      },
+                    }
                   ),
               },
             ]
@@ -697,6 +713,37 @@ export default function TournamentDetailScreen() {
     return out;
   }, [categoryMatches, currentDivision, id, teamById, tournament]);
 
+  const myTeamIdForDivision = useMemo(() => {
+    if (!userId) return null;
+    const mine = teams.find((tm) => (tm.playerIds ?? []).includes(userId) && divisionForTeam(tm, userMap) === currentDivision);
+    return mine?._id ?? null;
+  }, [currentDivision, teams, userId, userMap]);
+
+  const filteredClassificationData = useMemo(() => {
+    if (!onlyMyClassificationMatches || !myTeamIdForDivision) return classificationData;
+    return classificationData
+      .map((g) => {
+        const matches = (g.matches ?? []).filter(
+          (m: any) => m?.teamA?._id === myTeamIdForDivision || m?.teamB?._id === myTeamIdForDivision
+        );
+        return { ...g, matches };
+      })
+      .filter((g) => (g.matches ?? []).length > 0);
+  }, [classificationData, myTeamIdForDivision, onlyMyClassificationMatches]);
+
+  const fixtureCounts = useMemo(() => {
+    if (selectedMatchesSubtab === 'classification') {
+      const ms = filteredClassificationData.flatMap((g) => g.matches ?? []);
+      const total = ms.length;
+      const completed = ms.filter((m: any) => m.status === 'completed').length;
+      return { total, completed };
+    }
+    const ms = (categoryMatchesByCategory[selectedMatchesSubtab as 'Gold' | 'Silver' | 'Bronze'] ?? []) as any[];
+    const total = ms.length;
+    const completed = ms.filter((m) => m.status === 'completed').length;
+    return { total, completed };
+  }, [categoryMatchesByCategory, filteredClassificationData, selectedMatchesSubtab]);
+
   const tournamentStarted =
     !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'classification' ||
@@ -704,6 +751,7 @@ export default function TournamentDetailScreen() {
     (tournament as { phase?: unknown } | undefined)?.phase === 'completed';
 
   const [reorderPendingTeamId, setReorderPendingTeamId] = useState<string | null>(null);
+  const [swapSourceTeamId, setSwapSourceTeamId] = useState<string | null>(null);
 
   const mutationBusy =
     deleteEntry.isPending ||
@@ -752,30 +800,57 @@ export default function TournamentDetailScreen() {
   /** Organizers and global admins can manage roster, teams, and invites from this screen. */
   const canManageTournament = isOrganizer || isAdmin;
 
-  const handleReorderTeam = (team: Team) => {
+  const handleSwapTeam = (team: Team) => {
     if (!id || !userId) return;
     if (!tournamentStarted) return;
-    const currentGi = teamGroupIndex(team);
-    const groupOptions = Array.from({ length: groupMeta.groupCount }, (_, i) => i).filter((gi) => gi !== currentGi);
-    if (groupOptions.length === 0) return;
+    if (!canManageTournament) return;
+    if (!swapSourceTeamId) {
+      setSwapSourceTeamId(team._id);
+      Alert.alert(t('tournamentDetail.reorderTeam'), t('tournamentDetail.swapPickTarget'));
+      return;
+    }
+    if (swapSourceTeamId === team._id) {
+      setSwapSourceTeamId(null);
+      return;
+    }
+    const source = filteredTeams.find((x) => x._id === swapSourceTeamId);
+    const target = team;
+    if (!source) {
+      setSwapSourceTeamId(null);
+      return;
+    }
+    const giA = teamGroupIndex(source);
+    const giB = teamGroupIndex(target);
+    if (giA === giB) {
+      setSwapSourceTeamId(null);
+      return;
+    }
+
     Alert.alert(
       t('tournamentDetail.reorderTeam'),
-      team.name,
+      `${source.name} ↔ ${target.name}`,
       [
-        ...groupOptions.slice(0, 8).map((gi) => ({
-          text: `${t('tournamentDetail.groupTitle', { n: gi + 1 })}`,
-          onPress: () => {
-            setReorderPendingTeamId(team._id);
-            updateTeam.mutate(
-              { id: team._id, update: { groupIndex: gi } },
-              {
-                onSettled: () => setReorderPendingTeamId(null),
-                onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-              }
-            );
-          },
-        })),
         { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.ok'),
+          onPress: () => {
+            setSwapSourceTeamId(null);
+            setReorderPendingTeamId(source._id);
+            updateTeam
+              .mutateAsync({ id: source._id, update: { groupIndex: giB } })
+              .then(() => updateTeam.mutateAsync({ id: target._id, update: { groupIndex: giA } }))
+              .catch(async (err: unknown) => {
+                // Best-effort rollback if only first update succeeded.
+                try {
+                  await updateTeam.mutateAsync({ id: source._id, update: { groupIndex: giA } });
+                } catch {
+                  // ignore
+                }
+                alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
+              })
+              .finally(() => setReorderPendingTeamId(null));
+          },
+        },
       ]
     );
   };
@@ -901,99 +976,109 @@ export default function TournamentDetailScreen() {
   // (moved above) division/group/match derived state lives above early returns
   const matchProgress = (() => {
     if (!tournamentStarted) return null;
-    const total = classificationMatches.length + categoryMatches.length;
+    const classForDiv = classificationMatches.filter((m) => !m.division || m.division === currentDivision);
+    const catForDiv = categoryMatches.filter((m) => !m.division || m.division === currentDivision);
+    const total = classForDiv.length + catForDiv.length;
     if (total === 0) return { total: 0, completed: 0, ratio: 0 };
     const completed =
-      classificationMatches.filter((m) => m.status === 'completed').length +
-      categoryMatches.filter((m) => m.status === 'completed').length;
+      classForDiv.filter((m) => m.status === 'completed').length +
+      catForDiv.filter((m) => m.status === 'completed').length;
     return { total, completed, ratio: completed / total };
   })();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TournamentHeader
-        t={t}
-        tournament={tournament}
-        dateLabel={dateLabel}
-        isCancelled={isCancelled}
-        canManageTournament={canManageTournament}
-        organizerMenuItems={organizerMenuItems}
-        matchProgress={matchProgress}
-        headerStyle={styles.header}
-        cancelledBannerStyle={styles.cancelledBanner}
-        cancelledBannerTextStyle={styles.cancelledBannerText}
-        privateBannerStyle={styles.privateBanner}
-        privateBannerTextStyle={styles.privateBannerText}
-        headerTopRowStyle={styles.headerTopRow}
-        dateLocationLeftStyle={styles.dateLocationLeft}
-        dateLocationRowStyle={styles.dateLocationRow}
-        locationStyle={styles.location}
-        dateLocationSepStyle={styles.dateLocationSep}
-        dateStyle={styles.date}
-        matchRulesTextStyle={styles.matchRulesText}
-        progressWrapStyle={styles.progressWrap}
-        progressTrackStyle={styles.progressTrack}
-        progressFillStyle={styles.progressFill}
-        progressLabelStyle={styles.progressLabel}
-        headerTopActionsStyle={styles.headerTopActions}
-      />
+    <FlashList
+      data={[0]}
+      keyExtractor={() => 'tournament-detail'}
+      contentContainerStyle={styles.content as never}
+      ListHeaderComponent={
+        <>
+          <TournamentHeader
+            t={t}
+            tournament={tournament}
+            dateLabel={dateLabel}
+            isCancelled={isCancelled}
+            canManageTournament={canManageTournament}
+            organizerMenuItems={organizerMenuItems}
+            headerStyle={styles.header}
+            cancelledBannerStyle={styles.cancelledBanner}
+            cancelledBannerTextStyle={styles.cancelledBannerText}
+            privateBannerStyle={styles.privateBanner}
+            privateBannerTextStyle={styles.privateBannerText}
+            headerTopRowStyle={styles.headerTopRow}
+            dateLocationLeftStyle={styles.dateLocationLeft}
+            dateLocationRowStyle={styles.dateLocationRow}
+            locationStyle={styles.location}
+            dateLocationSepStyle={styles.dateLocationSep}
+            dateStyle={styles.date}
+            matchRulesTextStyle={styles.matchRulesText}
+            headerTopActionsStyle={styles.headerTopActions}
+          />
 
-      {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
-      <WaitlistActions
-        t={t}
-        show={!hasJoined && canEnroll && !isCancelled && isFull}
-        waitlistPosition={waitlistPosition}
-        onJoin={() => {
-          if (!userId || !id) return;
-          joinWaitlist.mutate(
-            { tournamentId: id, userId },
-            { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-          );
-        }}
-        onLeave={() => {
-          if (!userId || !id) return;
-          leaveWaitlist.mutate(
-            { tournamentId: id },
-            { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-          );
-        }}
-        joinPending={joinWaitlist.isPending}
-        leavePending={leaveWaitlist.isPending}
-        wrapStyle={styles.waitlistActions}
-        waitlistRowStyle={styles.waitlistRow}
-        waitlistPositionTextStyle={styles.waitlistPositionText}
-      />
+          {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
+          <WaitlistActions
+            t={t}
+            show={!hasJoined && canEnroll && !isCancelled && isFull}
+            waitlistPosition={waitlistPosition}
+            onJoin={() => {
+              if (!userId || !id) return;
+              joinWaitlist.mutate(
+                { tournamentId: id, userId },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              );
+            }}
+            onLeave={() => {
+              if (!userId || !id) return;
+              leaveWaitlist.mutate(
+                { tournamentId: id },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              );
+            }}
+            joinPending={joinWaitlist.isPending}
+            leavePending={leaveWaitlist.isPending}
+            wrapStyle={styles.waitlistActions}
+            waitlistRowStyle={styles.waitlistRow}
+            waitlistPositionTextStyle={styles.waitlistPositionText}
+          />
 
-      <TournamentTabsBar
-        t={t}
-        availableDivisions={availableDivisions}
-        currentDivision={currentDivision}
-        onSelectDivision={setActiveDivision}
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        tabConfig={TAB_CONFIG as never}
-        tabValueById={{
-          players: `${filteredEntries.length}/${playersPerDivisionCap}`,
-          teams: `${filteredTeams.length}/${teamsPerDivisionCap}`,
-          groups: `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`,
-          waitinglist: `${filteredWaitlist.length}`,
-        }}
-        tabsSectionStyle={styles.tabsSection}
-        divisionTabBarStyle={styles.divisionTabBar}
-        divisionTabStyle={styles.divisionTab}
-        divisionTabSelectedStyle={styles.divisionTabSelected}
-        divisionTabLabelStyle={styles.divisionTabLabel}
-        divisionTabLabelSelectedStyle={styles.divisionTabLabelSelected}
-        tabBarStyle={styles.tabBar}
-        tabItemStyle={styles.tabItem}
-        tabItemSelectedStyle={styles.tabItemSelected}
-        waitingListMarkStyle={styles.waitingListMark}
-        tabValueStyle={styles.tabValue}
-        tabLabelStyle={styles.tabLabel}
-        tabLabelSelectedStyle={styles.tabLabelSelected}
-      />
-
-      <View style={styles.tabPanel}>
+          <TournamentTabsBar
+            t={t}
+            availableDivisions={availableDivisions}
+            currentDivision={currentDivision}
+            onSelectDivision={setActiveDivision}
+            matchProgress={matchProgress}
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            tabConfig={TAB_CONFIG as never}
+            tabValueById={{
+              players: `${filteredEntries.length}/${playersPerDivisionCap}`,
+              teams: `${filteredTeams.length}/${teamsPerDivisionCap}`,
+              groups: `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`,
+              waitinglist: `${filteredWaitlist.length}`,
+            }}
+            tabsSectionStyle={styles.tabsSection}
+            divisionTabBarStyle={styles.divisionTabBar}
+            divisionTabStyle={styles.divisionTab}
+            divisionTabSelectedStyle={styles.divisionTabSelected}
+            divisionTabLabelStyle={styles.divisionTabLabel}
+            divisionTabLabelSelectedStyle={styles.divisionTabLabelSelected}
+            progressWrapStyle={styles.progressWrap}
+            progressTrackStyle={styles.progressTrack}
+            progressFillStyle={styles.progressFill}
+            progressLabelStyle={styles.progressLabel}
+            tabBarStyle={styles.tabBar}
+            tabItemStyle={styles.tabItem}
+            tabItemSelectedStyle={styles.tabItemSelected}
+            waitingListMarkStyle={styles.waitingListMark}
+            tabValueStyle={styles.tabValue}
+            tabLabelStyle={styles.tabLabel}
+            tabLabelSelectedStyle={styles.tabLabelSelected}
+          />
+        </>
+      }
+      renderItem={() => (
+        <>
+          <View style={[styles.tabPanel, activeTab === 'fixture' ? styles.tabPanelTight : styles.tabPanelSpaced]}>
         {activeTab === 'players' ? (
           <PlayersTab
             t={t}
@@ -1102,7 +1187,10 @@ export default function TournamentDetailScreen() {
               />
             )}
             canReorderTeams={canManageTournament && tournamentStarted}
-            onReorderTeam={handleReorderTeam}
+            onReorderTeam={() => {}}
+            swapSourceTeamId={swapSourceTeamId}
+            onSwapTeam={handleSwapTeam}
+            onCancelSwap={() => setSwapSourceTeamId(null)}
             reorderPendingTeamId={reorderPendingTeamId}
             emptyTextStyle={styles.emptyText}
             rebalanceBannerStyle={styles.rebalanceBanner}
@@ -1130,46 +1218,58 @@ export default function TournamentDetailScreen() {
         ) : null}
 
         {activeTab === 'fixture' ? (
-          <FixtureTab
-            t={t}
-            matchCategoryTabs={matchCategoryTabs}
-            selectedMatchesSubtab={selectedMatchesSubtab}
-            onSelectSubtab={setActiveMatchesSubtab}
-            snapshotHint={
-              (tournament as { categoriesSnapshot?: { computedAt?: unknown } } | undefined)?.categoriesSnapshot?.computedAt
-                ? `${t('tournamentDetail.bracketGeneratedAt')}: ${String(
-                    (tournament as { categoriesSnapshot?: { computedAt?: unknown } }).categoriesSnapshot?.computedAt
-                  )}`
-                : null
-            }
-            classificationData={classificationData}
-            categoryMatchesByCategory={categoryMatchesByCategory}
-            onOpenMatch={(matchId) => {
-              if (!id) return;
-              router.push(`/tournament/${id}/match/${matchId}` as never);
-            }}
-            emptyTextStyle={styles.emptyText}
-            matchesSubtabBarStyle={styles.matchesSubtabBar}
-            matchesSubtabItemStyle={styles.matchesSubtabItem}
-            matchesSubtabItemSelectedStyle={styles.matchesSubtabItemSelected}
-            matchesSubtabLabelStyle={styles.matchesSubtabLabel}
-            matchesSubtabLabelSelectedStyle={styles.matchesSubtabLabelSelected}
-            groupBlockStyle={styles.groupBlock}
-            groupHeadingStyle={styles.groupHeading}
-            emptyGroupStyle={styles.emptyGroup}
-            matchRowStyle={styles.matchRow}
-            matchTeamNameStyle={styles.matchTeamName}
-            matchWinnerStyle={styles.matchWinner}
-            matchScoreStyle={styles.matchScore}
-            matchStandingRowStyle={styles.matchStandingRow}
-            matchStandingRankStyle={styles.matchStandingRank}
-            matchStandingTeamStyle={styles.matchStandingTeam}
-            matchStandingMetaStyle={styles.matchStandingMeta}
-          />
+          <View>
+            {selectedMatchesSubtab === 'classification' && myTeamIdForDivision ? (
+              <View style={styles.fixtureQuickFilters}>
+                <Pressable
+                  onPress={() => setOnlyMyClassificationMatches((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: onlyMyClassificationMatches }}
+                  style={[styles.fixtureQuickFilterPill, onlyMyClassificationMatches ? styles.fixtureQuickFilterPillSelected : null]}
+                >
+                  <Text style={[styles.fixtureQuickFilterLabel, onlyMyClassificationMatches ? styles.fixtureQuickFilterLabelSelected : null]}>
+                    {t('tournamentDetail.onlyMyMatches')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <FixtureTab
+              t={t}
+              matchCategoryTabs={matchCategoryTabs}
+              selectedMatchesSubtab={selectedMatchesSubtab}
+              onSelectSubtab={setActiveMatchesSubtab}
+              classificationCounts={fixtureCounts}
+              classificationData={filteredClassificationData}
+              categoryMatchesByCategory={categoryMatchesByCategory}
+              onOpenMatch={(matchId) => {
+                if (!id) return;
+                router.push(`/tournament/${id}/match/${matchId}` as never);
+              }}
+              canQuickEditMatches={canManageTournament}
+              emptyTextStyle={styles.emptyText}
+              classificationCountsTextStyle={styles.fixtureCounts}
+              matchesSubtabBarStyle={styles.matchesSubtabBar}
+              matchesSubtabItemStyle={styles.matchesSubtabItem}
+              matchesSubtabItemSelectedStyle={styles.matchesSubtabItemSelected}
+              matchesSubtabLabelStyle={styles.matchesSubtabLabel}
+              matchesSubtabLabelSelectedStyle={styles.matchesSubtabLabelSelected}
+              groupBlockStyle={styles.groupBlock}
+              groupHeadingStyle={styles.groupHeading}
+              emptyGroupStyle={styles.emptyGroup}
+              matchRowStyle={styles.matchRow}
+              matchTeamNameStyle={styles.matchTeamName}
+              matchWinnerStyle={styles.matchWinner}
+              matchScoreStyle={styles.matchScore}
+              matchStandingRowStyle={styles.matchStandingRow}
+              matchStandingRankStyle={styles.matchStandingRank}
+              matchStandingTeamStyle={styles.matchStandingTeam}
+              matchStandingMetaStyle={styles.matchStandingMeta}
+            />
+          </View>
         ) : null}
       </View>
 
-      <View style={styles.actions}>
+          <View style={styles.actions}>
         {!canEnroll && (
           <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
         )}
@@ -1192,8 +1292,10 @@ export default function TournamentDetailScreen() {
         {userHasTeam && (
           <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
         )}
-      </View>
-    </ScrollView>
+          </View>
+        </>
+      )}
+    />
   );
 }
 
@@ -1213,21 +1315,21 @@ const styles = StyleSheet.create({
   headerTopRowEnd: { justifyContent: 'flex-end' },
   headerTopActions: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
   dateLocationLeft: { flex: 1, minWidth: 0 },
-  progressWrap: { marginTop: 10, gap: 6 },
+  progressWrap: { marginTop: 10, gap: 8, paddingHorizontal: 6, paddingTop: 2 },
   progressTrack: {
-    height: 8,
+    height: 6,
     backgroundColor: Colors.surfaceLight,
     borderRadius: 999,
     overflow: 'hidden',
   },
   progressFill: {
-    height: 8,
+    height: 6,
     backgroundColor: Colors.yellow,
     borderRadius: 999,
   },
-  progressLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+  progressLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' },
   waitlistActions: { marginBottom: 16 },
-  tabsSection: { marginBottom: 16, overflow: 'visible' },
+  tabsSection: { marginBottom: 8, overflow: 'visible' },
   divisionTabBar: {
     flexDirection: 'row',
     gap: 8,
@@ -1325,6 +1427,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    marginTop: -2,
     paddingTop: 10,
     paddingBottom: 6,
     paddingHorizontal: 4,
@@ -1370,6 +1473,8 @@ const styles = StyleSheet.create({
     color: Colors.yellow,
   },
   tabPanel: { marginBottom: 8, minHeight: 80 },
+  tabPanelTight: { marginTop: -10 },
+  tabPanelSpaced: { marginTop: 10 },
   teamsTabCreateRow: { marginBottom: 12 },
   fixturePlaceholder: {
     alignItems: 'center',
@@ -1386,25 +1491,38 @@ const styles = StyleSheet.create({
   matchesSubtabBar: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
+    position: 'relative',
+    zIndex: 3,
+    marginTop: -2,
+    marginBottom: -2,
+    paddingHorizontal: 6,
   },
   matchesSubtabItem: {
+    flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: Colors.surfaceLight,
+    borderColor: 'transparent',
+    zIndex: 1,
   },
   matchesSubtabItemSelected: {
-    backgroundColor: Colors.violetMuted,
-    borderColor: Colors.violetOutline,
+    backgroundColor: Colors.surface,
+    borderColor: Colors.surfaceLight,
+    borderTopColor: Colors.surface,
+    zIndex: 4,
   },
   matchesSubtabLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    color: Colors.textMuted,
+    fontStyle: 'italic',
     textTransform: 'uppercase',
+    color: Colors.textMuted,
   },
   matchesSubtabLabelSelected: {
     color: Colors.violet,
@@ -1420,6 +1538,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginBottom: 8,
   },
+  fixtureSearch: {
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
+    color: Colors.text,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  fixtureQuickFilters: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  fixtureQuickFilterPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  fixtureQuickFilterPillSelected: { backgroundColor: Colors.violetMuted, borderColor: Colors.violetOutline },
+  fixtureQuickFilterLabel: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  fixtureQuickFilterLabelSelected: { color: Colors.violet },
+  fixtureCounts: { color: Colors.textMuted, fontSize: 12, fontWeight: '700' },
   matchTeamName: {
     flex: 1,
     fontSize: 13,

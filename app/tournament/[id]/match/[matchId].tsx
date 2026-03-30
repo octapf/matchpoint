@@ -60,12 +60,32 @@ export default function EditMatchScreen() {
   const teamA = teamById[match.teamAId];
   const teamB = teamById[match.teamBId];
 
+  const aNum = Math.floor(Number(setsWonA));
+  const bNum = Math.floor(Number(setsWonB));
+  const paNum = Math.floor(Number(pointsA));
+  const pbNum = Math.floor(Number(pointsB));
+  const canSave =
+    Number.isFinite(aNum) &&
+    Number.isFinite(bNum) &&
+    aNum >= 0 &&
+    bNum >= 0 &&
+    aNum !== bNum &&
+    Number.isFinite(paNum) &&
+    Number.isFinite(pbNum) &&
+    paNum >= 0 &&
+    pbNum >= 0 &&
+    !updateMatch.isPending;
+
   const handleSave = () => {
-    const a = Math.floor(Number(setsWonA));
-    const b = Math.floor(Number(setsWonB));
-    const pa = Math.floor(Number(pointsA));
-    const pb = Math.floor(Number(pointsB));
+    const a = aNum;
+    const b = bNum;
+    const pa = paNum;
+    const pb = pbNum;
     if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0) {
+      Alert.alert(t('common.error'), t('tournamentDetail.matchInvalidSets'));
+      return;
+    }
+    if (a === b) {
       Alert.alert(t('common.error'), t('tournamentDetail.matchInvalidSets'));
       return;
     }
@@ -91,6 +111,9 @@ export default function EditMatchScreen() {
       <Text style={styles.title}>{t('tournamentDetail.editMatchTitle')}</Text>
       <Text style={styles.hint}>
         {(teamA?.name ?? match.teamAId)} vs {(teamB?.name ?? match.teamBId)}
+      </Text>
+      <Text style={styles.hint}>
+        {aNum > bNum ? (teamA?.name ?? match.teamAId) : bNum > aNum ? (teamB?.name ?? match.teamBId) : '—'}
       </Text>
 
       <View style={styles.row}>
@@ -118,7 +141,7 @@ export default function EditMatchScreen() {
       <Button
         title={updateMatch.isPending ? t('common.loading') : t('common.save')}
         onPress={handleSave}
-        disabled={updateMatch.isPending}
+        disabled={!canSave}
         fullWidth
       />
     </View>

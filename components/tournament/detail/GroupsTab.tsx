@@ -21,6 +21,9 @@ export function GroupsTab({
   renderTeam,
   canReorderTeams,
   onReorderTeam,
+  swapSourceTeamId,
+  onSwapTeam,
+  onCancelSwap,
   reorderPendingTeamId,
   emptyTextStyle,
   rebalanceBannerStyle,
@@ -45,6 +48,9 @@ export function GroupsTab({
   renderTeam: (team: Team) => React.ReactNode;
   canReorderTeams: boolean;
   onReorderTeam: (team: Team) => void;
+  swapSourceTeamId: string | null;
+  onSwapTeam: (team: Team) => void;
+  onCancelSwap: () => void;
   reorderPendingTeamId: string | null;
   emptyTextStyle: unknown;
   rebalanceBannerStyle: unknown;
@@ -75,24 +81,27 @@ export function GroupsTab({
       {canManageTournament && (offerGroupRebalance || canReorganizeGroups) ? (
         <View style={{ flexDirection: 'column', gap: 10, marginBottom: 12 }}>
           {canReorganizeGroups ? (
-            <Button
-              title={t('tournamentDetail.menuReorganizeGroups')}
-              variant="secondary"
-              size="sm"
-              iconLeft="shuffle-outline"
-              onPress={() => {
-                Alert.alert(
-                  t('tournamentDetail.menuReorganizeGroups'),
-                  t('tournamentDetail.reorganizeGroupsConfirm'),
-                  [
-                    { text: t('common.cancel'), style: 'cancel' },
-                    { text: t('common.ok'), onPress: onReorganizeGroups },
-                  ]
-                );
-              }}
-              disabled={reorganizePending}
-              fullWidth
-            />
+            <View style={{ gap: 6 }}>
+              <Button
+                title={t('tournamentDetail.menuReorganizeGroups')}
+                variant="secondary"
+                size="sm"
+                iconLeft="shuffle-outline"
+                onPress={() => {
+                  Alert.alert(
+                    t('tournamentDetail.menuReorganizeGroups'),
+                    t('tournamentDetail.reorganizeGroupsConfirm'),
+                    [
+                      { text: t('common.cancel'), style: 'cancel' },
+                      { text: t('common.ok'), onPress: onReorganizeGroups },
+                    ]
+                  );
+                }}
+                disabled={reorganizePending}
+                fullWidth
+              />
+              <Text style={rebalanceHintStyle as never}>{t('tournamentDetail.reorganizeGroupsHint')}</Text>
+            </View>
           ) : null}
 
           {offerGroupRebalance ? (
@@ -118,6 +127,15 @@ export function GroupsTab({
         </View>
       ) : null}
 
+      {canReorderTeams && swapSourceTeamId ? (
+        <View style={rebalanceBannerStyle as never}>
+          <Text style={rebalanceHintStyle as never}>
+            {t('tournamentDetail.swapPickTarget')}
+          </Text>
+          <Button title={t('common.cancel')} variant="outline" size="sm" onPress={onCancelSwap} fullWidth />
+        </View>
+      ) : null}
+
       {divisionTeamsByGroup.map((groupTeams, gi) => (
         <View key={`g-${gi}`} style={groupBlockStyle as never}>
           <Text style={groupHeadingStyle as never}>
@@ -132,7 +150,7 @@ export function GroupsTab({
                 <View style={{ position: 'absolute', right: 6, top: 6, zIndex: 2 }}>
                   <IconButton
                     icon="swap-vertical-outline"
-                    onPress={() => onReorderTeam(team)}
+                    onPress={() => onSwapTeam(team)}
                     disabled={!!reorderPendingTeamId && reorderPendingTeamId !== team._id}
                     accessibilityLabel={t('tournamentDetail.reorderTeam')}
                     compact
@@ -140,7 +158,14 @@ export function GroupsTab({
                   />
                 </View>
               ) : null}
-              {renderTeam(team)}
+              <View
+                style={[
+                  { borderRadius: 12 },
+                  swapSourceTeamId === team._id ? { borderWidth: 2, borderColor: '#a78bfa' } : null,
+                ] as never}
+              >
+                {renderTeam(team)}
+              </View>
             </View>
           ))}
         </View>

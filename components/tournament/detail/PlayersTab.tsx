@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/IconButton';
 import { getPlayerListName } from '@/lib/utils/userDisplay';
@@ -58,8 +59,10 @@ export function PlayersTab({
   }
 
   return (
-    <>
-      {sortedEntries.map((entry) => {
+    <FlashList
+      data={sortedEntries}
+      keyExtractor={(entry) => entry._id}
+      renderItem={({ item: entry }) => {
         const u = userMap[entry.userId];
         const playerName = getPlayerListName(u) || t('common.player');
         const isOrg = organizerIds.includes(entry.userId);
@@ -117,8 +120,8 @@ export function PlayersTab({
             </View>
           </View>
         );
-      })}
-    </>
+      }}
+    />
   );
 }
 

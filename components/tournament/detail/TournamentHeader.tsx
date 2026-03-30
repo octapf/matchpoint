@@ -13,7 +13,6 @@ export function TournamentHeader({
   isCancelled,
   canManageTournament,
   organizerMenuItems,
-  matchProgress,
   headerStyle,
   cancelledBannerStyle,
   cancelledBannerTextStyle,
@@ -26,10 +25,6 @@ export function TournamentHeader({
   dateLocationSepStyle,
   dateStyle,
   matchRulesTextStyle,
-  progressWrapStyle,
-  progressTrackStyle,
-  progressFillStyle,
-  progressLabelStyle,
   headerTopActionsStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
@@ -38,7 +33,6 @@ export function TournamentHeader({
   isCancelled: boolean;
   canManageTournament: boolean;
   organizerMenuItems: OrganizerMenuItem[];
-  matchProgress: { total: number; completed: number; ratio: number } | null;
   headerStyle: unknown;
   cancelledBannerStyle: unknown;
   cancelledBannerTextStyle: unknown;
@@ -51,10 +45,6 @@ export function TournamentHeader({
   dateLocationSepStyle: unknown;
   dateStyle: unknown;
   matchRulesTextStyle: unknown;
-  progressWrapStyle: unknown;
-  progressTrackStyle: unknown;
-  progressFillStyle: unknown;
-  progressLabelStyle: unknown;
   headerTopActionsStyle: unknown;
 }) {
   return (
@@ -76,6 +66,7 @@ export function TournamentHeader({
       <View style={headerTopRowStyle as never}>
         <View style={dateLocationLeftStyle as never}>
           <View style={dateLocationRowStyle as never}>
+            <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
             <Text style={locationStyle as never}>{tournament.location?.trim() || '—'}</Text>
             <Text style={dateLocationSepStyle as never}>·</Text>
             <Text style={dateStyle as never}>{formatTournamentDate(dateLabel) || '—'}</Text>
@@ -84,17 +75,6 @@ export function TournamentHeader({
           <Text style={matchRulesTextStyle as never}>
             {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
           </Text>
-
-          {matchProgress ? (
-            <View style={progressWrapStyle as never} accessibilityRole="text">
-              <View style={progressTrackStyle as never}>
-                <View style={[progressFillStyle as never, { width: `${Math.round(matchProgress.ratio * 100)}%` }]} />
-              </View>
-              <Text style={progressLabelStyle as never}>
-                {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
-              </Text>
-            </View>
-          ) : null}
         </View>
 
         {canManageTournament ? (

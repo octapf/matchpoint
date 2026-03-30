@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { Team } from '@/types';
@@ -52,7 +53,11 @@ export function TeamsTab({
       ) : filteredTeams.length === 0 ? (
         <Text style={emptyTextStyle as never}>{t('tournamentDetail.noTeamsYet')}</Text>
       ) : (
-        filteredTeams.map(renderTeam)
+        <FlashList
+          data={filteredTeams}
+          keyExtractor={(tm) => tm._id}
+          renderItem={({ item }) => renderTeam(item) as never}
+        />
       )}
     </>
   );

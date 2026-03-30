@@ -61,7 +61,14 @@ function apiRequest<T>(
       typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error: unknown }).error === 'string'
         ? (data as { error: string }).error
         : undefined;
-    if (!res.ok) throw new Error(errMsg || `API error: ${res.status}`);
+    if (!res.ok) {
+      const e = new Error(errMsg || `API error: ${res.status}`);
+      if (typeof data === 'object' && data !== null) {
+        const anyData = data as Record<string, unknown>;
+        if (typeof anyData.remaining === 'number') (e as Error & { remaining?: number }).remaining = anyData.remaining;
+      }
+      throw e;
+    }
     return data as T;
   });
 }

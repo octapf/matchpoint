@@ -117,7 +117,7 @@ export default function CreateTeamOrganizerScreen() {
         <Text style={styles.label}>{t('team.players')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="Search…"
+          placeholder={t('tournamentDetail.searchTeams')}
           placeholderTextColor={Colors.textMuted}
           value={query}
           onChangeText={setQuery}
@@ -140,7 +140,7 @@ export default function CreateTeamOrganizerScreen() {
             </Pressable>
           );
         })}
-        {filtered.length === 0 ? <Text style={styles.empty}>No results</Text> : null}
+        {filtered.length === 0 ? <Text style={styles.empty}>{t('common.noResults')}</Text> : null}
       </View>
 
       <Button
