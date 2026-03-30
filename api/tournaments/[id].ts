@@ -6,7 +6,7 @@ import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { getSessionUserId, isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
-import { generateClassificationMatches, randomizeTeamGroups } from '../../server/lib/classificationMatches';
+import { actionPublishCategoryMatches, actionRandomizeGroups, actionStartTournament } from '../../server/lib/tournamentLifecycle';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -113,44 +113,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const action = typeof body?.action === 'string' ? body.action.trim() : '';
 
       if (action === 'randomizeGroups') {
-        const result = await randomizeTeamGroups(db, id);
+        const result = await actionRandomizeGroups(db, id);
         return corsRes.status(200).json(result);
       }
 
       if (action === 'start') {
-        const startedAt = (cur as { startedAt?: unknown }).startedAt;
-        const phase = String((cur as { phase?: unknown }).phase ?? '');
-        if (startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed') {
-          return corsRes.status(400).json({ error: 'Tournament already started' });
+        try {
+          const result = await actionStartTournament(db, id, { matchesPerOpponent: body?.matchesPerOpponent });
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not start tournament';
+          return corsRes.status(400).json({ error: msg });
         }
-        const matchesPerOpponentRaw = Number(
-          body?.matchesPerOpponent ?? (cur as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1
-        );
-        const matchesPerOpponent = Math.max(1, Math.min(5, Math.floor(matchesPerOpponentRaw) || 1));
-        const pointsToWin = Math.max(1, Math.min(99, Number((cur as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
-        const setsPerMatch = Math.max(1, Math.min(7, Number((cur as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
+      }
 
-        await db.collection('matches').deleteMany({ tournamentId: id, stage: 'classification' });
-
-        const now = new Date().toISOString();
-        await col.updateOne(
-          { _id: oid },
-          {
-            $set: {
-              phase: 'classification',
-              startedAt: now,
-              classificationMatchesPerOpponent: matchesPerOpponent,
-              updatedAt: now,
-            },
-          }
-        );
-
-        const gen = await generateClassificationMatches(db, id, {
-          matchesPerOpponent,
-          pointsToWin,
-          setsPerMatch,
-        });
-        return corsRes.status(200).json({ startedAt: now, matches: gen });
+      if (action === 'generateCategoryMatches') {
+        try {
+          const result = await actionPublishCategoryMatches(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not generate category matches';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'updateMatch') {
@@ -226,6 +210,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'pointsToWin',
         'setsPerMatch',
         'groupCount',
+        'classificationMatchesPerOpponent',
+        'categoryFractions',
+        'singleCategoryAdvanceFraction',
         'status',
         'organizerIds',
         'visibility',
@@ -257,6 +244,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
+      }
+
+      const started =
+        !!(cur as { startedAt?: unknown }).startedAt ||
+        (cur as { phase?: unknown }).phase === 'classification' ||
+        (cur as { phase?: unknown }).phase === 'categories' ||
+        (cur as { phase?: unknown }).phase === 'completed';
+
+      if (
+        started &&
+        (update.classificationMatchesPerOpponent !== undefined ||
+          update.categoryFractions !== undefined ||
+          update.singleCategoryAdvanceFraction !== undefined)
+      ) {
+        return corsRes.status(400).json({ error: 'Tournament already started' });
       }
 
       if (update.maxTeams !== undefined || update.groupCount !== undefined) {
@@ -311,6 +313,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Sets per match must be between 1 and 7' });
         }
         update.setsPerMatch = Math.floor(s);
+      }
+
+      if (update.classificationMatchesPerOpponent !== undefined) {
+        const m = Number(update.classificationMatchesPerOpponent);
+        if (!Number.isFinite(m) || m < 1 || m > 5) {
+          return corsRes.status(400).json({ error: 'Matches per opponent must be between 1 and 5' });
+        }
+        update.classificationMatchesPerOpponent = Math.floor(m);
+      }
+
+      if (update.singleCategoryAdvanceFraction !== undefined) {
+        const f = Number(update.singleCategoryAdvanceFraction);
+        if (!Number.isFinite(f) || f <= 0 || f >= 1) {
+          return corsRes.status(400).json({ error: 'Advance fraction must be between 0 and 1' });
+        }
+        update.singleCategoryAdvanceFraction = Math.round(f * 1000) / 1000;
+      }
+
+      if (update.categoryFractions !== undefined) {
+        const raw = update.categoryFractions;
+        if (raw == null) {
+          update.categoryFractions = null;
+        } else if (typeof raw !== 'object' || Array.isArray(raw)) {
+          return corsRes.status(400).json({ error: 'Category fractions must be an object' });
+        } else {
+          const allowedKeys = ['Gold', 'Silver', 'Bronze'] as const;
+          const cleaned: Partial<Record<(typeof allowedKeys)[number], number>> = {};
+          for (const k of allowedKeys) {
+            const v = (raw as Record<string, unknown>)[k];
+            if (v === undefined) continue;
+            const n = Number(v);
+            if (!Number.isFinite(n) || n < 0) {
+              return corsRes.status(400).json({ error: 'Invalid category fractions' });
+            }
+            cleaned[k] = n;
+          }
+          const sum = allowedKeys.reduce((acc, k) => acc + (cleaned[k] ?? 0), 0);
+          if (sum <= 0) {
+            update.categoryFractions = null;
+          } else {
+            const normalized: Partial<Record<(typeof allowedKeys)[number], number>> = {};
+            for (const k of allowedKeys) {
+              const v = cleaned[k] ?? 0;
+              if (v <= 0) continue;
+              normalized[k] = Math.round((v / sum) * 1000) / 1000;
+            }
+            update.categoryFractions = normalized;
+          }
+        }
       }
 
       if (update.divisions !== undefined) {

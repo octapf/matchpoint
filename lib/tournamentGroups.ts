@@ -12,6 +12,19 @@ export const MIN_TEAMS_PER_GROUP = 2;
 /** Default capacity per group when organizers use typical defaults (e.g. 4 groups × 4 = 16 teams). */
 export const DEFAULT_TEAMS_PER_GROUP = 4;
 
+/** Default teams per division (4 groups × 4 teams). */
+export const DEFAULT_TEAMS_PER_DIVISION = DEFAULT_GROUP_COUNT * DEFAULT_TEAMS_PER_GROUP; // 16
+
+export function defaultMaxTeamsForDivisions(divisionCount: number): number {
+  const dc = Math.max(1, Math.floor(Number(divisionCount) || 1));
+  return DEFAULT_TEAMS_PER_DIVISION * dc;
+}
+
+export function defaultGroupCountForDivisions(divisionCount: number): number {
+  const dc = Math.max(1, Math.floor(Number(divisionCount) || 1));
+  return DEFAULT_GROUP_COUNT * dc;
+}
+
 /** Max player entries (one entry = one player); doubles ⇒ 2 × max teams. */
 export function maxPlayerSlotsForTournament(maxTeams: number): number {
   const mt = Math.floor(Number(maxTeams));

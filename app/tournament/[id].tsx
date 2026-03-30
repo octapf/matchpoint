@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, Share, Alert, Pressable } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type { Gender, User, TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
@@ -11,6 +11,14 @@ import { TournamentOrganizerMenu, type OrganizerMenuItem } from '@/components/to
 import { config, shouldUseDevMocks } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { GroupsTab } from '@/components/tournament/detail/GroupsTab';
+import { WaitingListTab } from '@/components/tournament/detail/WaitingListTab';
+import { PlayersTab } from '@/components/tournament/detail/PlayersTab';
+import { TeamsTab } from '@/components/tournament/detail/TeamsTab';
+import { FixtureTab } from '@/components/tournament/detail/FixtureTab';
+import { TournamentHeader } from '@/components/tournament/detail/TournamentHeader';
+import { WaitlistActions } from '@/components/tournament/detail/WaitlistActions';
+import { TournamentTabsBar } from '@/components/tournament/detail/TournamentTabsBar';
 import {
   useTournament,
   useDeleteTournament,
@@ -18,8 +26,9 @@ import {
   useRebalanceTournamentGroups,
   useRandomizeTournamentGroups,
   useStartTournament,
+  useGenerateCategoryMatches,
 } from '@/lib/hooks/useTournaments';
-import { useTeams, useDeleteTeam } from '@/lib/hooks/useTeams';
+import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
 import { useWaitlist, useJoinWaitlist, useLeaveWaitlist } from '@/lib/hooks/useWaitlist';
 import { useMatches } from '@/lib/hooks/useMatches';
@@ -30,6 +39,9 @@ import i18n from '@/lib/i18n';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
 import type { Team, Entry } from '@/types';
+import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
+import { assignCategories, computeStandingsForGroup } from '@/lib/tournamentStandings';
+import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
 import {
   countGroupsWithTeams,
   maxPlayerSlotsForTournament,
@@ -120,10 +132,16 @@ function TournamentHeaderTitle({ id }: { id: string | undefined }) {
   return <Text style={headerTitleStyle}>{tournament?.name ?? t('common.tournament')}</Text>;
 }
 
-const headerTitleStyle = { color: '#e5e5e5', fontSize: 17, fontWeight: '600' } as const;
+const headerTitleStyle = {
+  color: '#e5e5e5',
+  fontSize: 17,
+  fontWeight: '600',
+  fontStyle: 'italic',
+  textTransform: 'uppercase',
+} as const;
 
 type TournamentTab = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
-type DivisionTab = TournamentDivision;
+type DivisionTab = DivisionTabUtil;
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
 type MatchSubTab = 'classification' | MatchCategoryTab;
 
@@ -168,12 +186,20 @@ export default function TournamentDetailScreen() {
   const updateTournament = useUpdateTournament();
   const deleteEntry = useDeleteEntry();
   const deleteTeam = useDeleteTeam();
+  const updateTeam = useUpdateTeam();
   const rebalanceGroupsMutation = useRebalanceTournamentGroups();
   const randomizeGroupsMutation = useRandomizeTournamentGroups();
   const startTournamentMutation = useStartTournament();
+  const generateCategoryMatchesMutation = useGenerateCategoryMatches();
 
-  const { data: classificationMatches = [] } = useMatches(
-    id ? { tournamentId: id, stage: 'classification' } : undefined
+  const { data: allMatches = [] } = useMatches(id ? { tournamentId: id } : undefined);
+  const classificationMatches = useMemo(
+    () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
+    [allMatches]
+  );
+  const categoryMatches = useMemo(
+    () => allMatches.filter((m) => (m as { stage?: string }).stage === 'category'),
+    [allMatches]
   );
 
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
@@ -304,27 +330,11 @@ export default function TournamentDetailScreen() {
     if (!started && id && !shouldUseDevMocks()) {
       list.push(
         {
-          key: 'randomizeGroups',
-          label: t('tournamentDetail.menuRandomizeGroups'),
-          icon: 'shuffle-outline',
-          color: Colors.violet,
-          disabled: randomizeGroupsMutation.isPending,
-          onPress: () =>
-            Alert.alert(
-              t('tournamentDetail.menuRandomizeGroups'),
-              t('tournamentDetail.randomizeGroupsConfirm'),
-              [
-                { text: t('common.cancel'), style: 'cancel' },
-                {
-                  text: t('common.ok'),
-                  onPress: () =>
-                    randomizeGroupsMutation.mutate(
-                      { id },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                    ),
-                },
-              ]
-            ),
+          key: 'classificationSettings',
+          label: t('tournamentDetail.menuClassificationSettings'),
+          icon: 'options-outline',
+          color: Colors.yellow,
+          onPress: () => router.push(`/tournament/${id}/classification-settings` as never),
         },
         {
           key: 'start',
@@ -352,6 +362,32 @@ export default function TournamentDetailScreen() {
       );
     }
 
+    if (!started && id && !shouldUseDevMocks()) {
+      list.push({
+        key: 'randomizeGroups',
+        label: t('tournamentDetail.menuReorganizeGroups'),
+        icon: 'shuffle-outline',
+        color: Colors.violet,
+        disabled: randomizeGroupsMutation.isPending,
+        onPress: () =>
+          Alert.alert(
+            t('tournamentDetail.menuReorganizeGroups'),
+            t('tournamentDetail.reorganizeGroupsConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.ok'),
+                onPress: () =>
+                  randomizeGroupsMutation.mutate(
+                    { id },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  ),
+              },
+            ]
+          ),
+      });
+    }
+
     if (tournament.inviteLink) {
       list.push({
         key: 'share',
@@ -359,6 +395,35 @@ export default function TournamentDetailScreen() {
         icon: 'share-outline',
         color: Colors.yellow,
         onPress: handleShareInvite,
+      });
+    }
+
+    const phase = String((tournament as { phase?: unknown }).phase ?? '');
+    const classificationComplete =
+      classificationMatches.length > 0 && classificationMatches.every((m) => m.status === 'completed');
+    if (id && !shouldUseDevMocks() && phase === 'classification' && classificationComplete) {
+      list.push({
+        key: 'generateCategoryMatches',
+        label: t('tournamentDetail.menuGenerateCategoryMatches'),
+        icon: 'trophy-outline',
+        color: Colors.violet,
+        disabled: generateCategoryMatchesMutation.isPending,
+        onPress: () =>
+          Alert.alert(
+            t('tournamentDetail.menuGenerateCategoryMatches'),
+            t('tournamentDetail.generateCategoryMatchesConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.ok'),
+                onPress: () =>
+                  generateCategoryMatchesMutation.mutate(
+                    { id },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  ),
+              },
+            ]
+          ),
       });
     }
 
@@ -383,7 +448,198 @@ export default function TournamentDetailScreen() {
     deleteTournament.isPending,
     randomizeGroupsMutation,
     startTournamentMutation,
+    generateCategoryMatchesMutation,
+    classificationMatches,
   ]);
+
+  // Everything below must be declared before any early `return` so hook order stays stable.
+  const organizerIds = tournament?.organizerIds ?? [];
+  const dateLabel = tournament?.date || tournament?.startDate;
+  const isCancelled = tournament?.status === 'cancelled';
+  const playerCap = maxPlayerSlotsForTournament(tournament?.maxTeams ?? 16);
+  const isFull = entries.length >= playerCap;
+  const waitlistPosition = waitlistInfo?.position ?? null;
+  const waitlistCountForStats = waitlistInfo?.count ?? (tournament as { waitlistCount?: number } | undefined)?.waitlistCount ?? 0;
+
+  const divisions = (((tournament as { divisions?: unknown } | undefined)?.divisions ?? []) as TournamentDivision[]).filter(Boolean);
+  const availableDivisions: DivisionTab[] = (divisions.length ? divisions : ['mixed']) as DivisionTab[];
+  const currentDivision: DivisionTab = availableDivisions.includes(activeDivision)
+    ? activeDivision
+    : availableDivisions[0]!;
+  const divisionCount = Math.max(1, availableDivisions.length);
+  const teamsPerDivisionCap = Math.max(2, Math.floor(((tournament as { maxTeams?: number } | undefined)?.maxTeams ?? 16) / divisionCount));
+  const playersPerDivisionCap = maxPlayerSlotsForTournament(teamsPerDivisionCap);
+  // Groups are configured per division (e.g. 4), but stored as total groups across divisions (e.g. 12).
+  // Each division maps to a contiguous slice of size `groupsPerDivisionCap`.
+  const totalGroups = groupMeta.groupCount;
+  const groupsPerDivisionCap =
+    divisionCount > 1 && totalGroups % divisionCount === 0
+      ? totalGroups / divisionCount
+      : totalGroups;
+  const divisionIndex = Math.max(0, availableDivisions.indexOf(currentDivision));
+  const divisionGroupOffset = divisionIndex * groupsPerDivisionCap;
+
+  const teamDivisionById = useMemo(() => {
+    const map: Record<string, DivisionTab> = {};
+    for (const team of teams) map[team._id] = divisionForTeam(team, userMap);
+    return map;
+  }, [teams, userMap]);
+
+  const filteredTeams = useMemo(
+    () => teams.filter((team) => teamDivisionById[team._id] === currentDivision),
+    [teams, teamDivisionById, currentDivision]
+  );
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      const d = divisionForEntry(entry, userMap, teamDivisionById);
+      return d === currentDivision;
+    });
+  }, [entries, userMap, teamDivisionById, currentDivision]);
+
+  const sortedEntries = useMemo(() => {
+    return [...filteredEntries].sort((a, b) => {
+      const na = getPlayerSortKey(userMap[a.userId]);
+      const nb = getPlayerSortKey(userMap[b.userId]);
+      return na.localeCompare(nb);
+    });
+  }, [filteredEntries, userMap]);
+
+  const divisionTeamsByGroup = useMemo(() => {
+    // Clamp and map groupIndex into the current division slice.
+    const clampLocalGi = (gi: number) => Math.max(0, Math.min(groupsPerDivisionCap - 1, gi));
+    const sourceGroups = Array.from({ length: groupsPerDivisionCap }, (_, i) => i);
+    const buckets: Team[][] = sourceGroups.map(() => []);
+    const idxByGroup = new Map<number, number>(sourceGroups.map((g, idx) => [g, idx]));
+    for (const team of filteredTeams) {
+      const raw = teamGroupIndex(team);
+      const local = clampLocalGi(raw - divisionGroupOffset);
+      const idx = idxByGroup.get(local);
+      if (idx != null) buckets[idx]!.push(team);
+    }
+    return buckets;
+  }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset]);
+
+  const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
+  const filteredWaitlist = useMemo(() => {
+    return (waitlistInfo?.users ?? []).filter((row) => {
+      const g = userMap[row.userId]?.gender;
+      if (currentDivision === 'men') return g === 'male' || g == null;
+      if (currentDivision === 'women') return g === 'female' || g == null;
+      return true;
+    });
+  }, [waitlistInfo?.users, userMap, currentDivision]);
+
+  const matchCategoryTabs = (() => {
+    const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
+      (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
+    );
+    return ['classification', ...cats] as MatchSubTab[];
+  })();
+
+  const selectedMatchesSubtab = matchCategoryTabs.includes(activeMatchesSubtab)
+    ? activeMatchesSubtab
+    : matchCategoryTabs[0]!;
+
+  const classificationData = useMemo(() => {
+    // Dev mocks: keep deterministic seeded fixture.
+    if (shouldUseDevMocks()) {
+      const pointsToWin = Math.max(
+        1,
+        Math.min(99, Number((tournament as { pointsToWin?: unknown } | undefined)?.pointsToWin ?? 21) || 21)
+      );
+      const setsPerMatch = Math.max(
+        1,
+        Math.min(7, Number((tournament as { setsPerMatch?: unknown } | undefined)?.setsPerMatch ?? 1) || 1)
+      );
+      return buildSeededClassificationData({
+        divisionTeamsByGroup,
+        matchCategoryTabs,
+        pointsToWin,
+        setsPerMatch,
+      });
+    }
+
+    // Live data: compute standings from completed matches and assign categories from tournament config.
+    const groupMatchesByLocal = new Map<number, typeof classificationMatches>();
+    for (let localGi = 0; localGi < groupsPerDivisionCap; localGi++) {
+      const globalGi = divisionGroupOffset + localGi;
+      groupMatchesByLocal.set(
+        localGi,
+        classificationMatches.filter((m) => Number((m as { groupIndex?: unknown }).groupIndex ?? -1) === globalGi)
+      );
+    }
+
+    const standingsByGroup = divisionTeamsByGroup.map((teamsInGroup, localGi) =>
+      computeStandingsForGroup({ teams: teamsInGroup, matches: groupMatchesByLocal.get(localGi) ?? [] })
+    );
+
+    const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
+      (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
+    );
+    const categoryFractions = (tournament as { categoryFractions?: unknown } | undefined)?.categoryFractions as
+      | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
+      | null
+      | undefined;
+    const singleCategoryAdvanceFraction = Number(
+      (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
+    );
+
+    const { teamCategory } = assignCategories({
+      standingsByGroup,
+      categories: cats,
+      categoryFractions: categoryFractions ?? null,
+      singleCategoryAdvanceFraction,
+    });
+
+    // Shape expected by FixtureTab.
+    return standingsByGroup.map((standings, localGi) => {
+      const matches = (groupMatchesByLocal.get(localGi) ?? []).map((m) => {
+        const teamA = divisionTeamsByGroup[localGi]?.find((t) => t._id === m.teamAId) ?? { _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' };
+        const teamB = divisionTeamsByGroup[localGi]?.find((t) => t._id === m.teamBId) ?? { _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' };
+        return {
+          id: m._id,
+          teamA,
+          teamB,
+          setsWonA: m.setsWonA ?? 0,
+          setsWonB: m.setsWonB ?? 0,
+          winnerId: m.winnerId ?? '',
+        };
+      });
+
+      const categoriesMap: Partial<Record<MatchCategoryTab, typeof standings>> = {};
+      for (const cat of cats) {
+        categoriesMap[cat] = standings.filter((row) => teamCategory.get(row.team._id) === cat);
+      }
+      return { matches, standings, categories: categoriesMap };
+    });
+  }, [
+    classificationMatches,
+    divisionTeamsByGroup,
+    divisionGroupOffset,
+    groupsPerDivisionCap,
+    matchCategoryTabs,
+    tournament,
+    id,
+  ]);
+
+  const tournamentStarted =
+    !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'classification' ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'categories' ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'completed';
+
+  const [reorderPendingTeamId, setReorderPendingTeamId] = useState<string | null>(null);
+
+  const mutationBusy =
+    deleteEntry.isPending ||
+    updateTournament.isPending ||
+    deleteTeam.isPending ||
+    deleteTournament.isPending ||
+    rebalanceGroupsMutation.isPending ||
+    randomizeGroupsMutation.isPending ||
+    startTournamentMutation.isPending ||
+    updateTeam.isPending;
 
   if (isLoading || !tournament) {
     return (
@@ -417,10 +673,38 @@ export default function TournamentDetailScreen() {
     );
   }
 
-  const isOrganizer = tournament.organizerIds?.includes(userId ?? '');
+  const isOrganizer = organizerIds.includes(userId ?? '');
   const isAdmin = user?.role === 'admin';
   /** Organizers and global admins can manage roster, teams, and invites from this screen. */
   const canManageTournament = isOrganizer || isAdmin;
+
+  const handleReorderTeam = (team: Team) => {
+    if (!id || !userId) return;
+    if (!tournamentStarted) return;
+    const currentGi = teamGroupIndex(team);
+    const groupOptions = Array.from({ length: groupMeta.groupCount }, (_, i) => i).filter((gi) => gi !== currentGi);
+    if (groupOptions.length === 0) return;
+    Alert.alert(
+      t('tournamentDetail.reorderTeam'),
+      team.name,
+      [
+        ...groupOptions.slice(0, 8).map((gi) => ({
+          text: `${t('tournamentDetail.groupTitle', { n: gi + 1 })}`,
+          onPress: () => {
+            setReorderPendingTeamId(team._id);
+            updateTeam.mutate(
+              { id: team._id, update: { groupIndex: gi } },
+              {
+                onSettled: () => setReorderPendingTeamId(null),
+                onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+              }
+            );
+          },
+        })),
+        { text: t('common.cancel'), style: 'cancel' },
+      ]
+    );
+  };
 
   const promoteOrganizer = (targetUserId: string, playerName: string) => {
     if (!userId || !id) return;
@@ -540,673 +824,262 @@ export default function TournamentDetailScreen() {
     );
   };
 
-  const organizerIds = tournament.organizerIds ?? [];
-  const dateLabel = tournament.date || tournament.startDate;
-  const isCancelled = tournament.status === 'cancelled';
-  const playerCap = maxPlayerSlotsForTournament(tournament.maxTeams ?? 16);
-  const isFull = entries.length >= playerCap;
-  const waitlistPosition = waitlistInfo?.position ?? null;
-  const waitlistCountForStats = waitlistInfo?.count ?? tournament.waitlistCount ?? 0;
-  const divisions = ((tournament.divisions ?? []) as TournamentDivision[]).filter(Boolean);
-  const availableDivisions: DivisionTab[] = (divisions.length ? divisions : ['mixed']) as DivisionTab[];
-  const currentDivision: DivisionTab = availableDivisions.includes(activeDivision)
-    ? activeDivision
-    : availableDivisions[0]!;
-  const divisionCount = Math.max(1, availableDivisions.length);
-  const teamsPerDivisionCap = Math.max(2, Math.floor((tournament.maxTeams ?? 16) / divisionCount));
-  const playersPerDivisionCap = maxPlayerSlotsForTournament(teamsPerDivisionCap);
-  const groupsPerDivisionCap = Math.max(1, Math.floor(groupMeta.groupCount / divisionCount));
-
-  const teamDivisionById: Record<string, DivisionTab> = (() => {
-    const map: Record<string, DivisionTab> = {};
-    for (const team of teams) {
-      const p1 = userMap[team.playerIds?.[0] ?? ''];
-      const p2 = userMap[team.playerIds?.[1] ?? ''];
-      const g1 = p1?.gender;
-      const g2 = p2?.gender;
-      const division: DivisionTab =
-        g1 === 'male' && g2 === 'male'
-          ? 'men'
-          : g1 === 'female' && g2 === 'female'
-            ? 'women'
-            : g1 === 'male' || g2 === 'male'
-              ? 'mixed'
-              : g1 === 'female' || g2 === 'female'
-                ? 'mixed'
-                : 'mixed';
-      map[team._id] = division;
-    }
-    return map;
-  })();
-
-  const filteredTeams = teams.filter((team) => teamDivisionById[team._id] === currentDivision);
-
-  const filteredEntries = entries.filter((entry) => {
-    if (entry.teamId) {
-      return teamDivisionById[entry.teamId] === currentDivision;
-    }
-    const g = userMap[entry.userId]?.gender;
-    if (currentDivision === 'men') return g === 'male';
-    if (currentDivision === 'women') return g === 'female';
-    return false;
-  });
-
-  const sortedEntries = [...filteredEntries].sort((a, b) => {
-    const na = getPlayerSortKey(userMap[a.userId]);
-    const nb = getPlayerSortKey(userMap[b.userId]);
-    return na.localeCompare(nb);
-  });
-
-  const divisionTeamsByGroup = (() => {
-    const existingGroups = [...new Set(filteredTeams.map((tm) => teamGroupIndex(tm)))].sort((a, b) => a - b);
-    const fallbackGroups = Array.from({ length: groupsPerDivisionCap }, (_, i) => i);
-    const sourceGroups = existingGroups.length > 0 ? existingGroups : fallbackGroups;
-    const buckets: Team[][] = sourceGroups.map(() => []);
-    const idxByGroup = new Map<number, number>(sourceGroups.map((g, idx) => [g, idx]));
-    for (const team of filteredTeams) {
-      const gi = teamGroupIndex(team);
-      const idx = idxByGroup.get(gi);
-      if (idx != null) buckets[idx]!.push(team);
-    }
-    return buckets;
-  })();
-
-  const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
-  const filteredWaitlist = (waitlistInfo?.users ?? []).filter((row) => {
-    const g = userMap[row.userId]?.gender;
-    if (currentDivision === 'men') return g === 'male' || g == null;
-    if (currentDivision === 'women') return g === 'female' || g == null;
-    return true;
-  });
-  const matchCategoryTabs = (() => {
-    const cats = (tournament.categories ?? []).filter((c): c is MatchCategoryTab =>
-      c === 'Gold' || c === 'Silver' || c === 'Bronze'
-    );
-    return ['classification', ...cats] as MatchSubTab[];
-  })();
-  const selectedMatchesSubtab = matchCategoryTabs.includes(activeMatchesSubtab)
-    ? activeMatchesSubtab
-    : matchCategoryTabs[0]!;
-  const classificationData = (() => {
-    const categoryCount = Math.max(1, matchCategoryTabs.length - 1);
-    const pointsToWin = Math.max(1, Math.min(99, Number(tournament.pointsToWin ?? 21) || 21));
-    const setsPerMatch = Math.max(1, Math.min(7, Number(tournament.setsPerMatch ?? 1) || 1));
-    const setsToWin = Math.floor(setsPerMatch / 2) + 1;
-    const seeded = divisionTeamsByGroup.map((groupTeams) => {
-      const matches: {
-        id: string;
-        teamA: Team;
-        teamB: Team;
-        setsWonA: number;
-        setsWonB: number;
-        scoreA: number;
-        scoreB: number;
-        winnerId: string;
-      }[] = [];
-      const stats: Record<string, { team: Team; wins: number; points: number }> = {};
-      for (const team of groupTeams) {
-        stats[team._id] = { team, wins: 0, points: 0 };
-      }
-      for (let i = 0; i < groupTeams.length; i++) {
-        for (let j = i + 1; j < groupTeams.length; j++) {
-          const teamA = groupTeams[i]!;
-          const teamB = groupTeams[j]!;
-          const seedA = teamA._id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-          const seedB = teamB._id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-          let setsWonA = 0;
-          let setsWonB = 0;
-          let scoreA = 0;
-          let scoreB = 0;
-          for (let setIdx = 0; setIdx < setsPerMatch; setIdx++) {
-            if (setsWonA >= setsToWin || setsWonB >= setsToWin) break;
-            const baseA = (seedA + seedB + i + j + setIdx * 3) % 10;
-            const baseB = (seedA * 3 + seedB + i + j + setIdx * 5) % 10;
-            let setA = Math.max(0, pointsToWin - 3 + baseA);
-            let setB = Math.max(0, pointsToWin - 3 + baseB);
-            if (setA === setB) setA += 1;
-            if (setA > setB) {
-              setsWonA += 1;
-            } else {
-              setsWonB += 1;
-            }
-            scoreA += setA;
-            scoreB += setB;
-          }
-          const winnerId = setsWonA > setsWonB ? teamA._id : teamB._id;
-          stats[teamA._id]!.points += scoreA;
-          stats[teamB._id]!.points += scoreB;
-          stats[winnerId]!.wins += 1;
-          matches.push({
-            id: `${teamA._id}-${teamB._id}`,
-            teamA,
-            teamB,
-            setsWonA,
-            setsWonB,
-            scoreA,
-            scoreB,
-            winnerId,
-          });
-        }
-      }
-      const standings = Object.values(stats).sort(
-        (a, b) =>
-          b.wins - a.wins ||
-          b.points - a.points ||
-          a.team.name.localeCompare(b.team.name)
-      );
-      const categories: Partial<Record<MatchCategoryTab, typeof standings>> = {};
-      if (categoryCount > 0) {
-        const orderedCats = matchCategoryTabs.filter((x): x is MatchCategoryTab => x !== 'classification');
-        let cursor = 0;
-        for (let ci = 0; ci < orderedCats.length; ci++) {
-          const remaining = standings.length - cursor;
-          const slotsLeft = orderedCats.length - ci;
-          const size = Math.ceil(remaining / slotsLeft);
-          categories[orderedCats[ci]!] = standings.slice(cursor, cursor + size);
-          cursor += size;
-        }
-      }
-      return { matches, standings, categories };
-    });
-    return seeded;
-  })();
-
-  const mutationBusy =
-    deleteEntry.isPending ||
-    updateTournament.isPending ||
-    deleteTeam.isPending ||
-    deleteTournament.isPending ||
-    rebalanceGroupsMutation.isPending ||
-    randomizeGroupsMutation.isPending ||
-    startTournamentMutation.isPending;
-
-  const tournamentStarted = !!tournament.startedAt || tournament.phase === 'classification' || tournament.phase === 'categories' || tournament.phase === 'completed';
+  // (moved above) division/group/match derived state lives above early returns
   const matchProgress = (() => {
     if (!tournamentStarted) return null;
-    const total = classificationMatches.length;
+    const total = classificationMatches.length + categoryMatches.length;
     if (total === 0) return { total: 0, completed: 0, ratio: 0 };
-    const completed = classificationMatches.filter((m) => m.status === 'completed').length;
+    const completed =
+      classificationMatches.filter((m) => m.status === 'completed').length +
+      categoryMatches.filter((m) => m.status === 'completed').length;
     return { total, completed, ratio: completed / total };
   })();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        {isCancelled ? (
-          <View style={styles.cancelledBanner} accessibilityRole="alert">
-            <Ionicons name="close-circle-outline" size={22} color={Colors.error} />
-            <Text style={styles.cancelledBannerText}>{t('tournamentDetail.cancelledBanner')}</Text>
-          </View>
-        ) : null}
-        {(tournament.visibility ?? 'public') === 'private' ? (
-          <View style={styles.privateBanner} accessibilityRole="text">
-            <Ionicons name="lock-closed-outline" size={20} color={Colors.violet} />
-            <Text style={styles.privateBannerText}>{t('tournamentDetail.privateVisibilityBanner')}</Text>
-          </View>
-        ) : null}
-        <View style={styles.headerTopRow}>
-          <View style={styles.dateLocationLeft}>
-            <View style={styles.dateLocationRow}>
-              <Text style={styles.location}>{tournament.location?.trim() || '—'}</Text>
-              <Text style={styles.dateLocationSep}>·</Text>
-              <Text style={styles.date}>{formatTournamentDate(dateLabel) || '—'}</Text>
-            </View>
-            <Text style={styles.matchRulesText}>
-              {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}:{' '}
-              {tournament.setsPerMatch ?? 1}
-            </Text>
-            {matchProgress ? (
-              <View style={styles.progressWrap} accessibilityRole="text">
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${Math.round(matchProgress.ratio * 100)}%` }]} />
-                </View>
-                <Text style={styles.progressLabel}>
-                  {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          {canManageTournament ? (
-            <View style={styles.headerTopActions}>
-              <TournamentOrganizerMenu menuLabel={t('tournamentDetail.actionsMenu')} items={organizerMenuItems} />
-            </View>
-          ) : null}
-        </View>
-      </View>
+      <TournamentHeader
+        t={t}
+        tournament={tournament}
+        dateLabel={dateLabel}
+        isCancelled={isCancelled}
+        canManageTournament={canManageTournament}
+        organizerMenuItems={organizerMenuItems}
+        matchProgress={matchProgress}
+        headerStyle={styles.header}
+        cancelledBannerStyle={styles.cancelledBanner}
+        cancelledBannerTextStyle={styles.cancelledBannerText}
+        privateBannerStyle={styles.privateBanner}
+        privateBannerTextStyle={styles.privateBannerText}
+        headerTopRowStyle={styles.headerTopRow}
+        dateLocationLeftStyle={styles.dateLocationLeft}
+        dateLocationRowStyle={styles.dateLocationRow}
+        locationStyle={styles.location}
+        dateLocationSepStyle={styles.dateLocationSep}
+        dateStyle={styles.date}
+        matchRulesTextStyle={styles.matchRulesText}
+        progressWrapStyle={styles.progressWrap}
+        progressTrackStyle={styles.progressTrack}
+        progressFillStyle={styles.progressFill}
+        progressLabelStyle={styles.progressLabel}
+        headerTopActionsStyle={styles.headerTopActions}
+      />
 
       {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
-      {!hasJoined && canEnroll && !isCancelled && isFull ? (
-        <View style={styles.waitlistActions}>
-          {waitlistPosition == null ? (
-            <Button
-              title={t('tournaments.waitlistJoin')}
-              variant="secondary"
-              onPress={() => {
-                if (!userId || !id) return;
-                joinWaitlist.mutate(
-                  { tournamentId: id, userId },
-                  {
-                    onError: (err: unknown) =>
-                      alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-                  }
-                );
-              }}
-              disabled={joinWaitlist.isPending}
-              fullWidth
-            />
-          ) : (
-            <View style={styles.waitlistRow}>
-              <Text style={styles.waitlistPositionText}>
-                {t('tournaments.waitlistYouAre', { n: waitlistPosition })}
-              </Text>
-              <Button
-                title={t('tournaments.waitlistLeave')}
-                variant="outline"
-                onPress={() => {
-                  if (!userId || !id) return;
-                  leaveWaitlist.mutate(
-                    { tournamentId: id },
-                    {
-                      onError: (err: unknown) =>
-                        alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-                    }
-                  );
-                }}
-                disabled={leaveWaitlist.isPending}
-                fullWidth
-              />
-            </View>
-          )}
-        </View>
-      ) : null}
+      <WaitlistActions
+        t={t}
+        show={!hasJoined && canEnroll && !isCancelled && isFull}
+        waitlistPosition={waitlistPosition}
+        onJoin={() => {
+          if (!userId || !id) return;
+          joinWaitlist.mutate(
+            { tournamentId: id, userId },
+            { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+          );
+        }}
+        onLeave={() => {
+          if (!userId || !id) return;
+          leaveWaitlist.mutate(
+            { tournamentId: id },
+            { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+          );
+        }}
+        joinPending={joinWaitlist.isPending}
+        leavePending={leaveWaitlist.isPending}
+        wrapStyle={styles.waitlistActions}
+        waitlistRowStyle={styles.waitlistRow}
+        waitlistPositionTextStyle={styles.waitlistPositionText}
+      />
 
-      <View style={styles.tabsSection}>
-        <View style={styles.divisionTabBar} accessibilityRole="tablist">
-          {availableDivisions.map((division) => {
-            const selected = currentDivision === division;
-            const label =
-              division === 'men'
-                ? t('tournaments.divisionMen')
-                : division === 'women'
-                  ? t('tournaments.divisionWomen')
-                  : t('tournaments.divisionMixed');
-            return (
-              <Pressable
-                key={division}
-                style={[styles.divisionTab, selected && styles.divisionTabSelected]}
-                onPress={() => setActiveDivision(division)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-              >
-                <Text style={[styles.divisionTabLabel, selected && styles.divisionTabLabelSelected]}>{label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.tabBar} accessibilityRole="tablist">
-          {TAB_CONFIG.map(({ id: tabId, icon, labelKey }) => {
-            const selected = activeTab === tabId;
-            const tabValue =
-              tabId === 'players'
-                ? `${filteredEntries.length}/${playersPerDivisionCap}`
-                : tabId === 'teams'
-                  ? `${filteredTeams.length}/${teamsPerDivisionCap}`
-                  : tabId === 'groups'
-                  ? `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
-                    : tabId === 'waitinglist'
-                      ? `${filteredWaitlist.length}`
-                      : '';
-
-            const isWaitingListTab = tabId === 'waitinglist';
-            const tabValueColor = selected
-              ? isWaitingListTab
-                ? Colors.violet
-                : Colors.tabIconSelected
-              : Colors.textMuted;
-            const tabIconColor = selected
-              ? isWaitingListTab
-                ? Colors.violet
-                : Colors.tabIconSelected
-              : Colors.tabIconDefault;
-            const tabLabelColorOverride = selected && isWaitingListTab ? Colors.violet : undefined;
-
-            return (
-              <Pressable
-                key={tabId}
-                style={[styles.tabItem, selected && styles.tabItemSelected]}
-                onPress={() => setActiveTab(tabId)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-              >
-              {isWaitingListTab ? (
-                  <Text style={[styles.waitingListMark, { color: tabIconColor }]}>WL</Text>
-              ) : tabId === 'fixture' ? (
-                <MaterialCommunityIcons
-                  name="volleyball"
-                  size={22}
-                  color={tabIconColor}
-                />
-                ) : (
-                  <Ionicons
-                  name={icon as keyof typeof Ionicons.glyphMap}
-                    size={22}
-                    color={tabIconColor}
-                  />
-                )}
-                {tabValue ? (
-                  <Text style={[styles.tabValue, { color: tabValueColor }]}>{tabValue}</Text>
-                ) : null}
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    selected && !tabLabelColorOverride && styles.tabLabelSelected,
-                    tabLabelColorOverride ? { color: tabLabelColorOverride } : undefined,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {t(labelKey)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+      <TournamentTabsBar
+        t={t}
+        availableDivisions={availableDivisions}
+        currentDivision={currentDivision}
+        onSelectDivision={setActiveDivision}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        tabConfig={TAB_CONFIG as never}
+        tabValueById={{
+          players: `${filteredEntries.length}/${playersPerDivisionCap}`,
+          teams: `${filteredTeams.length}/${teamsPerDivisionCap}`,
+          groups: `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`,
+          waitinglist: `${filteredWaitlist.length}`,
+        }}
+        tabsSectionStyle={styles.tabsSection}
+        divisionTabBarStyle={styles.divisionTabBar}
+        divisionTabStyle={styles.divisionTab}
+        divisionTabSelectedStyle={styles.divisionTabSelected}
+        divisionTabLabelStyle={styles.divisionTabLabel}
+        divisionTabLabelSelectedStyle={styles.divisionTabLabelSelected}
+        tabBarStyle={styles.tabBar}
+        tabItemStyle={styles.tabItem}
+        tabItemSelectedStyle={styles.tabItemSelected}
+        waitingListMarkStyle={styles.waitingListMark}
+        tabValueStyle={styles.tabValue}
+        tabLabelStyle={styles.tabLabel}
+        tabLabelSelectedStyle={styles.tabLabelSelected}
+      />
 
       <View style={styles.tabPanel}>
         {activeTab === 'players' ? (
-          sortedEntries.length === 0 ? (
-            <Text style={styles.emptyText}>{t('tournamentDetail.noPlayersYet')}</Text>
-          ) : (
-            sortedEntries.map((entry) => {
-              const u = userMap[entry.userId];
-              const playerName = getPlayerListName(u) || t('common.player');
-              const isOrg = organizerIds.includes(entry.userId);
-              const isSelf = entry.userId === userId;
-              const showTopTrash =
-                (canManageTournament && !isSelf) || (isSelf && hasJoined);
-              /** Toggle organizer: others (promote/demote), or self only when already organizer (demote). */
-              const showOrganizerToggleIcon =
-                canManageTournament && (!isSelf || (isSelf && isOrg));
-
-              return (
-                <View key={entry._id} style={[styles.playerRow, isOrg && styles.playerRowOrganizer]}>
-                  <View style={styles.playerRowTop}>
-                    <Pressable
-                      style={styles.playerRowMain}
-                      onPress={() => router.push(`/profile/${entry.userId}` as never)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('profile.viewProfile')}
-                    >
-                      <Avatar
-                        firstName={u?.firstName ?? ''}
-                        lastName={u?.lastName ?? ''}
-                        gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
-                        size="sm"
-                      />
-                      <View style={styles.playerRowText}>
-                        <Text style={styles.playerRowName}>{playerName}</Text>
-                        {isOrg ? (
-                          <Text style={styles.orgBadge}>{t('tournamentDetail.organizerBadge')}</Text>
-                        ) : null}
-                      </View>
-                    </Pressable>
-                    <View style={styles.playerRowRight}>
-                      {showOrganizerToggleIcon ? (
-                        <IconButton
-                          icon="person-circle-outline"
-                          onPress={() =>
-                            isOrg
-                              ? demoteOrganizer(entry.userId, playerName)
-                              : promoteOrganizer(entry.userId, playerName)
-                          }
-                          disabled={mutationBusy}
-                          accessibilityLabel={
-                            isOrg
-                              ? t('tournamentDetail.removeOrganizer')
-                              : t('tournamentDetail.makeOrganizer')
-                          }
-                          color={isOrg ? Colors.violet : Colors.textMuted}
-                          compact
-                        />
-                      ) : null}
-                      {showTopTrash ? (
-                        <IconButton
-                          icon="trash-outline"
-                          onPress={() =>
-                            isSelf && hasJoined ? confirmLeave() : confirmRemovePlayer(entry, playerName)
-                          }
-                          disabled={mutationBusy}
-                          accessibilityLabel={
-                            isSelf && hasJoined
-                              ? t('tournamentDetail.leaveTournament')
-                              : t('tournamentDetail.removePlayer')
-                          }
-                          color="#f87171"
-                          compact
-                        />
-                      ) : null}
-                    </View>
-                  </View>
-                </View>
-              );
-            })
-          )
+          <PlayersTab
+            t={t}
+            sortedEntries={sortedEntries}
+            userMap={userMap}
+            organizerIds={organizerIds}
+            currentUserId={userId}
+            hasJoined={hasJoined}
+            canManageTournament={canManageTournament}
+            mutationBusy={mutationBusy}
+            onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+            onPromoteOrganizer={promoteOrganizer}
+            onDemoteOrganizer={demoteOrganizer}
+            onConfirmLeave={confirmLeave}
+            onConfirmRemovePlayer={confirmRemovePlayer}
+            emptyTextStyle={styles.emptyText}
+            playerRowStyle={styles.playerRow}
+            playerRowOrganizerStyle={styles.playerRowOrganizer}
+            playerRowTopStyle={styles.playerRowTop}
+            playerRowMainStyle={styles.playerRowMain}
+            playerRowTextStyle={styles.playerRowText}
+            playerRowNameStyle={styles.playerRowName}
+            orgBadgeStyle={styles.orgBadge}
+            playerRowRightStyle={styles.playerRowRight}
+          />
         ) : null}
 
         {activeTab === 'teams' ? (
-          <>
-            {!userHasTeam && hasJoined && canEnroll && id ? (
-              <View style={styles.teamsTabCreateRow}>
-                <Button
-                  title={t('tournamentDetail.createTeam')}
-                  variant="secondary"
-                  onPress={() => router.push(`/tournament/${id}/team/create`)}
-                  fullWidth
-                />
-              </View>
-            ) : null}
-            {loadingTeams ? (
-              <View style={styles.teamCard}>
-                <Skeleton height={18} width="40%" style={{ marginBottom: 12 }} />
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <Skeleton height={36} width={80} borderRadius={18} />
-                  <Skeleton height={36} width={80} borderRadius={18} />
-                </View>
-              </View>
-            ) : filteredTeams.length === 0 ? (
-              <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
-            ) : (
-              filteredTeams.map((team) => (
-                <TeamCard
-                  key={team._id}
-                  team={team}
-                  userMap={userMap}
-                  currentUserId={userId}
-                  t={t}
-                  canRemoveTeam={canManageTournament}
-                  onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
-                  removeTeamPending={deleteTeam.isPending}
-                  onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
-                />
-              ))
-            )}
-          </>
-        ) : null}
-
-        {activeTab === 'groups' ? (
-          loadingTeams ? (
-            <View style={styles.teamCard}>
-              <Skeleton height={18} width="40%" style={{ marginBottom: 12 }} />
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <Skeleton height={36} width={80} borderRadius={18} />
-                <Skeleton height={36} width={80} borderRadius={18} />
-              </View>
-            </View>
-          ) : filteredTeams.length === 0 ? (
-            <Text style={styles.emptyText}>{t('tournamentDetail.noTeamsYet')}</Text>
-          ) : (
-            <>
-              {canManageTournament && !shouldUseDevMocks() && offerGroupRebalance && userId ? (
-                <View style={styles.rebalanceBanner}>
-                  <Text style={styles.rebalanceHint}>
-                    {t('tournamentDetail.rebalanceGroupsHint', { max: groupMeta.teamsPerGroup })}
-                  </Text>
+          <TeamsTab
+            t={t}
+            canCreateTeam={!userHasTeam && hasJoined && canEnroll && !!id}
+            onCreateTeam={() => router.push(`/tournament/${id}/team/create`)}
+            organizerActions={
+              canManageTournament && id ? (
+                <View style={styles.teamsTabCreateRow}>
                   <Button
-                    title={t('tournamentDetail.rebalanceGroups')}
-                    variant="secondary"
-                    onPress={() => {
-                      if (!id || !userId) return;
-                      Alert.alert(
-                        t('tournamentDetail.rebalanceGroups'),
-                        t('tournamentDetail.rebalanceGroupsConfirm'),
-                        [
-                          { text: t('common.cancel'), style: 'cancel' },
-                          {
-                            text: t('common.ok'),
-                            onPress: () =>
-                              rebalanceGroupsMutation.mutate(
-                                { id },
-                                {
-                                  onError: (err: unknown) =>
-                                    alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-                                }
-                              ),
-                          },
-                        ]
-                      );
-                    }}
-                    disabled={rebalanceGroupsMutation.isPending}
+                    title={t('tournamentDetail.createTeamFromEntries')}
+                    variant="outline"
+                    onPress={() => router.push(`/tournament/${id}/team/create-organizer`)}
                     fullWidth
                   />
                 </View>
-              ) : null}
-              {divisionTeamsByGroup.map((groupTeams, gi) => (
-                <View key={`g-${gi}`} style={styles.groupBlock}>
-                  <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
-                  {groupTeams.length === 0 ? (
-                    <Text style={styles.emptyGroup}>{t('tournamentDetail.noTeamsInGroup')}</Text>
-                  ) : null}
-                  {groupTeams.map((team) => (
-                    <TeamCard
-                      key={team._id}
-                      team={team}
-                      userMap={userMap}
-                      currentUserId={userId}
-                      t={t}
-                      canRemoveTeam={canManageTournament}
-                      onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
-                      removeTeamPending={deleteTeam.isPending}
-                      onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
-                    />
-                  ))}
-                </View>
-              ))}
-            </>
-          )
+              ) : null
+            }
+            loadingTeams={loadingTeams}
+            filteredTeams={filteredTeams}
+            renderTeam={(team) => (
+              <TeamCard
+                key={team._id}
+                team={team}
+                userMap={userMap}
+                currentUserId={userId}
+                t={t}
+                canRemoveTeam={canManageTournament}
+                onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
+                removeTeamPending={deleteTeam.isPending}
+                onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+              />
+            )}
+            emptyTextStyle={styles.emptyText}
+            teamsTabCreateRowStyle={styles.teamsTabCreateRow}
+            teamCardStyle={styles.teamCard}
+          />
+        ) : null}
+
+        {activeTab === 'groups' ? (
+          <GroupsTab
+            t={t}
+            loadingTeams={loadingTeams}
+            filteredTeams={filteredTeams}
+            canManageTournament={canManageTournament && !shouldUseDevMocks() && !!userId}
+            offerGroupRebalance={offerGroupRebalance}
+            groupMetaTeamsPerGroup={groupMeta.teamsPerGroup}
+            onRebalancePress={() => {
+              if (!id) return;
+              rebalanceGroupsMutation.mutate(
+                { id },
+                {
+                  onError: (err: unknown) =>
+                    alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+                }
+              );
+            }}
+            rebalancePending={rebalanceGroupsMutation.isPending}
+            canReorganizeGroups={canManageTournament && !tournamentStarted && !shouldUseDevMocks() && !!id}
+            onReorganizeGroups={() => {
+              if (!id) return;
+              randomizeGroupsMutation.mutate(
+                { id },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              );
+            }}
+            reorganizePending={randomizeGroupsMutation.isPending}
+            divisionTeamsByGroup={divisionTeamsByGroup}
+            renderTeam={(team) => (
+              <TeamCard
+                key={team._id}
+                team={team}
+                userMap={userMap}
+                currentUserId={userId}
+                t={t}
+                canRemoveTeam={canManageTournament}
+                onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
+                removeTeamPending={deleteTeam.isPending}
+                onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+              />
+            )}
+            canReorderTeams={canManageTournament && tournamentStarted}
+            onReorderTeam={handleReorderTeam}
+            reorderPendingTeamId={reorderPendingTeamId}
+            emptyTextStyle={styles.emptyText}
+            rebalanceBannerStyle={styles.rebalanceBanner}
+            rebalanceHintStyle={styles.rebalanceHint}
+            groupBlockStyle={styles.groupBlock}
+            groupHeadingStyle={styles.groupHeading}
+            emptyGroupStyle={styles.emptyGroup}
+            teamCardStyle={styles.teamCard}
+          />
         ) : null}
 
         {activeTab === 'waitinglist' ? (
-          filteredWaitlist.length === 0 ? (
-            <Text style={styles.emptyText}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>
-          ) : (
-            filteredWaitlist.map((row, idx) => {
-              const u = userMap[row.userId];
-              const playerName = getPlayerListName(u) || t('common.player');
-              return (
-                <View key={`${row.userId}-${idx}`} style={styles.playerRow}>
-                  <Pressable
-                    style={styles.playerRowMain}
-                    onPress={() => router.push(`/profile/${row.userId}` as never)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('profile.viewProfile')}
-                  >
-                    <Avatar
-                      firstName={u?.firstName ?? ''}
-                      lastName={u?.lastName ?? ''}
-                      gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
-                      size="sm"
-                    />
-                    <View style={styles.playerRowText}>
-                      <Text style={styles.playerRowName}>{playerName}</Text>
-                      <Text style={styles.waitlistRankText}>{t('tournaments.waitlistYouAre', { n: idx + 1 })}</Text>
-                    </View>
-                  </Pressable>
-                </View>
-              );
-            })
-          )
+          <WaitingListTab
+            t={t}
+            filteredWaitlist={filteredWaitlist}
+            userMap={userMap}
+            onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+            emptyTextStyle={styles.emptyText}
+            playerRowStyle={styles.playerRow}
+            playerRowMainStyle={styles.playerRowMain}
+            playerRowTextStyle={styles.playerRowText}
+            playerRowNameStyle={styles.playerRowName}
+            waitlistRankTextStyle={styles.waitlistRankText}
+          />
         ) : null}
 
         {activeTab === 'fixture' ? (
-          <View>
-            <View style={styles.matchesSubtabBar}>
-              {matchCategoryTabs.map((tab) => {
-                const selected = selectedMatchesSubtab === tab;
-                const label =
-                  tab === 'classification'
-                    ? t('tournamentDetail.matchesClassification')
-                    : tab === 'Gold'
-                      ? t('tournaments.categoryGold')
-                      : tab === 'Silver'
-                        ? t('tournaments.categorySilver')
-                        : t('tournaments.categoryBronze');
-                return (
-                  <Pressable
-                    key={tab}
-                    style={[styles.matchesSubtabItem, selected && styles.matchesSubtabItemSelected]}
-                    onPress={() => setActiveMatchesSubtab(tab)}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected }}
-                  >
-                    <Text style={[styles.matchesSubtabLabel, selected && styles.matchesSubtabLabelSelected]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {selectedMatchesSubtab === 'classification' ? (
-              classificationData.length === 0 ? (
-                <Text style={styles.emptyText}>{t('tournamentDetail.fixturePlaceholder')}</Text>
-              ) : (
-                classificationData.map((groupData, gi) => (
-                  <View key={`class-group-${gi}`} style={styles.groupBlock}>
-                    <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
-                    {groupData.matches.map((m) => (
-                      <View key={m.id} style={styles.matchRow}>
-                        <Text style={[styles.matchTeamName, m.winnerId === m.teamA._id && styles.matchWinner]}>
-                          {m.teamA.name}
-                        </Text>
-                        <Text style={styles.matchScore}>{m.setsWonA} - {m.setsWonB}</Text>
-                        <Text style={[styles.matchTeamName, m.winnerId === m.teamB._id && styles.matchWinner]}>
-                          {m.teamB.name}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ))
-              )
-            ) : (
-              classificationData.map((groupData, gi) => {
-                const categoryRows = groupData.categories[selectedMatchesSubtab as MatchCategoryTab] ?? [];
-                return (
-                  <View key={`cat-group-${selectedMatchesSubtab}-${gi}`} style={styles.groupBlock}>
-                    <Text style={styles.groupHeading}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
-                    {categoryRows.length === 0 ? (
-                      <Text style={styles.emptyGroup}>{t('tournamentDetail.noTeamsInGroup')}</Text>
-                    ) : (
-                      categoryRows.map((row, idx) => (
-                        <View key={`${row.team._id}-${idx}`} style={styles.matchStandingRow}>
-                          <Text style={styles.matchStandingRank}>#{idx + 1}</Text>
-                          <Text style={styles.matchStandingTeam}>{row.team.name}</Text>
-                          <Text style={styles.matchStandingMeta}>{row.wins}W · {row.points}pts</Text>
-                        </View>
-                      ))
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </View>
+          <FixtureTab
+            t={t}
+            matchCategoryTabs={matchCategoryTabs}
+            selectedMatchesSubtab={selectedMatchesSubtab}
+            onSelectSubtab={setActiveMatchesSubtab}
+            classificationData={classificationData}
+            emptyTextStyle={styles.emptyText}
+            matchesSubtabBarStyle={styles.matchesSubtabBar}
+            matchesSubtabItemStyle={styles.matchesSubtabItem}
+            matchesSubtabItemSelectedStyle={styles.matchesSubtabItemSelected}
+            matchesSubtabLabelStyle={styles.matchesSubtabLabel}
+            matchesSubtabLabelSelectedStyle={styles.matchesSubtabLabelSelected}
+            groupBlockStyle={styles.groupBlock}
+            groupHeadingStyle={styles.groupHeading}
+            emptyGroupStyle={styles.emptyGroup}
+            matchRowStyle={styles.matchRow}
+            matchTeamNameStyle={styles.matchTeamName}
+            matchWinnerStyle={styles.matchWinner}
+            matchScoreStyle={styles.matchScore}
+            matchStandingRowStyle={styles.matchStandingRow}
+            matchStandingRankStyle={styles.matchStandingRank}
+            matchStandingTeamStyle={styles.matchStandingTeam}
+            matchStandingMetaStyle={styles.matchStandingMeta}
+          />
         ) : null}
       </View>
 

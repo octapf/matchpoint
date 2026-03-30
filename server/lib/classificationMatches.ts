@@ -33,18 +33,91 @@ export async function randomizeTeamGroups(
   if (!vg.ok) throw new Error('Invalid tournament group configuration');
 
   const teams = await teamsCol.find({ tournamentId }).sort({ createdAt: 1, _id: 1 }).toArray();
-  const shuffled = fisherYates(teams);
+  const capacity = vg.groupCount * vg.teamsPerGroup;
+  if (teams.length > capacity) {
+    throw new Error('Too many teams for configured groups');
+  }
+
+  const divisionsRaw = Array.isArray((t as { divisions?: unknown }).divisions)
+    ? ((t as { divisions?: unknown }).divisions as unknown[])
+    : [];
+  const divisions = divisionsRaw
+    .map((d) => (typeof d === 'string' ? d.trim() : ''))
+    .filter((d): d is TournamentDivision => d === 'men' || d === 'women' || d === 'mixed');
+  const divisionCount = Math.max(1, divisions.length || 1);
+  const groupsPerDivision =
+    divisionCount > 1 && vg.groupCount % divisionCount === 0 ? vg.groupCount / divisionCount : vg.groupCount;
+
+  // Determine division by player genders so we never mix divisions.
+  const allPlayerIds = Array.from(
+    new Set(
+      teams
+        .flatMap((tm) => (tm as { playerIds?: unknown }).playerIds as unknown[])
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    )
+  );
+  const users = await db
+    .collection('users')
+    .find({ _id: { $in: allPlayerIds.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id)) } })
+    .project({ gender: 1 })
+    .toArray();
+  const genderById = new Map<string, string>();
+  for (const u of users as unknown as Array<{ _id: ObjectId; gender?: unknown }>) {
+    genderById.set(u._id.toString(), typeof u.gender === 'string' ? u.gender : '');
+  }
+  const divisionIndexByKey = new Map<TournamentDivision, number>();
+  if (divisions.length > 0) {
+    for (let i = 0; i < divisions.length; i++) divisionIndexByKey.set(divisions[i]!, i);
+  }
+
+  const teamSliceIndex = (tm: unknown): number => {
+    const pids = (tm as { playerIds?: unknown }).playerIds;
+    const a = Array.isArray(pids) ? String(pids[0] ?? '') : '';
+    const b = Array.isArray(pids) ? String(pids[1] ?? '') : '';
+    const g1 = genderById.get(a) ?? '';
+    const g2 = genderById.get(b) ?? '';
+    const div: TournamentDivision =
+      g1 === 'male' && g2 === 'male' ? 'men' : g1 === 'female' && g2 === 'female' ? 'women' : 'mixed';
+    const idx = divisionIndexByKey.get(div);
+    return idx != null ? idx : 0;
+  };
+
+  const bySlice = new Map<number, typeof teams>();
+  for (const tm of teams) {
+    const slice = Math.min(divisionCount - 1, Math.max(0, teamSliceIndex(tm)));
+    const list = bySlice.get(slice) ?? [];
+    list.push(tm);
+    bySlice.set(slice, list);
+  };
+
   const now = new Date().toISOString();
   let updated = 0;
-  for (let i = 0; i < shuffled.length; i++) {
-    const gi = i % vg.groupCount;
-    const doc = shuffled[i] as { _id: unknown; groupIndex?: number };
-    const cur = typeof doc.groupIndex === 'number' ? doc.groupIndex : -1;
-    if (cur !== gi) {
-      await teamsCol.updateOne({ _id: doc._id as ObjectId }, { $set: { groupIndex: gi, updatedAt: now } });
-      updated++;
+  const ops: { updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }[] = [];
+
+  for (const [slice, sliceTeams] of bySlice.entries()) {
+    const shuffled = fisherYates(sliceTeams);
+    const base = slice * groupsPerDivision;
+    // Build fixed slots within this slice: groupsPerDivision groups × teamsPerGroup slots each.
+    const slots: number[] = [];
+    for (let gi = 0; gi < groupsPerDivision; gi++) {
+      for (let k = 0; k < vg.teamsPerGroup; k++) slots.push(base + gi);
+    }
+    for (let i = 0; i < shuffled.length; i++) {
+      const nextGi = slots[i] ?? base;
+      const doc = shuffled[i] as { _id: unknown; groupIndex?: number };
+      const cur = typeof doc.groupIndex === 'number' ? doc.groupIndex : -1;
+      if (cur !== nextGi) {
+        ops.push({
+          updateOne: {
+            filter: { _id: doc._id as ObjectId },
+            update: { $set: { groupIndex: nextGi, updatedAt: now } },
+          },
+        });
+        updated++;
+      }
     }
   }
+  if (ops.length > 0) await teamsCol.bulkWrite(ops, { ordered: false });
   return { updated, teams: teams.length };
 }
 

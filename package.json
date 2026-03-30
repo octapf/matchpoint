@@ -2,6 +2,9 @@
   "name": "matchpoint",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "expo start",
     "start:tunnel": "expo start --tunnel",
@@ -9,8 +12,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "api:dev": "npx vercel dev",
+    "vercel:functions": "node scripts/check-vercel-function-limit.js",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run lint",
+    "verify": "npm run vercel:functions && npm run typecheck && npm run lint",
     "lint": "eslint .",
     "seed:dev": "tsx scripts/seed-dev-tournament.ts",
     "seed:dev:generate": "tsx scripts/seed-dev-tournament.ts",

@@ -17,6 +17,8 @@ import {
   normalizeGroupCount,
   getValidGroupCountsForMaxTeams,
   pickGroupCountForMaxTeams,
+  defaultGroupCountForDivisions,
+  defaultMaxTeamsForDivisions,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
 
@@ -54,6 +56,7 @@ export default function CreateTournamentScreen() {
   const [visibilityPrivate, setVisibilityPrivate] = useState(false);
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
   const [categoryPreset, setCategoryPreset] = useState<CategoryPreset>('none');
+  const [lastDivisionsCount, setLastDivisionsCount] = useState<number>(1);
 
   const maxTeamsForSelect = useMemo(() => {
     const n = parseInt(maxTeams, 10);
@@ -71,6 +74,26 @@ export default function CreateTournamentScreen() {
       setGroupCount(String(pickGroupCountForMaxTeams(mt, cur)));
     }
   }, [maxTeams]);
+
+  useEffect(() => {
+    const dc = Math.max(1, divisions.length);
+    if (dc === lastDivisionsCount) return;
+
+    // If the user was using the previous defaults, keep them on defaults after changing divisions.
+    const prevDefaultMaxTeams = defaultMaxTeamsForDivisions(lastDivisionsCount);
+    const prevDefaultGroupCount = defaultGroupCountForDivisions(lastDivisionsCount);
+    const curMaxTeams = parseInt(maxTeams, 10);
+    const curGroupCount = parseInt(groupCount, 10);
+
+    if (Number.isFinite(curMaxTeams) && curMaxTeams === prevDefaultMaxTeams) {
+      setMaxTeams(String(defaultMaxTeamsForDivisions(dc)));
+    }
+    if (Number.isFinite(curGroupCount) && curGroupCount === prevDefaultGroupCount) {
+      setGroupCount(String(defaultGroupCountForDivisions(dc)));
+    }
+
+    setLastDivisionsCount(dc);
+  }, [divisions, groupCount, lastDivisionsCount, maxTeams]);
 
   const handleCreate = () => {
     if (!name.trim() || !startDate || !location.trim()) {

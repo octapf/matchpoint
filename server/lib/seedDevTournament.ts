@@ -21,6 +21,7 @@ type SeedPlayerSpec = {
 };
 
 const USERS_PER_DIVISION = 40;
+// Per-division default: 4 groups × 4 teams = 16 teams per division (men/women/mixed).
 const TEAMS_PER_DIVISION = 16;
 const GROUPS_PER_DIVISION = 4;
 const PLAYERS_PER_TEAM = 2;
@@ -57,7 +58,6 @@ const MIXED_PLAYERS = [
 const PLAYERS: SeedPlayerSpec[] = [...MEN_PLAYERS, ...WOMEN_PLAYERS, ...MIXED_PLAYERS];
 
 const SEEDED_TEAM_COUNT = TEAMS_PER_DIVISION * 3;
-const SEEDED_GROUP_COUNT = GROUPS_PER_DIVISION * 3;
 const SEEDED_ENTRY_COUNT = SEEDED_TEAM_COUNT * PLAYERS_PER_TEAM;
 const SEEDED_WAITLIST_COUNT = PLAYERS.length - SEEDED_ENTRY_COUNT;
 
@@ -239,11 +239,12 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
       currentCategories.includes('Bronze');
     const maxTeams = Number((existing as { maxTeams?: unknown }).maxTeams);
     const groupCount = Number((existing as { groupCount?: unknown }).groupCount);
+    const expectedGroupCount = GROUPS_PER_DIVISION * 3;
     const isUpToDate =
       hasExpectedDivisions &&
       hasExpectedCategories &&
       maxTeams === SEEDED_TEAM_COUNT &&
-      groupCount === SEEDED_GROUP_COUNT &&
+      groupCount === expectedGroupCount &&
       teamsCount === SEEDED_TEAM_COUNT &&
       entriesCount === SEEDED_ENTRY_COUNT &&
       waitlistCount === SEEDED_WAITLIST_COUNT;
@@ -287,12 +288,13 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     endDate: '2026-07-15',
     location: 'Barceloneta Beach',
     description: 'Seeded data for tournament / team development.',
+    // Keep divisions available for UI, but seed uses default total team config (16 teams, 4 groups).
     divisions: ['men', 'women', 'mixed'],
     categories: ['Gold', 'Silver', 'Bronze'] as string[],
     maxTeams: SEEDED_TEAM_COUNT,
     pointsToWin: 21,
     setsPerMatch: 1,
-    groupCount: SEEDED_GROUP_COUNT,
+    groupCount: GROUPS_PER_DIVISION * 3,
     inviteLink: DEV_SEED_INVITE_LINK,
     status: 'open',
     organizerIds: [organizerId],
@@ -315,11 +317,6 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     else groupedUsers[player.division].women.push(uid);
   }
 
-  const divisionSpecs: { key: SeedDivision; label: string; groupOffset: number }[] = [
-    { key: 'men', label: 'Men', groupOffset: 0 },
-    { key: 'women', label: 'Women', groupOffset: GROUPS_PER_DIVISION },
-    { key: 'mixed', label: 'Mixed', groupOffset: GROUPS_PER_DIVISION * 2 },
-  ];
   const waitingUserIds: string[] = [];
   const teamDocs: Array<{
     tournamentId: string;
@@ -332,12 +329,18 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   }> = [];
   const teamPlayersByIndex: string[][] = [];
 
+  const divisionSpecs: { key: SeedDivision; label: string; groupOffset: number }[] = [
+    { key: 'men', label: 'Men', groupOffset: 0 },
+    { key: 'women', label: 'Women', groupOffset: GROUPS_PER_DIVISION },
+    { key: 'mixed', label: 'Mixed', groupOffset: GROUPS_PER_DIVISION * 2 },
+  ];
+
   for (const division of divisionSpecs) {
     const divisionUsers = groupedUsers[division.key].all;
     const inTeamTarget = TEAMS_PER_DIVISION * PLAYERS_PER_TEAM;
     const teamUsers = divisionUsers.slice(0, inTeamTarget);
     const overflowUsers = divisionUsers.slice(inTeamTarget);
-    const teamsPerGroup = TEAMS_PER_DIVISION / GROUPS_PER_DIVISION;
+    const teamsPerGroup = TEAMS_PER_DIVISION / GROUPS_PER_DIVISION; // 4
 
     if (division.key === 'mixed') {
       const mixedMen = groupedUsers.mixed.men.slice(0, TEAMS_PER_DIVISION);

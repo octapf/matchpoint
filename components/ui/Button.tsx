@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import { Pressable, Text, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 
 type ButtonProps = {
@@ -7,13 +8,22 @@ type ButtonProps = {
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'outline' | 'danger';
   fullWidth?: boolean;
+  size?: 'md' | 'sm';
+  iconLeft?: keyof typeof Ionicons.glyphMap;
   disabled?: boolean;
 };
 
-export function Button({ title, onPress, variant = 'primary', fullWidth, disabled }: ButtonProps) {
+export function Button({ title, onPress, variant = 'primary', fullWidth, size = 'md', iconLeft, disabled }: ButtonProps) {
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
   const isDanger = variant === 'danger';
+  const isSmall = size === 'sm';
+  const iconColor =
+    variant === 'outline'
+      ? Colors.text
+      : isPrimary
+        ? '#1a1a1a'
+        : '#fff';
 
   return (
     <Pressable
@@ -21,6 +31,7 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, disable
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,
+        isSmall && styles.buttonSm,
         fullWidth && styles.fullWidth,
         isPrimary && styles.primary,
         isSecondary && styles.secondary,
@@ -31,17 +42,28 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, disable
         disabled && styles.disabled,
       ]}
     >
-      <Text
-        style={[
-          styles.text,
-          isPrimary && styles.primaryText,
-          isSecondary && styles.secondaryText,
-          variant === 'outline' && styles.outlineText,
-          isDanger && styles.dangerText,
-        ]}
-      >
-        {title}
-      </Text>
+      <View style={styles.content}>
+        {iconLeft ? (
+          <Ionicons
+            name={iconLeft}
+            size={isSmall ? 16 : 18}
+            color={disabled ? Colors.textMuted : iconColor}
+            style={{ marginRight: 8 }}
+          />
+        ) : null}
+        <Text
+          style={[
+            styles.text,
+            isSmall && styles.textSm,
+            isPrimary && styles.primaryText,
+            isSecondary && styles.secondaryText,
+            variant === 'outline' && styles.outlineText,
+            isDanger && styles.dangerText,
+          ]}
+        >
+          {title}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -52,6 +74,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonSm: {
+    minHeight: 40,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  content: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -89,6 +122,10 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  textSm: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   primaryText: {
     color: '#1a1a1a',
