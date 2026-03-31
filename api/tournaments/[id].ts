@@ -274,6 +274,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Permission:
         // - organizers/admins can always edit
         // - otherwise, only the claimed referee can edit while match is in progress
+        // - completed matches are admin/organizer only
+        if (matchStatus === 'completed' && !actorIsAdmin && !isOrg) {
+          return corsRes.status(403).json({ error: 'Only organizers can edit completed matches' });
+        }
         if (!actorIsAdmin && !isOrg) {
           if (!refereeUserId || refereeUserId !== actingUserId) {
             return corsRes.status(403).json({ error: 'Only the referee can update the score while the match is on' });
@@ -399,6 +403,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'claimReferee') {
+        console.log('[tournaments.action] claimReferee', { tournamentId: id, actingUserId });
         const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
         if (!matchId || !ObjectId.isValid(matchId)) {
           return corsRes.status(400).json({ error: 'Invalid matchId' });
@@ -458,6 +463,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           $or: [{ teamAId: actorTeamId }, { teamBId: actorTeamId }],
         });
         if (inProgress > 0) return corsRes.status(400).json({ error: 'Referee team is currently playing a match' });
+
+        // Team must not be about to play in the next scheduled matches for this slice.
+        const sliceFilter: Record<string, unknown> = {
+          tournamentId: id,
+          status: 'scheduled',
+          stage,
+        };
+        if (division) sliceFilter.division = division;
+        if (stage === 'classification') sliceFilter.groupIndex = groupIndex;
+        if (stage === 'category') sliceFilter.category = category;
+        const upcoming = await db
+          .collection('matches')
+          .find(sliceFilter)
+          .project({ teamAId: 1, teamBId: 1, orderIndex: 1, scheduledAt: 1, createdAt: 1 })
+          .toArray();
+        const next = upcoming
+          .sort((a: any, b: any) => {
+            const ao = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY;
+            const bo = typeof b.orderIndex === 'number' ? b.orderIndex : Number.POSITIVE_INFINITY;
+            if (ao !== bo) return ao - bo;
+            const as = a.scheduledAt ? Date.parse(String(a.scheduledAt)) : Number.POSITIVE_INFINITY;
+            const bs = b.scheduledAt ? Date.parse(String(b.scheduledAt)) : Number.POSITIVE_INFINITY;
+            if (as !== bs) return as - bs;
+            return Date.parse(String(a.createdAt ?? '')) - Date.parse(String(b.createdAt ?? ''));
+          })
+          .slice(0, 2);
+        const nextTeamIds = new Set<string>();
+        for (const m of next as any[]) {
+          if (m.teamAId) nextTeamIds.add(String(m.teamAId));
+          if (m.teamBId) nextTeamIds.add(String(m.teamBId));
+        }
+        if (nextTeamIds.has(actorTeamId)) {
+          return corsRes.status(400).json({ error: 'Referee team is about to play a match' });
+        }
 
         const now = new Date().toISOString();
 
@@ -562,6 +601,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'refereePoint') {
+        console.log('[tournaments.action] refereePoint', { tournamentId: id, actingUserId });
         const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
         if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
         const side = body?.side === 'A' || body?.side === 'B' ? body.side : '';
@@ -592,6 +632,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
+        // Basic rate limit (tap spam protection).
+        const lastPointAt = String((match as { lastPointAt?: unknown }).lastPointAt ?? '');
+        if (lastPointAt) {
+          const dt = Date.now() - Date.parse(lastPointAt);
+          if (Number.isFinite(dt) && dt >= 0 && dt < 300) {
+            console.log('[tournaments.action] refereePoint rate_limited', { tournamentId: id, actingUserId, dtMs: dt });
+            return corsRes.status(429).json({ error: 'Too many score updates, slow down' });
+          }
+        }
+
         const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
         const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
         if (!teamAId || !teamBId) return corsRes.status(400).json({ error: 'Match missing teams' });
@@ -617,7 +667,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
 
         const now = new Date().toISOString();
-        const update: Record<string, unknown> = { updatedAt: now, pointsA: nextA, pointsB: nextB };
+        const update: Record<string, unknown> = { updatedAt: now, lastPointAt: now, pointsA: nextA, pointsB: nextB };
 
         // Initialize global serve state if missing: A1, B1, A2, B2.
         const existingOrder = Array.isArray((match as { serveOrder?: unknown }).serveOrder) ? ((match as any).serveOrder as unknown[]) : [];
@@ -625,6 +675,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           existingOrder.length === 4
             ? existingOrder.map(String).filter(Boolean)
             : [playersA[0], playersB[0], playersA[1] ?? playersA[0], playersB[1] ?? playersB[0]].map(String).filter(Boolean);
+        if (order.length !== 4) return corsRes.status(400).json({ error: 'Invalid serve order state' });
+        // Ensure serveOrder only references players in the two teams.
+        const allowedPlayers = new Set([...playersA, ...playersB].map(String).filter(Boolean));
+        for (const pid of order) {
+          if (!allowedPlayers.has(String(pid))) return corsRes.status(400).json({ error: 'Serve order contains invalid player' });
+        }
         update.serveOrder = order;
 
         let serveIndex = Number((match as { serveIndex?: unknown }).serveIndex ?? 0);
@@ -661,10 +717,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        const result = await db
-          .collection('matches')
-          .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
-        if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+        const event = {
+          ts: now,
+          userId: actingUserId,
+          refereeTeamId: String((match as { refereeTeamId?: unknown }).refereeTeamId ?? '') || undefined,
+          side,
+          delta: delta as 1 | -1,
+          pointsA: nextA,
+          pointsB: nextB,
+        };
+        // Validate event shape before writing.
+        if (!event.userId || (event.side !== 'A' && event.side !== 'B') || (event.delta !== 1 && event.delta !== -1)) {
+          return corsRes.status(400).json({ error: 'Invalid score event' });
+        }
+
+        // Optimistic concurrency: only apply if doc hasn't changed since we read it.
+        const prevUpdatedAt = String((match as { updatedAt?: unknown }).updatedAt ?? '');
+        const filter: Record<string, unknown> = prevUpdatedAt
+          ? { _id: matchOid, updatedAt: prevUpdatedAt }
+          : { _id: matchOid, $or: [{ updatedAt: { $exists: false } }, { updatedAt: '' }, { updatedAt: null }] };
+
+        const result = await db.collection('matches').findOneAndUpdate(
+          filter,
+          {
+            $set: update,
+            $push: {
+              scoreEvents: {
+                $each: [event] as any[],
+                $slice: -200,
+              },
+            },
+          } as any,
+          { returnDocument: 'after' }
+        );
+        if (!result) {
+          console.log('[tournaments.action] refereePoint concurrent_or_missing', { tournamentId: id, actingUserId, matchId });
+          return corsRes.status(409).json({ error: 'Concurrent score update, retry' });
+        }
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -703,6 +792,83 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
         if (!result) return corsRes.status(404).json({ error: 'Match not found' });
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+      }
+
+      if (action === 'auditTournament') {
+        // Admin/organizer only (uses outer gate).
+        const fix = body?.fix === true;
+        const matchesCol = db.collection('matches');
+        const teamsCol = db.collection('teams');
+        const matches = await matchesCol
+          .find({ tournamentId: id })
+          .project({ _id: 1, stage: 1, status: 1, division: 1, groupIndex: 1, category: 1, teamAId: 1, teamBId: 1, serveOrder: 1, orderIndex: 1, scheduledAt: 1, createdAt: 1 })
+          .toArray();
+        const teams = await teamsCol.find({ tournamentId: id }).project({ _id: 1, playerIds: 1 }).toArray();
+        const teamPlayers = new Map<string, string[]>();
+        for (const t of teams as any[]) {
+          teamPlayers.set(String(t._id), Array.isArray(t.playerIds) ? t.playerIds.map(String).filter(Boolean) : []);
+        }
+
+        const issues: { matchId: string; issue: string }[] = [];
+        const fixes: { matchId: string; set: Record<string, unknown> }[] = [];
+
+        for (const m of matches as any[]) {
+          const mid = String(m._id);
+          const stage = String(m.stage ?? '');
+          const division = String(m.division ?? '');
+          const status = String(m.status ?? '');
+          if (stage !== 'classification' && stage !== 'category') issues.push({ matchId: mid, issue: 'invalid_stage' });
+          if (!division) issues.push({ matchId: mid, issue: 'missing_division' });
+          if (stage === 'classification' && !(typeof m.groupIndex === 'number' && Number.isFinite(m.groupIndex))) {
+            issues.push({ matchId: mid, issue: 'missing_groupIndex' });
+          }
+          if (stage === 'category' && !String(m.category ?? '')) issues.push({ matchId: mid, issue: 'missing_category' });
+
+          const order = Array.isArray(m.serveOrder) ? m.serveOrder.map(String).filter(Boolean) : [];
+          if (order.length && order.length !== 4) issues.push({ matchId: mid, issue: 'serveOrder_invalid_length' });
+          if (order.length === 4) {
+            const aPlayers = teamPlayers.get(String(m.teamAId)) ?? [];
+            const bPlayers = teamPlayers.get(String(m.teamBId)) ?? [];
+            const allowed = new Set([...aPlayers, ...bPlayers]);
+            if (order.some((pid: string) => !allowed.has(pid))) issues.push({ matchId: mid, issue: 'serveOrder_invalid_player' });
+          }
+
+          if (status === 'scheduled' && (m.orderIndex == null || typeof m.orderIndex !== 'number')) {
+            issues.push({ matchId: mid, issue: 'missing_orderIndex' });
+          }
+        }
+
+        if (fix) {
+          // Best-effort: fill missing orderIndex/scheduledAt per slice ordered by createdAt.
+          const bySlice = new Map<string, any[]>();
+          for (const m of matches as any[]) {
+            const stage = String(m.stage ?? '');
+            const div = String(m.division ?? '');
+            const gi = typeof m.groupIndex === 'number' ? String(m.groupIndex) : '';
+            const cat = String(m.category ?? '');
+            const key = `${stage}|${div}|${stage === 'classification' ? gi : cat}`;
+            const list = bySlice.get(key) ?? [];
+            list.push(m);
+            bySlice.set(key, list);
+          }
+          for (const [, list] of bySlice.entries()) {
+            const sorted = list.sort((a, b) => Date.parse(String(a.createdAt ?? '')) - Date.parse(String(b.createdAt ?? '')));
+            const baseNow = new Date().toISOString();
+            const baseMs = Date.parse(baseNow);
+            for (let i = 0; i < sorted.length; i++) {
+              const m = sorted[i]!;
+              const set: Record<string, unknown> = {};
+              if (m.orderIndex == null || typeof m.orderIndex !== 'number') set.orderIndex = i;
+              if (!m.scheduledAt && Number.isFinite(baseMs)) set.scheduledAt = new Date(baseMs + i * 60_000).toISOString();
+              if (Object.keys(set).length) fixes.push({ matchId: String(m._id), set });
+            }
+          }
+          for (const f of fixes) {
+            await matchesCol.updateOne({ _id: new ObjectId(f.matchId) }, { $set: { ...f.set, updatedAt: new Date().toISOString() } });
+          }
+        }
+
+        return corsRes.status(200).json({ ok: true, issues, fixed: fix ? fixes.length : 0 });
       }
 
       return corsRes.status(400).json({ error: 'Invalid action' });

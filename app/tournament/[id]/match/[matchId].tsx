@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Alert, Pressable, Image, Animated, Easing } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
@@ -71,7 +72,34 @@ export default function EditMatchScreen() {
   const [pointsA, setPointsA] = useState('');
   const [pointsB, setPointsB] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const servePulse = useRef(new Animated.Value(0)).current;
+  const RotatingVolleyBall = useMemo(() => {
+    const Cmp = ({ color }: { color: string }) => {
+      const spin = useRef(new Animated.Value(0)).current;
+      useEffect(() => {
+        const loop = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 2200, easing: Easing.linear, useNativeDriver: true }));
+        loop.start();
+        return () => loop.stop();
+      }, [spin]);
+      return (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.serveBallIcon,
+            {
+              transform: [
+                {
+                  rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }),
+                },
+              ],
+            },
+          ]}
+        >
+          <MaterialCommunityIcons name="volleyball" size={22} color={color} />
+        </Animated.View>
+      );
+    };
+    return Cmp;
+  }, []);
 
   useEffect(() => {
     const status = (match as { status?: string } | null)?.status;
@@ -80,22 +108,9 @@ export default function EditMatchScreen() {
     return () => clearInterval(t);
   }, [match]);
 
-  useEffect(() => {
-    const status = (match as { status?: string } | null)?.status;
-    if (status !== 'in_progress') {
-      servePulse.stopAnimation();
-      servePulse.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(servePulse, { toValue: 1, duration: 650, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(servePulse, { toValue: 0, duration: 650, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [match, servePulse]);
+  // Serving indicator is now the rotating volleyball icon (and no avatar ring).
+
+  // Volleyball icon rotation is self-contained per rendered icon.
 
   useEffect(() => {
     if (!match) return;
@@ -155,9 +170,34 @@ export default function EditMatchScreen() {
         .filter(Boolean)
     );
 
+    // Also exclude teams that are about to play in the next scheduled matches for this same slice.
+    const nextScheduledTeamIds = new Set(
+      matches
+        .filter((m) => {
+          if ((m as { status?: string }).status !== 'scheduled') return false;
+          if ((m as { stage?: string }).stage !== stage) return false;
+          const mDiv = (m as { division?: string }).division;
+          if (division && mDiv && mDiv !== division) return false;
+          if (stage === 'classification') {
+            if (typeof groupIndex !== 'number') return false;
+            return (m as { groupIndex?: unknown }).groupIndex === groupIndex;
+          }
+          if (stage === 'category') {
+            if (!category) return false;
+            return String((m as { category?: unknown }).category ?? '') === String(category);
+          }
+          return false;
+        })
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+        .slice(0, 2)
+        .flatMap((m) => [m.teamAId, m.teamBId])
+        .filter(Boolean)
+    );
+
     const candidates = teams.filter((tm) => {
       if (matchTeamIds.has(tm._id)) return false;
       if (inProgressTeamIds.has(tm._id)) return false;
+      if (nextScheduledTeamIds.has(tm._id)) return false;
       if (division && tm.division && tm.division !== division) return false;
       if (stage === 'classification') {
         if (typeof groupIndex !== 'number') return false;
@@ -196,7 +236,6 @@ export default function EditMatchScreen() {
 
   const livePointsA = Number(match.pointsA ?? 0) || 0;
   const livePointsB = Number(match.pointsB ?? 0) || 0;
-  const pointsToWin = Number(match.pointsToWin ?? tournament.pointsToWin ?? 21) || 21;
 
   const formatClock = (totalSeconds: number) => {
     const s = Math.max(0, Math.floor(totalSeconds));
@@ -230,8 +269,6 @@ export default function EditMatchScreen() {
 
   const renderServeLine = (teamAName: string, teamBName: string, order: string[]) => {
     const canChangeOrder = canEditScore && (match as { status?: string }).status === 'in_progress';
-    const ringScale = servePulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.2] });
-    const ringOpacity = servePulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.6] });
     const swapA = () => {
       if (order.length !== 4) return;
       const next = [...order];
@@ -292,18 +329,6 @@ export default function EditMatchScreen() {
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
                     <View style={styles.serveAvatarWrap}>
-                      {isServer ? (
-                        <Animated.View
-                          pointerEvents="none"
-                          style={[
-                            styles.serveAvatarRing,
-                            {
-                              opacity: ringOpacity,
-                              transform: [{ scale: ringScale }],
-                            },
-                          ]}
-                        />
-                      ) : null}
                       <Avatar
                         firstName={(u as any)?.firstName ?? ''}
                         lastName={(u as any)?.lastName ?? ''}
@@ -311,6 +336,8 @@ export default function EditMatchScreen() {
                         size="xs"
                       />
                     </View>
+                    <View style={styles.serveOrderRow}>
+                      {isServer ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
                       onPress={() => toggleTeamOrder(pid)}
                       disabled={!canChangeOrder}
@@ -319,6 +346,7 @@ export default function EditMatchScreen() {
                     >
                       <Text style={styles.serveSlotNum}>{idx + 1}</Text>
                     </Pressable>
+                    </View>
                   </View>
                   <Pressable
                     style={styles.serveSlotNameWrap}
@@ -350,18 +378,6 @@ export default function EditMatchScreen() {
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
                     <View style={styles.serveAvatarWrap}>
-                      {isServer ? (
-                        <Animated.View
-                          pointerEvents="none"
-                          style={[
-                            styles.serveAvatarRing,
-                            {
-                              opacity: ringOpacity,
-                              transform: [{ scale: ringScale }],
-                            },
-                          ]}
-                        />
-                      ) : null}
                       <Avatar
                         firstName={(u as any)?.firstName ?? ''}
                         lastName={(u as any)?.lastName ?? ''}
@@ -369,6 +385,8 @@ export default function EditMatchScreen() {
                         size="xs"
                       />
                     </View>
+                    <View style={styles.serveOrderRow}>
+                      {isServer ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
                       onPress={() => toggleTeamOrder(pid)}
                       disabled={!canChangeOrder}
@@ -377,6 +395,7 @@ export default function EditMatchScreen() {
                     >
                       <Text style={styles.serveSlotNum}>{idx + 1}</Text>
                     </Pressable>
+                    </View>
                   </View>
                   <Pressable
                     style={styles.serveSlotNameWrap}
@@ -663,7 +682,7 @@ export default function EditMatchScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   // content padding like other screens
-  container: { flex: 1, backgroundColor: Colors.background, padding: 16, gap: 12 },
+  container: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   stateTitle: { fontSize: 18, fontWeight: '900', color: Colors.text, textAlign: 'center' },
   hint: { color: Colors.textSecondary, marginBottom: 8 },
   centerText: { textAlign: 'center' },
@@ -684,7 +703,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textTransform: 'uppercase',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   vsTeamA: { color: Colors.yellow, fontWeight: '900' },
   vsTeamB: { color: Colors.violet, fontWeight: '900' },
@@ -701,7 +720,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   scoreDivider: { width: 1, backgroundColor: Colors.surfaceLight },
-  scoreSide: { flex: 1, paddingVertical: 14, paddingHorizontal: 14, gap: 12, justifyContent: 'space-between' },
+  scoreSide: { flex: 1, paddingVertical: 10, paddingHorizontal: 14, gap: 10, justifyContent: 'space-between' },
   // Match the "violetMuted" panel intensity for yellow.
   scoreSideLeft: { backgroundColor: 'rgba(251, 191, 36, 0.22)' },
   scoreSideRight: { backgroundColor: Colors.violetMuted },
@@ -717,7 +736,7 @@ const styles = StyleSheet.create({
   },
   scorePointsRight: { color: Colors.violet },
   // Avoid flex collapse in auto-height container: give scores a real box.
-  scorePointsArea: { minHeight: 300, justifyContent: 'center', position: 'relative' },
+  scorePointsArea: { minHeight: 260, justifyContent: 'center', position: 'relative' },
   scoreOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
   // Two transparent tappable halves
   scoreOverlayBtn: { position: 'absolute', left: 0, right: 0, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
@@ -740,19 +759,30 @@ const styles = StyleSheet.create({
   scoreOverlayArrowB: { color: Colors.violet, opacity: 0.62 },
   scoreOverlayArrowNudgeTop: { marginTop: -10 },
   scoreOverlayArrowNudgeBottom: { marginBottom: -26 },
-  serveRow: { gap: 10, paddingVertical: 6 },
+  serveRow: { gap: 8, paddingVertical: 4 },
   serveHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
   serveSwapBtns: { flexDirection: 'row', gap: 8 },
   serveSwapBtn: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: Colors.surfaceLight, backgroundColor: Colors.surface },
   serveSwapText: { fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase' },
   servePlayersSides: { flexDirection: 'row', gap: 12 },
   serveSide: { flex: 1, gap: 10, alignItems: 'stretch' },
-  serveSlot: { width: '100%', paddingVertical: 6, gap: 6, minHeight: 64, justifyContent: 'space-between' },
-  serveSlotActive: { backgroundColor: 'rgba(251, 191, 36, 0.08)' },
-  serveSlotNumPill: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, backgroundColor: Colors.surfaceLight },
-  serveSlotNum: { fontSize: 10, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase' },
+  serveSlot: { width: '100%', paddingVertical: 8, paddingHorizontal: 10, gap: 6, minHeight: 66, justifyContent: 'space-between' },
+  // Serving player highlight: keep ring + ball, avoid row fill.
+  serveSlotActive: { borderWidth: 1, borderColor: Colors.surfaceLight, borderRadius: 12 },
+  serveSlotNumPill: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, backgroundColor: 'transparent' },
+  serveSlotNum: { fontSize: 20, fontWeight: '900', fontStyle: 'italic', color: Colors.textMuted, textTransform: 'uppercase' },
   serveSlotTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  serveOrderRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
   serveAvatarWrap: { position: 'relative' },
+  serveBallIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -2,
+  },
   serveAvatarRing: {
     position: 'absolute',
     left: -6,

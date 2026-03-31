@@ -167,13 +167,15 @@ export async function generateClassificationMatches(
   };
 
   const now = new Date().toISOString();
+  const baseMs = Date.parse(now);
   let created = 0;
   let total = 0;
   for (const [groupIndex, ids] of groups.entries()) {
     if (ids.length < 2) continue;
     const pairs = buildClassificationPairs(ids, opts.matchesPerOpponent);
     total += pairs.length;
-    for (const [a, b] of pairs) {
+    for (let i = 0; i < pairs.length; i++) {
+      const [a, b] = pairs[i]!;
       const doc: Omit<Match, '_id'> = {
         tournamentId,
         stage: 'classification',
@@ -185,6 +187,8 @@ export async function generateClassificationMatches(
         setsPerMatch: opts.setsPerMatch,
         pointsToWin: opts.pointsToWin,
         status: 'scheduled',
+        orderIndex: i,
+        scheduledAt: Number.isFinite(baseMs) ? new Date(baseMs + i * 60_000).toISOString() : now,
         createdAt: now,
         updatedAt: now,
       };

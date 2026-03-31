@@ -60,6 +60,7 @@ export async function generateCategoryMatches(
   await matchesCol.deleteMany({ tournamentId, stage: 'category' });
 
   const now = new Date().toISOString();
+  const baseMs = Date.parse(now);
   let created = 0;
   let total = 0;
 
@@ -134,7 +135,8 @@ export async function generateCategoryMatches(
       const pairs = buildPairs(teamIds);
       total += pairs.length;
       const matchIds: string[] = [];
-      for (const [a, b] of pairs) {
+      for (let i = 0; i < pairs.length; i++) {
+        const [a, b] = pairs[i]!;
         const doc: Omit<Match, '_id'> = {
           tournamentId,
           stage: 'category',
@@ -146,6 +148,8 @@ export async function generateCategoryMatches(
           setsPerMatch,
           pointsToWin,
           status: 'scheduled',
+          orderIndex: i,
+          scheduledAt: Number.isFinite(baseMs) ? new Date(baseMs + i * 60_000).toISOString() : now,
           createdAt: now,
           updatedAt: now,
         };

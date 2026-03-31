@@ -20,6 +20,31 @@ export async function ensureDbIndexes(db: Db) {
   created.push((await teams.createIndex({ tournamentId: 1, groupIndex: 1 }, { name: 'teams_tournament_group' })) as unknown as string);
   created.push((await teams.createIndex({ tournamentId: 1, division: 1, category: 1 }, { name: 'teams_tournament_div_cat' })) as unknown as string);
   created.push((await matches.createIndex({ tournamentId: 1, stage: 1 }, { name: 'matches_tournament_stage' })) as unknown as string);
+  created.push((await matches.createIndex({ tournamentId: 1, status: 1 }, { name: 'matches_tournament_status' })) as unknown as string);
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, status: 1, refereeTeamId: 1 }, { name: 'matches_tournament_status_refTeam' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, stage: 1, status: 1 }, { name: 'matches_tournament_stage_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, division: 1, status: 1 }, { name: 'matches_tournament_div_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, status: 1 }, { name: 'matches_tournament_stage_div_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, groupIndex: 1, status: 1 }, { name: 'matches_classification_lookup_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, category: 1, status: 1 }, { name: 'matches_category_lookup_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, refereeUserId: 1, status: 1 }, { name: 'matches_tournament_refUser_status' })) as unknown as string
+  );
+  created.push(
+    (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, orderIndex: 1 }, { name: 'matches_slice_order' })) as unknown as string
+  );
   created.push(
     (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, groupIndex: 1 }, { name: 'matches_classification_lookup' })) as unknown as string
   );

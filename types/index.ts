@@ -138,6 +138,25 @@ export interface Match {
   serveIndex?: number;
   /** Duration in seconds (set on completion). */
   durationSeconds?: number;
+  /** Deterministic ordering within a stage slice (group/category). */
+  orderIndex?: number;
+  /** Optional scheduled timestamp for UI/ordering. */
+  scheduledAt?: string;
+  /**
+   * Optional audit trail for live scoring. Server appends entries on `refereePoint`.
+   * Kept bounded server-side to avoid unbounded growth.
+   */
+  scoreEvents?: {
+    ts: string;
+    userId: string;
+    refereeTeamId?: string;
+    side: 'A' | 'B';
+    delta: 1 | -1;
+    pointsA: number;
+    pointsB: number;
+  }[];
+  /** Simple anti-spam / rate limit marker for live scoring. */
+  lastPointAt?: string;
   createdAt: string;
   updatedAt: string;
 }

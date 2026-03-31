@@ -80,6 +80,12 @@ export function useRefereePoint() {
         side,
         delta,
       }) as Promise<Match>,
+    retry: (failureCount, err: any) => {
+      const status = typeof err?.status === 'number' ? err.status : typeof err?.response?.status === 'number' ? err.response.status : null;
+      if (status === 409 && failureCount < 2) return true;
+      return false;
+    },
+    retryDelay: (attempt) => 120 * attempt,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
