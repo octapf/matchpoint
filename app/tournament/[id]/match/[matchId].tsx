@@ -1,32 +1,46 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, Pressable, Image, Animated, Easing } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Image,
+  Animated,
+  Easing,
+  Platform,
+} from 'react-native';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useNetInfo } from '@react-native-community/netinfo';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useTranslation } from '@/lib/i18n';
 import { useTournament } from '@/lib/hooks/useTournaments';
-import { useClaimReferee, useMatches, useRefereePoint, useSetServeOrder, useStartMatch, useUpdateMatch } from '@/lib/hooks/useMatches';
+import { useClaimReferee, useMatches, useRefereePoint, useSetServeOrder, useStartMatch } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
 import { getPlayerListName } from '@/lib/utils/userDisplay';
+import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
+
+type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
 
 export default function EditMatchScreen() {
   const { t } = useTranslation();
-  const router = useRouter();
   const { id, matchId } = useLocalSearchParams<{ id: string; matchId: string }>();
   const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
+  const netInfo = useNetInfo();
+  const isOffline = netInfo.isConnected === false;
 
   const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined);
-  const updateMatch = useUpdateMatch();
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
   const refereePoint = useRefereePoint();
@@ -69,9 +83,16 @@ export default function EditMatchScreen() {
 
   const [setsWonA, setSetsWonA] = useState('0');
   const [setsWonB, setSetsWonB] = useState('0');
-  const [pointsA, setPointsA] = useState('');
-  const [pointsB, setPointsB] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [startCountdown, setStartCountdown] = useState<{ seconds: number; action: 'startMatch' | 'claimReferee' } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const lastTapRef = useRef(0);
+  const tapPulseA = useRef(new Animated.Value(0)).current;
+  const tapPulseB = useRef(new Animated.Value(0)).current;
+  /** Full panel height for single-surface +/− split (locationY vs half height) */
+  const scorePanelHeightARef = useRef(0);
+  const scorePanelHeightBRef = useRef(0);
+  const switchSidesPulse = useRef(new Animated.Value(1)).current;
   const RotatingVolleyBall = useMemo(() => {
     const Cmp = ({ color }: { color: string }) => {
       const spin = useRef(new Animated.Value(0)).current;
@@ -108,6 +129,28 @@ export default function EditMatchScreen() {
     return () => clearInterval(t);
   }, [match]);
 
+  useEffect(() => {
+    if (!startCountdown) return;
+    if (startCountdown.seconds <= 1) {
+      const action = startCountdown.action;
+      setStartCountdown(null);
+      if (action === 'startMatch') {
+        startMatch.mutate(
+          { id: matchId, tournamentId: id },
+          { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+        );
+      } else {
+        claimReferee.mutate(
+          { id: matchId, tournamentId: id },
+          { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+        );
+      }
+      return;
+    }
+    const h = setTimeout(() => setStartCountdown((prev) => (prev ? { ...prev, seconds: prev.seconds - 1 } : prev)), 1000);
+    return () => clearTimeout(h);
+  }, [startCountdown, claimReferee, id, matchId, startMatch, t]);
+
   // Serving indicator is now the rotating volleyball icon (and no avatar ring).
 
   // Volleyball icon rotation is self-contained per rendered icon.
@@ -116,8 +159,6 @@ export default function EditMatchScreen() {
     if (!match) return;
     setSetsWonA(String(match.setsWonA ?? 0));
     setSetsWonB(String(match.setsWonB ?? 0));
-    setPointsA(match.pointsA != null ? String(match.pointsA) : '');
-    setPointsB(match.pointsB != null ? String(match.pointsB) : '');
   }, [match]);
 
   const isReferee = useMemo(() => {
@@ -188,13 +229,22 @@ export default function EditMatchScreen() {
           }
           return false;
         })
-        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+        .sort((a, b) => {
+          const ao = typeof (a as any).orderIndex === 'number' ? Number((a as any).orderIndex) : Number.POSITIVE_INFINITY;
+          const bo = typeof (b as any).orderIndex === 'number' ? Number((b as any).orderIndex) : Number.POSITIVE_INFINITY;
+          if (ao !== bo) return ao - bo;
+          const as = (a as any).scheduledAt ? Date.parse(String((a as any).scheduledAt)) : Number.POSITIVE_INFINITY;
+          const bs = (b as any).scheduledAt ? Date.parse(String((b as any).scheduledAt)) : Number.POSITIVE_INFINITY;
+          if (as !== bs) return as - bs;
+          return Date.parse(a.createdAt) - Date.parse(b.createdAt);
+        })
         .slice(0, 2)
         .flatMap((m) => [m.teamAId, m.teamBId])
         .filter(Boolean)
     );
 
-    const candidates = teams.filter((tm) => {
+    const candidates = teams
+      .filter((tm) => {
       if (matchTeamIds.has(tm._id)) return false;
       if (inProgressTeamIds.has(tm._id)) return false;
       if (nextScheduledTeamIds.has(tm._id)) return false;
@@ -208,9 +258,55 @@ export default function EditMatchScreen() {
         return tm.category === category;
       }
       return false;
-    });
+    })
+      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
     return candidates[0] ?? null;
   }, [match, matches, teams]);
+
+  /** Switch sides every (pointsToWin / 3) combined rally points (e.g. 15→every 5, 21→every 7). */
+  const showSwitchSidesReminder = useMemo(() => {
+    if (!match) return false;
+    const ptw = Math.max(
+      1,
+      Math.min(
+        99,
+        Number((match as { pointsToWin?: unknown }).pointsToWin ?? (tournament as { pointsToWin?: unknown } | null)?.pointsToWin ?? 21) || 21
+      )
+    );
+    const interval = Math.max(1, Math.floor(ptw / 3));
+    const a = Number(match.pointsA ?? 0) || 0;
+    const b = Number(match.pointsB ?? 0) || 0;
+    const total = a + b;
+    return (
+      String((match as { status?: unknown }).status ?? '') === 'in_progress' && total > 0 && total % interval === 0
+    );
+  }, [match, tournament]);
+
+  useEffect(() => {
+    if (!showSwitchSidesReminder) {
+      switchSidesPulse.setValue(1);
+      return;
+    }
+    // Single smooth breath 1 → peak → 1 each cycle (no jump when the loop restarts).
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(switchSidesPulse, {
+          toValue: 1.07,
+          duration: 700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(switchSidesPulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [showSwitchSidesReminder, switchSidesPulse]);
 
   const canEditScore = canManageTournament || isReferee;
 
@@ -236,6 +332,13 @@ export default function EditMatchScreen() {
 
   const livePointsA = Number(match.pointsA ?? 0) || 0;
   const livePointsB = Number(match.pointsB ?? 0) || 0;
+  const pointsToWinLimit = Math.max(
+    1,
+    Math.min(
+      99,
+      Number((match as { pointsToWin?: unknown }).pointsToWin ?? (tournament as { pointsToWin?: unknown } | null)?.pointsToWin ?? 21) || 21
+    )
+  );
 
   const formatClock = (totalSeconds: number) => {
     const s = Math.max(0, Math.floor(totalSeconds));
@@ -268,34 +371,17 @@ export default function EditMatchScreen() {
   const order = (Array.isArray(serveOrder) && serveOrder.length === 4 ? serveOrder : defaultServeOrder).slice(0, 4);
 
   const renderServeLine = (teamAName: string, teamBName: string, order: string[]) => {
-    const canChangeOrder = canEditScore && (match as { status?: string }).status === 'in_progress';
-    const swapA = () => {
-      if (order.length !== 4) return;
-      const next = [...order];
-      [next[0], next[2]] = [next[2]!, next[0]!];
-      setServeOrder.mutate(
-        { id: matchId, tournamentId: id, order: next, servingPlayerId: servingPlayerId || next[0] },
-        { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-      );
-    };
-    const swapB = () => {
-      if (order.length !== 4) return;
-      const next = [...order];
-      [next[1], next[3]] = [next[3]!, next[1]!];
-      setServeOrder.mutate(
-        { id: matchId, tournamentId: id, order: next, servingPlayerId: servingPlayerId || next[0] },
-        { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-      );
-    };
-    const toggleTeamOrder = (pid: string) => {
+    const status = (match as { status?: string }).status;
+    const canChangeOrder =
+      status !== 'completed' &&
+      (canManageTournament || isReferee || (canEditScore && status === 'in_progress'));
+    const bumpOrderNumber = (pid: string) => {
       if (!canChangeOrder || order.length !== 4) return;
-      const isTeamA = teamAPlayerIds.includes(pid);
+      const idx = order.findIndex((p) => p === pid);
+      if (idx < 0) return;
+      const nextIdx = (idx + 1) % 4;
       const next = [...order];
-      if (isTeamA) {
-        [next[0], next[2]] = [next[2]!, next[0]!];
-      } else {
-        [next[1], next[3]] = [next[3]!, next[1]!];
-      }
+      [next[idx], next[nextIdx]] = [next[nextIdx]!, next[idx]!];
       const nextServing = servingPlayerId || String(next[0] ?? '');
       setServeOrder.mutate(
         { id: matchId, tournamentId: id, order: next, servingPlayerId: nextServing },
@@ -305,18 +391,7 @@ export default function EditMatchScreen() {
 
     return (
       <View style={styles.serveRow}>
-        <View style={styles.serveHeader}>
-          {canChangeOrder ? (
-            <View style={styles.serveSwapBtns}>
-              <Pressable style={styles.serveSwapBtn} onPress={swapA} accessibilityRole="button">
-                <Text style={styles.serveSwapText}>{t('tournamentDetail.swapServeA', { team: teamAName })}</Text>
-              </Pressable>
-              <Pressable style={styles.serveSwapBtn} onPress={swapB} accessibilityRole="button">
-                <Text style={styles.serveSwapText}>{t('tournamentDetail.swapServeB', { team: teamBName })}</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
+        <View style={styles.serveHeader} />
 
         <View style={styles.servePlayersSides}>
           <View style={styles.serveSide}>
@@ -337,9 +412,9 @@ export default function EditMatchScreen() {
                       />
                     </View>
                     <View style={styles.serveOrderRow}>
-                      {isServer ? <RotatingVolleyBall color="#fff" /> : null}
+                      {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
-                      onPress={() => toggleTeamOrder(pid)}
+                      onPress={() => bumpOrderNumber(pid)}
                       disabled={!canChangeOrder}
                       accessibilityRole="button"
                       style={styles.serveSlotNumPill}
@@ -386,9 +461,9 @@ export default function EditMatchScreen() {
                       />
                     </View>
                     <View style={styles.serveOrderRow}>
-                      {isServer ? <RotatingVolleyBall color="#fff" /> : null}
+                      {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
-                      onPress={() => toggleTeamOrder(pid)}
+                      onPress={() => bumpOrderNumber(pid)}
                       disabled={!canChangeOrder}
                       accessibilityRole="button"
                       style={styles.serveSlotNumPill}
@@ -423,63 +498,80 @@ export default function EditMatchScreen() {
 
   const aNum = Math.floor(Number(setsWonA));
   const bNum = Math.floor(Number(setsWonB));
-  const paNum = Math.floor(Number(pointsA));
-  const pbNum = Math.floor(Number(pointsB));
-  const canSave =
-    Number.isFinite(aNum) &&
-    Number.isFinite(bNum) &&
-    aNum >= 0 &&
-    bNum >= 0 &&
-    aNum !== bNum &&
-    Number.isFinite(paNum) &&
-    Number.isFinite(pbNum) &&
-    paNum >= 0 &&
-    pbNum >= 0 &&
-    !updateMatch.isPending &&
-    canEditScore;
+  const totalSets = Math.max(1, Number(match.setsPerMatch ?? tournament.setsPerMatch ?? 1) || 1);
+  const currentSet = Math.min(totalSets, Math.max(1, aNum + bNum + 1));
+  const isCompleted = (match as { status?: string }).status === 'completed';
+  const winnerId = String((match as { winnerId?: unknown }).winnerId ?? '');
+  const winnerSide: 'A' | 'B' | null =
+    isCompleted && winnerId
+      ? winnerId === String(match.teamAId)
+        ? 'A'
+        : winnerId === String(match.teamBId)
+          ? 'B'
+          : null
+      : null;
 
-  const handleSave = () => {
-    const a = aNum;
-    const b = bNum;
-    const pa = paNum;
-    const pb = pbNum;
-    if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0) {
-      Alert.alert(t('common.error'), t('tournamentDetail.matchInvalidSets'));
+  const handlePoint = (side: 'A' | 'B', delta: 1 | -1) => {
+    if (isOffline) {
+      setNotice(t('common.networkError'));
       return;
     }
-    if (a === b) {
-      Alert.alert(t('common.error'), t('tournamentDetail.matchInvalidSets'));
-      return;
+    if (delta === 1) {
+      const nextA = side === 'A' ? livePointsA + 1 : livePointsA;
+      const nextB = side === 'B' ? livePointsB + 1 : livePointsB;
+      if (nextA > pointsToWinLimit || nextB > pointsToWinLimit) {
+        return;
+      }
     }
-    if (!Number.isFinite(pa) || !Number.isFinite(pb) || pa < 0 || pb < 0) {
-      Alert.alert(t('common.error'), t('tournamentDetail.matchPointsRequired'));
-      return;
-    }
-    updateMatch.mutate(
+    const now = Date.now();
+    if (now - lastTapRef.current < 180) return;
+    lastTapRef.current = now;
+    void Haptics.selectionAsync();
+    const pulse = side === 'A' ? tapPulseA : tapPulseB;
+    pulse.stopAnimation();
+    pulse.setValue(0);
+    Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 90, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0, duration: 160, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+    ]).start();
+    refereePoint.mutate(
+      { id: matchId, tournamentId: id, side, delta },
       {
-        id: matchId,
-        tournamentId: id,
-        update: { setsWonA: a, setsWonB: b, pointsA: pa, pointsB: pb, status: 'completed' },
-      },
-      {
-        onSuccess: () => router.back(),
-        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+        onError: (err: any) => {
+          const msg = err instanceof Error ? err.message : '';
+          if (msg.includes('slow down')) {
+            setNotice('Más lento');
+            return;
+          }
+          if (msg.toLowerCase().includes('concurrent')) {
+            setNotice('Reintentando…');
+            return;
+          }
+          alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
+        },
       }
     );
   };
 
-  const handlePoint = (side: 'A' | 'B', delta: 1 | -1) => {
-    refereePoint.mutate(
-      { id: matchId, tournamentId: id, side, delta },
-      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-    );
+  const onScoreHalfPress = (side: 'A' | 'B', e: PressableEvent) => {
+    const h = side === 'A' ? scorePanelHeightARef.current : scorePanelHeightBRef.current;
+    if (h <= 0) return;
+    const y = e.nativeEvent.locationY;
+    const delta = (y < h / 2 ? 1 : -1) as 1 | -1;
+    handlePoint(side, delta);
   };
 
   const topPad = Math.max(insets.top, 12) + 8;
 
   return (
     <View style={[styles.screen, { paddingTop: topPad }]}>
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen
+        options={{
+          headerShown: false,
+          // Tighten iOS back-swipe zone so it doesn't steal taps on the left (yellow) score half.
+          ...(Platform.OS === 'ios' ? { gestureResponseDistance: { start: 12 } } : {}),
+        }}
+      />
 
       {/* Match the Tournament screen top-left logo placement + centered header */}
       <View style={styles.topBar}>
@@ -499,104 +591,144 @@ export default function EditMatchScreen() {
       </View>
 
       <View style={styles.container}>
+      {notice ? (
+        <View style={styles.noticeBar}>
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      ) : null}
       <Text style={styles.vsHeadline} accessibilityRole="header">
         <Text style={styles.vsTeamA}>{teamA?.name ?? match.teamAId}</Text>
         <Text style={styles.vsSep}> VS </Text>
         <Text style={styles.vsTeamB}>{teamB?.name ?? match.teamBId}</Text>
       </Text>
-      {(match as { status?: string }).status !== 'completed' ? (
-        <>
-          {(match as { status?: string }).status === 'in_progress' ? (
-            <Text style={styles.hint}>{t('tournamentDetail.refereeLocked')}</Text>
-          ) : null}
-
+      <Text style={styles.setsIndicator}>SET {currentSet}/{totalSets}</Text>
+      {isCompleted ? (
+        <View style={styles.endedLegendWrap}>
+          <View style={styles.endedLegendPill}>
+            <Ionicons name="checkmark" size={14} color={styles.endedLegendIcon.color as string} />
+            <Text style={styles.endedLegendText}>Game ended</Text>
+          </View>
+        </View>
+      ) : null}
+      <>
           <View style={styles.scoreBoard}>
-            <View style={[styles.scoreSide, styles.scoreSideLeft]}>
-              <View style={styles.scorePointsArea}>
-                <Text style={styles.scorePoints}>{livePointsA}</Text>
-                <View pointerEvents="box-none" style={styles.scoreOverlay}>
-                  <Pressable
+            <View style={[styles.scoreSide, isCompleted ? styles.scoreSideLeftFinished : styles.scoreSideLeft]}>
+              <View
+                style={styles.scorePointsArea}
+                collapsable={false}
+                onLayout={(e) => {
+                  scorePanelHeightARef.current = e.nativeEvent.layout.height;
+                }}
+              >
+                <View style={styles.scorePointsFloat} pointerEvents="none">
+                  <Animated.Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.42}
                     style={[
-                      styles.scoreOverlayBtn,
-                      styles.scoreOverlayBtnTop,
-                      !(canEditScore && (match as { status?: string }).status === 'in_progress') ? styles.scoreOverlayDisabled : null,
+                      styles.scorePoints,
+                      isCompleted && winnerSide === 'B' ? styles.scorePointsLoser : null,
+                      {
+                        transform: [
+                          {
+                            scale: tapPulseA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] }),
+                          },
+                        ],
+                      },
                     ]}
-                    onPress={() => handlePoint('A', +1)}
-                    disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
-                    accessibilityRole="button"
                   >
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.scoreOverlayBtn,
-                      styles.scoreOverlayBtnBottom,
-                      !(canEditScore && (match as { status?: string }).status === 'in_progress') ? styles.scoreOverlayDisabled : null,
-                    ]}
-                    onPress={() => handlePoint('A', -1)}
-                    disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
-                  </Pressable>
+                    {livePointsA}
+                  </Animated.Text>
                 </View>
+                {!isCompleted ? (
+                  <View style={styles.scoreArrowsLayer} pointerEvents="none">
+                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
+                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
+                  </View>
+                ) : null}
+                <GHPressable
+                  style={[
+                    styles.scoreTouchSurface,
+                    !(canEditScore && (match as { status?: string }).status === 'in_progress')
+                      ? styles.scoreOverlayDisabled
+                      : null,
+                  ]}
+                  onPress={(e) => onScoreHalfPress('A', e)}
+                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Team A score"
+                />
               </View>
             </View>
 
             <View style={styles.scoreDivider} />
 
-            <View style={[styles.scoreSide, styles.scoreSideRight]}>
-              <View style={styles.scorePointsArea}>
-                <Text style={[styles.scorePoints, styles.scorePointsRight]}>{livePointsB}</Text>
-                <View pointerEvents="box-none" style={styles.scoreOverlay}>
-                  <Pressable
+            <View style={[styles.scoreSide, isCompleted ? styles.scoreSideRightFinished : styles.scoreSideRight]}>
+              <View
+                style={styles.scorePointsArea}
+                collapsable={false}
+                onLayout={(e) => {
+                  scorePanelHeightBRef.current = e.nativeEvent.layout.height;
+                }}
+              >
+                <View style={styles.scorePointsFloat} pointerEvents="none">
+                  <Animated.Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.42}
                     style={[
-                      styles.scoreOverlayBtn,
-                      styles.scoreOverlayBtnTop,
-                      !(canEditScore && (match as { status?: string }).status === 'in_progress') ? styles.scoreOverlayDisabled : null,
+                      styles.scorePoints,
+                      styles.scorePointsRight,
+                      isCompleted && winnerSide === 'A' ? styles.scorePointsLoser : null,
+                      {
+                        transform: [
+                          {
+                            scale: tapPulseB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] }),
+                          },
+                        ],
+                      },
                     ]}
-                    onPress={() => handlePoint('B', +1)}
-                    disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
-                    accessibilityRole="button"
                   >
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.scoreOverlayBtn,
-                      styles.scoreOverlayBtnBottom,
-                      !(canEditScore && (match as { status?: string }).status === 'in_progress') ? styles.scoreOverlayDisabled : null,
-                    ]}
-                    onPress={() => handlePoint('B', -1)}
-                    disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
-                  </Pressable>
+                    {livePointsB}
+                  </Animated.Text>
                 </View>
+                {!isCompleted ? (
+                  <View style={styles.scoreArrowsLayer} pointerEvents="none">
+                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
+                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
+                  </View>
+                ) : null}
+                <GHPressable
+                  style={[
+                    styles.scoreTouchSurface,
+                    !(canEditScore && (match as { status?: string }).status === 'in_progress')
+                      ? styles.scoreOverlayDisabled
+                      : null,
+                  ]}
+                  onPress={(e) => onScoreHalfPress('B', e)}
+                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Team B score"
+                />
               </View>
             </View>
           </View>
 
           {renderServeLine(teamA?.name ?? 'Team A', teamB?.name ?? 'Team B', order)}
         </>
-      ) : null}
 
       {(match as { status?: string }).status !== 'completed' && (match as { status?: string }).status !== 'in_progress' ? (
         <View style={{ gap: 8 }}>
           {suggestedRefTeam ? (
-            <Text style={[styles.hint, styles.centerText]}>{t('tournamentDetail.refereeSuggested', { name: suggestedRefTeam.name })}</Text>
+            <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
+              {t('tournamentDetail.refereeSuggested', { name: suggestedRefTeam.name })}
+            </Text>
           ) : null}
           {canManageTournament && (match as { status?: string }).status !== 'in_progress' ? (
             <Button
-              title={startMatch.isPending ? t('common.loading') : t('tournamentDetail.startMatch')}
-              onPress={() =>
-                startMatch.mutate(
-                  { id: matchId, tournamentId: id },
-                  { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                )
-              }
-              disabled={startMatch.isPending}
+              title={startMatch.isPending ? t('common.loading') : String(t('tournamentDetail.startMatch') ?? '').toUpperCase()}
+              onPress={() => setStartCountdown({ seconds: 5, action: 'startMatch' })}
+              disabled={startMatch.isPending || !!startCountdown || isOffline}
               variant="secondary"
               size="sm"
               fullWidth
@@ -605,76 +737,53 @@ export default function EditMatchScreen() {
           {eligibleRefTeam ? (
             <Button
               title={claimReferee.isPending ? t('common.loading') : t('tournamentDetail.startAsReferee')}
-              onPress={() =>
-                claimReferee.mutate(
-                  { id: matchId, tournamentId: id },
-                  { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                )
-              }
-              disabled={claimReferee.isPending}
+              onPress={() => setStartCountdown({ seconds: 5, action: 'claimReferee' })}
+              disabled={claimReferee.isPending || !!startCountdown || isOffline}
               fullWidth
             />
           ) : null}
         </View>
       ) : null}
 
-      {(match as { status?: string }).status === 'in_progress' && (match as { refereeUserId?: unknown }).refereeUserId ? (
-        <Text style={[styles.hint, styles.centerText]}>
-          {t('tournamentDetail.refereeActual', {
-            name:
-              userId && String((match as { refereeUserId?: unknown }).refereeUserId ?? '') === userId
-                ? t('common.you')
-                : (usersById.get(String((match as { refereeUserId?: unknown }).refereeUserId ?? ''))?.firstName as string | undefined) ||
-                  String((match as { refereeUserId?: unknown }).refereeUserId ?? ''),
-          })}
-        </Text>
-      ) : null}
-      {(match as { status?: string }).status === 'completed' ? (
-        <>
-          <Text style={styles.hint}>
-            {aNum > bNum ? (teamA?.name ?? match.teamAId) : bNum > aNum ? (teamB?.name ?? match.teamBId) : '—'}
-          </Text>
-
-          <View style={styles.row}>
-            <View style={styles.col}>
-              <Text style={styles.label}>{t('tournamentDetail.setsWonA')}</Text>
-              <TextInput style={styles.input} value={setsWonA} onChangeText={setSetsWonA} keyboardType="number-pad" />
-            </View>
-            <View style={styles.col}>
-              <Text style={styles.label}>{t('tournamentDetail.setsWonB')}</Text>
-              <TextInput style={styles.input} value={setsWonB} onChangeText={setSetsWonB} keyboardType="number-pad" />
-            </View>
-          </View>
-
-          <View style={styles.row}>
-            <View style={styles.col}>
-              <Text style={styles.label}>{t('tournamentDetail.pointsA')}</Text>
-              <TextInput
-                style={styles.input}
-                value={pointsA}
-                onChangeText={setPointsA}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={Colors.textMuted}
-              />
-            </View>
-            <View style={styles.col}>
-              <Text style={styles.label}>{t('tournamentDetail.pointsB')}</Text>
-              <TextInput
-                style={styles.input}
-                value={pointsB}
-                onChangeText={setPointsB}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={Colors.textMuted}
-              />
-            </View>
-          </View>
-
-          <Button title={updateMatch.isPending ? t('common.loading') : t('common.save')} onPress={handleSave} disabled={!canSave} fullWidth />
-        </>
+      {(match as { status?: string }).status === 'in_progress' &&
+      ((match as { refereeUserId?: unknown }).refereeUserId || showSwitchSidesReminder) ? (
+        <View style={styles.refereeFooterBlock}>
+          {(match as { refereeUserId?: unknown }).refereeUserId ? (
+            <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
+              {t('tournamentDetail.refereeActual', {
+                name:
+                  userId && String((match as { refereeUserId?: unknown }).refereeUserId ?? '') === userId
+                    ? t('common.you')
+                    : (usersById.get(String((match as { refereeUserId?: unknown }).refereeUserId ?? ''))?.firstName as string | undefined) ||
+                      String((match as { refereeUserId?: unknown }).refereeUserId ?? ''),
+              })}
+            </Text>
+          ) : null}
+          {showSwitchSidesReminder ? (
+            <Animated.View
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={t('tournamentDetail.switchSidesReminder')}
+              style={[styles.switchSidesReminderRow, { transform: [{ scale: switchSidesPulse }] }]}
+            >
+              <MaterialCommunityIcons name="swap-horizontal" size={25} color="#ffffff" accessible={false} />
+              <Text accessible={false} style={[styles.centerText, styles.switchSidesReminder]}>
+                {t('tournamentDetail.switchSidesReminder')}
+              </Text>
+            </Animated.View>
+          ) : null}
+        </View>
       ) : null}
       </View>
+
+      {startCountdown ? (
+        <View
+          pointerEvents="none"
+          style={[styles.countdownOverlay, { top: -topPad, paddingBottom: insets.bottom }]}
+        >
+          <Text style={styles.countdownText}>{startCountdown.seconds}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -682,15 +791,53 @@ export default function EditMatchScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   // content padding like other screens
-  container: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
+  // Extra horizontal inset on Android: system edge-back gesture competes with taps on the left (team A) panel.
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    paddingHorizontal: Platform.OS === 'android' ? 24 : 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
   stateTitle: { fontSize: 18, fontWeight: '900', color: Colors.text, textAlign: 'center' },
   hint: { color: Colors.textSecondary, marginBottom: 8 },
   centerText: { textAlign: 'center' },
+  noticeBar: {
+    alignSelf: 'stretch',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(250,204,21,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.22)',
+  },
+  noticeText: { fontSize: 12, fontWeight: '800', color: Colors.textMuted, textAlign: 'center' },
+  refereeLine: { fontSize: 11, fontStyle: 'italic', textTransform: 'uppercase' },
+  refereeFooterBlock: { alignSelf: 'stretch', alignItems: 'center', gap: 6, marginTop: 2 },
+  switchSidesReminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+  },
+  switchSidesReminder: {
+    fontSize: 16,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    letterSpacing: 0.82,
+    color: '#ffffff',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   // Mirror TabScreenHeader layout: logo absolute top-left, centered content
   topBar: {
     width: '100%',
     minHeight: 50,
-    marginBottom: 14,
+    marginBottom: 8,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -708,6 +855,31 @@ const styles = StyleSheet.create({
   vsTeamA: { color: Colors.yellow, fontWeight: '900' },
   vsTeamB: { color: Colors.violet, fontWeight: '900' },
   vsSep: { color: Colors.textMuted, fontWeight: '900' },
+  setsIndicator: {
+    marginTop: -2,
+    marginBottom: 6,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  endedLegendWrap: { alignItems: 'center', paddingBottom: 8 },
+  endedLegendPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.35)',
+  },
+  endedLegendIcon: { color: '#22c55e' },
+  endedLegendText: { fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   timerLabels: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center' },
   timerLabel: { fontSize: 10, fontWeight: '900', fontStyle: 'italic', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   timerValue: { fontSize: 18, fontWeight: '900', color: Colors.text, fontStyle: 'italic' },
@@ -719,29 +891,86 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     backgroundColor: Colors.surface,
   },
-  scoreDivider: { width: 1, backgroundColor: Colors.surfaceLight },
-  scoreSide: { flex: 1, paddingVertical: 10, paddingHorizontal: 14, gap: 10, justifyContent: 'space-between' },
+  scoreDivider: { width: 1, backgroundColor: Colors.surfaceLight, alignSelf: 'stretch' },
+  // Ensure the score panel never collapses (scheduled/preview should still show 0-0).
+  // No bottom padding: avoids a dark strip between team tint and scoreBoard bottom edge.
+  scoreSide: {
+    flex: 1,
+    minHeight: 260,
+    paddingTop: 10,
+    paddingBottom: 0,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+  },
   // Match the "violetMuted" panel intensity for yellow.
   scoreSideLeft: { backgroundColor: 'rgba(251, 191, 36, 0.22)' },
   scoreSideRight: { backgroundColor: Colors.violetMuted },
+  /** Completed: no fill — outline uses same hues as the live panels */
+  scoreSideLeftFinished: {
+    backgroundColor: 'transparent',
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomWidth: 2,
+    borderRightWidth: 0,
+    borderColor: 'rgba(251, 191, 36, 0.45)',
+  },
+  scoreSideRightFinished: {
+    backgroundColor: 'transparent',
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderLeftWidth: 0,
+    borderColor: Colors.violetOutline,
+  },
   scoreTeam: { fontSize: 13, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', textAlign: 'center' },
   scorePoints: {
+    width: '100%',
     fontSize: 144,
     fontWeight: '900',
     fontStyle: 'italic',
     color: Colors.yellow,
     textAlign: 'center',
-    lineHeight: 152,
     includeFontPadding: false,
   },
   scorePointsRight: { color: Colors.violet },
+  scorePointsLoser: { opacity: 0.3 },
   // Avoid flex collapse in auto-height container: give scores a real box.
-  scorePointsArea: { minHeight: 260, justifyContent: 'center', position: 'relative' },
-  scoreOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  // Two transparent tappable halves
-  scoreOverlayBtn: { position: 'absolute', left: 0, right: 0, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  scoreOverlayBtnTop: { top: 0, height: 124, justifyContent: 'flex-start', paddingTop: 0 },
-  scoreOverlayBtnBottom: { bottom: 0, height: 124, justifyContent: 'flex-end', paddingBottom: 0 },
+  scorePointsArea: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  // Score (zIndex 1) under arrows + single full-surface GHPressable (zIndex 3).
+  scorePointsFloat: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreArrowsLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 2,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  scoreTouchSurface: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 3,
+  },
   scoreOverlayDisabled: { opacity: 0.35 },
   scoreOverlayArrow: {
     width: '96%',
@@ -796,6 +1025,17 @@ const styles = StyleSheet.create({
   serveSlotName: { fontSize: 13, fontWeight: '900', fontStyle: 'italic', lineHeight: 16 },
   serveSlotNameA: { color: Colors.yellow },
   serveSlotNameB: { color: Colors.violet },
+  countdownOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownText: { fontSize: 152, fontWeight: '900', color: Colors.text, fontStyle: 'italic' },
   row: { flexDirection: 'row', gap: 12 },
   col: { flex: 1 },
   label: { fontSize: 12, fontWeight: '800', color: Colors.textSecondary, marginBottom: 6 },

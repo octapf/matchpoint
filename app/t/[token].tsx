@@ -6,7 +6,9 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTournamentByToken } from '@/lib/hooks/useTournaments';
-import { useEntries, useCreateEntry } from '@/lib/hooks/useEntries';
+import { useCreateEntry } from '@/lib/hooks/useEntries';
+import { useTeams } from '@/lib/hooks/useTeams';
+import { useWaitlist } from '@/lib/hooks/useWaitlist';
 import { useUserStore } from '@/store/useUserStore';
 import { config } from '@/lib/config';
 import i18n from '@/lib/i18n';
@@ -34,24 +36,27 @@ export default function JoinViaLinkScreen() {
 
   const { data: tournament, isLoading, isError } = useTournamentByToken(token || undefined);
   const tournamentId = tournament?._id;
-  const { data: entries = [] } = useEntries(tournamentId ? { tournamentId } : undefined, { enabled: !!tournamentId });
+  const { data: teams = [] } = useTeams(tournamentId ? { tournamentId } : undefined);
+  const { data: waitlistInfo } = useWaitlist(tournamentId);
   const createEntry = useCreateEntry();
 
-  const hasJoined = entries.some((e) => e.userId === userId);
+  const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
+  const onWaitlist = !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId));
+  const isRegistered = userHasTeam || onWaitlist;
 
   useEffect(() => {
-    if (userId && !canEnroll && !hasJoined && tournament && !isLoading) {
+    if (userId && !canEnroll && !isRegistered && tournament && !isLoading) {
       Alert.alert(
         t('team.genderRequiredTitle'),
         t('inviteLink.genderRequiredProfile'),
         [{ text: t('common.ok'), onPress: () => router.replace('/profile/my-data') }]
       );
     }
-  }, [userId, canEnroll, hasJoined, tournament, isLoading, router]);
+  }, [userId, canEnroll, isRegistered, tournament, isLoading, router]);
 
   const handleJoin = () => {
     if (!tournamentId || !userId) return;
-    if (hasJoined) {
+    if (isRegistered) {
       router.replace(`/tournament/${tournamentId}`);
       return;
     }
@@ -165,16 +170,16 @@ export default function JoinViaLinkScreen() {
       <Text style={styles.title}>{t('inviteLink.joinTournament')}</Text>
       <Text style={styles.tournamentName}>{tournament.name}</Text>
       <Text style={styles.subtitle}>
-        {!canEnroll && !hasJoined
+        {!canEnroll && !isRegistered
           ? t('inviteLink.genderRequiredProfile')
-          : hasJoined
+          : isRegistered
             ? t('inviteLink.alreadyJoined')
             : t('inviteLink.invitedToJoin')}
       </Text>
       <View style={styles.buttonStack}>
-        {(canEnroll || hasJoined) && (
+        {(canEnroll || isRegistered) && (
           <Button
-            title={hasJoined ? t('inviteLink.viewTournament') : t('tournamentDetail.joinTournament')}
+            title={isRegistered ? t('inviteLink.viewTournament') : t('tournamentDetail.joinTournament')}
             onPress={handleJoin}
             disabled={createEntry.isPending}
             fullWidth

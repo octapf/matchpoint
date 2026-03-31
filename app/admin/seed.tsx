@@ -219,6 +219,7 @@ export default function AdminSeedScreen() {
           title={t('admin.devSeedGenerate')}
           onPress={() => void runSeed(false)}
           disabled={running || !!info?.exists}
+          size="sm"
           fullWidth
         />
         <Button
@@ -226,6 +227,7 @@ export default function AdminSeedScreen() {
           onPress={confirmRegenerate}
           disabled={running}
           variant="outline"
+          size="sm"
           fullWidth
         />
         <Button
@@ -233,6 +235,7 @@ export default function AdminSeedScreen() {
           onPress={confirmPurge}
           disabled={running}
           variant="danger"
+          size="sm"
           fullWidth
         />
       </View>
@@ -242,6 +245,7 @@ export default function AdminSeedScreen() {
           title={t('admin.devSeedOpenTournament')}
           onPress={() => router.push(`/tournament/${info.tournamentId}`)}
           variant="outline"
+          size="sm"
           fullWidth
         />
       ) : null}
@@ -263,6 +267,7 @@ export default function AdminSeedScreen() {
           onPress={() => setBackfillTournamentId(info?.tournamentId ?? '')}
           variant="outline"
           disabled={running || !info?.tournamentId}
+          size="sm"
           fullWidth
         />
         <Button
@@ -275,6 +280,7 @@ export default function AdminSeedScreen() {
           }
           disabled={running}
           variant="danger"
+          size="sm"
           fullWidth
         />
       </View>
@@ -292,6 +298,7 @@ export default function AdminSeedScreen() {
           }
           disabled={running || indexRunning}
           variant="outline"
+          size="sm"
           fullWidth
         />
       </View>
@@ -350,11 +357,11 @@ export default function AdminSeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
   intro: { fontSize: 15, color: Colors.textSecondary, marginBottom: 16, lineHeight: 22 },
   err: { color: '#f87171', marginBottom: 12 },
-  actions: { gap: 12, marginBottom: 20 },
+  actions: { gap: 10, marginBottom: 16 },
   runningRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   section: {
     fontSize: 13,
@@ -373,9 +380,9 @@ const styles = StyleSheet.create({
     color: Colors.text,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
-  muted: { fontSize: 14, color: Colors.textMuted },
+  muted: { fontSize: 12, color: Colors.textMuted },
   copyRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -393,8 +400,8 @@ const styles = StyleSheet.create({
   copyValue: { fontSize: 14, color: Colors.text, fontFamily: 'monospace' },
   copyIconBtn: {
     backgroundColor: Colors.yellow,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
@@ -409,7 +416,7 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    padding: 14,
+    padding: 12,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
@@ -419,13 +426,13 @@ const styles = StyleSheet.create({
   userEmail: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
   usernameChip: {
     backgroundColor: '#2a2a2a',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 10,
     alignItems: 'flex-end',
     maxWidth: '48%',
   },
   usernameChipPressed: { opacity: 0.9 },
-  usernameText: { fontSize: 14, fontWeight: '600', color: Colors.yellow, fontFamily: 'monospace' },
+  usernameText: { fontSize: 13, fontWeight: '600', color: Colors.yellow, fontFamily: 'monospace' },
   tapCopy: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
 });

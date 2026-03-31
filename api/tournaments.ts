@@ -10,6 +10,8 @@ import {
   parseOgLang,
   siteOrigin,
 } from '../server/lib/inviteOgHtml';
+import { tournamentCreateSchema } from '../server/lib/schemas/tournamentCreate';
+import { parseLimitOffset } from '../server/lib/pagination';
 
 /** Broad tournament lists: hide `private` unless admin, or (with auth) the user is an organizer of that event. Skipped for `organizerId` queries (my tournaments) or `inviteLink` queries. */
 function applyVisibilityListFilter(
@@ -67,9 +69,9 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   try {
     const db = await getDb();
     const col = db.collection('tournaments');
@@ -120,7 +122,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       applyVisibilityListFilter(filter, actorId, actorIsAdmin, hasOrg || !!hasInvite);
 
-      const docs = await col.find(filter).sort({ startDate: 1, date: 1 }).toArray();
+      let listQuery = col.find(filter).sort({ startDate: 1, date: 1 });
+      if (req.query.limit != null || req.query.offset != null) {
+        const { limit, offset } = parseLimitOffset(req.query);
+        listQuery = listQuery.skip(offset).limit(limit);
+      }
+      const docs = await listQuery.toArray();
       const entriesCol = db.collection('entries');
       const tournamentIds = docs.map((d) =>
         d._id instanceof ObjectId ? d._id.toString() : String(d._id),
@@ -133,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (tournamentIds.length > 0) {
         const agg = await entriesCol
           .aggregate<{ _id: string; count: number }>([
-            { $match: { tournamentId: tournamentIdMatch } },
+            { $match: { tournamentId: tournamentIdMatch, teamId: { $ne: null } } },
             { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
           ])
           .toArray();
@@ -209,7 +216,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!actorId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsed = tournamentCreateSchema.safeParse(raw);
+      if (!parsed.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
+      }
       const {
         name,
         date,
@@ -218,21 +229,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         location,
         description,
         divisions: rawDivisions,
-        categories: rawCategories,
-        maxTeams,
+        categories: validCategories,
+        maxTeams: mt,
         pointsToWin: rawPointsToWin,
         setsPerMatch: rawSetsPerMatch,
         groupCount: rawGroups,
         inviteLink,
         organizerIds,
         visibility: rawVisibility,
-      } = body;
-      const sDate = startDate || date;
-      const eDate = endDate || date || sDate;
-      if (!name || !sDate || !location || !maxTeams || !inviteLink || !organizerIds?.length) {
-        return corsRes.status(400).json({ error: 'Missing required fields' });
-      }
-      const mt = Number(maxTeams);
+      } = parsed.data;
+      const sDate = (startDate || date)!.trim();
+      const eDate = (endDate || date || sDate).trim();
       const pointsToWin = Number(rawPointsToWin ?? 21);
       const setsPerMatch = Number(rawSetsPerMatch ?? 1);
       const gc = normalizeGroupCount(rawGroups);
@@ -246,7 +253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               : 'Invalid max teams';
         return corsRes.status(400).json({ error: err });
       }
-      const orgIds = Array.isArray(organizerIds) ? organizerIds : [organizerIds];
+      const orgIds = organizerIds;
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       if (!admin && !orgIds.includes(actorId)) {
@@ -262,28 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Sets per match must be between 1 and 7' });
       }
 
-      const divisions = Array.isArray(rawDivisions)
-        ? rawDivisions
-            .map((x) => (typeof x === 'string' ? x.trim() : ''))
-            .filter(Boolean)
-            .filter((x, i, arr) => arr.indexOf(x) === i)
-            .filter((x) => x === 'men' || x === 'women' || x === 'mixed')
-        : [];
-      if (divisions.length === 0) {
-        return corsRes.status(400).json({ error: 'At least one division is required' });
-      }
-
-      const categories = Array.isArray(rawCategories)
-        ? rawCategories
-            .map((x) => (typeof x === 'string' ? x.trim() : ''))
-            .filter(Boolean)
-            .filter((x, i, arr) => arr.indexOf(x) === i)
-        : [];
-      const validCategories = categories.filter((x) => x === 'Gold' || x === 'Silver' || x === 'Bronze');
-      // Empty array means "single unnamed category" preset.
-      if (validCategories.length !== categories.length) {
-        return corsRes.status(400).json({ error: 'Invalid category value' });
-      }
+      const divisions = [...new Set(rawDivisions)];
       const now = new Date().toISOString();
       const visibility = rawVisibility === 'private' ? 'private' : 'public';
       const doc = {

@@ -52,6 +52,14 @@ export async function ensureDbIndexes(db: Db) {
     (await matches.createIndex({ tournamentId: 1, stage: 1, division: 1, category: 1 }, { name: 'matches_category_lookup' })) as unknown as string
   );
 
+  const audit = db.collection('admin_audit_logs');
+  created.push(
+    (await audit.createIndex({ createdAt: -1 }, { name: 'admin_audit_createdAt' })) as unknown as string
+  );
+  created.push(
+    (await audit.createIndex({ actorId: 1, createdAt: -1 }, { name: 'admin_audit_actor_created' })) as unknown as string
+  );
+
   return { ok: true as const, created };
 }
 

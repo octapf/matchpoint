@@ -1,11 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../../server/lib/mongodb';
+import { getDb, getMongoClient } from '../../server/lib/mongodb';
+import { teamPatchSchema } from '../../server/lib/schemas/teamPatch';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { countTeamsInGroup } from '../../server/lib/tournamentGroupDb';
+import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -32,9 +34,9 @@ function normalizePlayerIds(raw: unknown): string[] | null {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   const id = firstQueryString(req.query.id as string | string[] | undefined);
   if (!id || !ObjectId.isValid(id)) {
     return corsRes.status(400).json({ error: 'Invalid team ID' });
@@ -52,7 +54,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PATCH') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const rawBody = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsedBody = teamPatchSchema.safeParse(rawBody);
+      if (!parsedBody.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
+      }
+      const body = { ...parsedBody.data } as Record<string, unknown>;
       const actingUserId = resolveActorUserId(req, body);
       if (!actingUserId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
@@ -160,21 +167,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Only organizers can remove a team' });
       }
 
-      const teamIdStr = id;
       const now = new Date().toISOString();
-      await db.collection('entries').updateMany(
-        { teamId: teamIdStr, tournamentId },
-        {
-          $set: {
-            teamId: null,
-            status: 'joined',
-            lookingForPartner: true,
-            updatedAt: now,
-          },
+      const playerIds = ((team as { playerIds?: string[] }).playerIds ?? []).filter(Boolean);
+      const client = await getMongoClient();
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const tdb = client.db('matchpoint');
+          const ec = tdb.collection('entries');
+          const wc = tdb.collection('waitlist');
+          const tc = tdb.collection('teams');
+          await ec.deleteMany({ tournamentId, userId: { $in: playerIds } }, { session });
+          const result = await tc.deleteOne({ _id: oid }, { session });
+          if (result.deletedCount === 0) {
+            throw new Error('TEAM_NOT_FOUND');
+          }
+          for (const uid of playerIds) {
+            const dup = await wc.findOne({ tournamentId, userId: uid }, { session });
+            if (!dup) {
+              await wc.insertOne({ tournamentId, userId: uid, createdAt: now, updatedAt: now }, { session });
+            }
+          }
+        });
+      } catch (e) {
+        if (e instanceof Error && e.message === 'TEAM_NOT_FOUND') {
+          return corsRes.status(404).json({ error: 'Team not found' });
         }
-      );
-      const result = await col.deleteOne({ _id: oid });
-      if (result.deletedCount === 0) return corsRes.status(404).json({ error: 'Team not found' });
+        throw e;
+      } finally {
+        await session.endSession();
+      }
+      await syncTournamentOpenFullStatus(db, tournamentId);
       return corsRes.status(204).end();
     }
 

@@ -84,6 +84,7 @@ export function useCreateTeam() {
       hapticSuccess();
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', data.tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },
@@ -113,6 +114,7 @@ export function useDeleteTeam() {
     onSuccess: (_, { tournamentId }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournament', tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },

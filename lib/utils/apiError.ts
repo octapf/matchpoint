@@ -20,9 +20,14 @@ const API_ERROR_I18N: Record<string, string> = {
   'Entry not found': 'apiErrors.entryNotFound',
   'Team not found': 'apiErrors.teamNotFound',
   'Cannot remove the last organizer': 'apiErrors.lastOrganizer',
+  'Each division must have at least one organizer registered in that division': 'apiErrors.organizerDivisionCoverage',
+  'Organize-only organizers cannot register as players': 'apiErrors.organizeOnlyCannotRegister',
+  'Organize-only organizers must cover at least one division': 'apiErrors.organizeOnlyMustCoverDivision',
   'Only organizers can delete this tournament': 'apiErrors.onlyOrganizersDelete',
   'Cannot delete tournament while players are registered. Remove all players from the roster first.':
     'apiErrors.cannotDeleteWithPlayers',
+  'Both players must be on the waiting list': 'apiErrors.bothPlayersMustBeOnWaitlist',
+  'One or more players are already in a team': 'apiErrors.playersAlreadyInTeam',
   'Internal server error': 'apiErrors.internal',
 };
 
@@ -60,6 +65,9 @@ export function apiErrorMessage(
   if (err instanceof Error && err.message) {
     const key = API_ERROR_I18N[err.message];
     if (key) return t(key);
+    if (err.message.includes('not enabled for this tournament')) {
+      return t('apiErrors.divisionNotEnabledForPair');
+    }
     return t('apiErrors.internal');
   }
   return t(fallbackKey);

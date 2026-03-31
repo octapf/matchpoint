@@ -1,21 +1,27 @@
 import type { Team } from '@/types';
 
+import { assignCategories } from '@/lib/tournamentStandings';
+
 export type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
-export type MatchSubTab = 'classification' | MatchCategoryTab;
+export type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
 export function buildSeededClassificationData(params: {
   divisionTeamsByGroup: Team[][];
   matchCategoryTabs: MatchSubTab[];
   pointsToWin: number;
   setsPerMatch: number;
+  categoryFractions?: Partial<Record<MatchCategoryTab, number>> | null;
+  singleCategoryAdvanceFraction?: number | null;
 }) {
   const { divisionTeamsByGroup, matchCategoryTabs } = params;
   const pointsToWin = Math.max(1, Math.min(99, Math.floor(params.pointsToWin) || 21));
   const setsPerMatch = Math.max(1, Math.min(7, Math.floor(params.setsPerMatch) || 1));
   const setsToWin = Math.floor(setsPerMatch / 2) + 1;
-  const categoryCount = Math.max(1, matchCategoryTabs.length - 1);
+  const orderedCats = matchCategoryTabs.filter(
+    (x): x is MatchCategoryTab => x === 'Gold' || x === 'Silver' || x === 'Bronze'
+  );
 
-  return divisionTeamsByGroup.map((groupTeams) => {
+  const perGroup = divisionTeamsByGroup.map((groupTeams) => {
     const matches: {
       id: string;
       teamA: Team;
@@ -24,7 +30,10 @@ export function buildSeededClassificationData(params: {
       setsWonB: number;
       scoreA: number;
       scoreB: number;
+      pointsA: number;
+      pointsB: number;
       winnerId: string;
+      status: 'completed';
     }[] = [];
 
     const stats: Record<string, { team: Team; wins: number; points: number }> = {};
@@ -42,6 +51,8 @@ export function buildSeededClassificationData(params: {
         let setsWonB = 0;
         let scoreA = 0;
         let scoreB = 0;
+        let lastSetA = 0;
+        let lastSetB = 0;
         for (let setIdx = 0; setIdx < setsPerMatch; setIdx++) {
           if (setsWonA >= setsToWin || setsWonB >= setsToWin) break;
           const baseA = (seedA + seedB + i + j + setIdx * 3) % 10;
@@ -53,6 +64,8 @@ export function buildSeededClassificationData(params: {
           else setsWonB += 1;
           scoreA += setA;
           scoreB += setB;
+          lastSetA = setA;
+          lastSetB = setB;
         }
 
         const winnerId = setsWonA > setsWonB ? teamA._id : teamB._id;
@@ -67,7 +80,10 @@ export function buildSeededClassificationData(params: {
           setsWonB,
           scoreA,
           scoreB,
+          pointsA: lastSetA,
+          pointsB: lastSetB,
           winnerId,
+          status: 'completed',
         });
       }
     }
@@ -79,20 +95,29 @@ export function buildSeededClassificationData(params: {
         a.team.name.localeCompare(b.team.name)
     );
 
-    const categories: Partial<Record<MatchCategoryTab, typeof standings>> = {};
-    if (categoryCount > 0) {
-      const orderedCats = matchCategoryTabs.filter((x): x is MatchCategoryTab => x !== 'classification');
-      let cursor = 0;
-      for (let ci = 0; ci < orderedCats.length; ci++) {
-        const remaining = standings.length - cursor;
-        const slotsLeft = orderedCats.length - ci;
-        const size = Math.ceil(remaining / slotsLeft);
-        categories[orderedCats[ci]!] = standings.slice(cursor, cursor + size);
-        cursor += size;
-      }
-    }
+    return { matches, standings };
+  });
 
+  const standingsByGroup = perGroup.map((p) => p.standings);
+  const { teamCategory, eliminated } = assignCategories({
+    standingsByGroup,
+    categories: orderedCats,
+    categoryFractions: params.categoryFractions ?? null,
+    singleCategoryAdvanceFraction: params.singleCategoryAdvanceFraction ?? 0.5,
+  });
+
+  const perGroupWithCategories = perGroup.map(({ matches, standings }) => {
+    const categories: Partial<Record<MatchCategoryTab, typeof standings>> = {};
+    for (const cat of orderedCats) {
+      categories[cat] = standings.filter((row) => teamCategory.get(row.team._id) === cat);
+    }
     return { matches, standings, categories };
   });
+
+  return {
+    perGroup: perGroupWithCategories,
+    teamCategory,
+    eliminated,
+  };
 }
 

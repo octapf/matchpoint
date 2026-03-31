@@ -3,6 +3,7 @@
 | Document | Purpose |
 |----------|---------|
 | [SETUP.md](./SETUP.md) | Clone, install, env, run app + API locally, builds |
+| [BACKEND.md](./BACKEND.md) | API health, CORS, versioning, rate limits, pagination, Sentry, audit logs, tests |
 | [SECRETS.md](./SECRETS.md) | Where each variable lives (never commit real secrets) |
 | [EXPO_AND_VERCEL.md](./EXPO_AND_VERCEL.md) | Expo Go vs dev build, API URL, deep links |
 | [MAINTENANCE.md](./MAINTENANCE.md) | When to refresh docs (e.g. quarterly) |

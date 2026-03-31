@@ -33,6 +33,13 @@ Set in **Vercel** → Project → **Settings** → **Environment Variables** (pe
 | `JWT_SECRET` | **Required** on Vercel (`VERCEL=1`) and when `NODE_ENV=production`; used for session JWT, email verify, and reset tokens. Code throws if missing. Local dev may use an internal default when neither applies. |
 | `ADMIN_EMAILS` | comma-separated emails; on login, matching users get `role: 'admin'` in MongoDB (Vercel env) |
 | `EMAIL_USER` / `EMAIL_PASS` | SMTP (e.g. Zoho); if missing, email flows may skip sending |
+| `CORS_ALLOWED_ORIGINS` | Optional; comma-separated web origins for stricter CORS (see [BACKEND.md](./BACKEND.md)) |
+| `SENTRY_DSN` | Optional; server error reporting (`captureException` in `server/lib/observability.ts`). Also set `SENTRY_ENVIRONMENT` if you want a label other than `VERCEL_ENV` / `NODE_ENV`. |
+
+### Preview vs production
+
+- **Preview** Vercel deployments should use a **separate** `MONGODB_URI` (or a dedicated database name) unless you intentionally want preview branches to hit production data.  
+- Keep `JWT_SECRET`, OAuth client IDs, and `EXPO_PUBLIC_API_URL` aligned per environment so tokens and redirects stay consistent.
 
 See [VERCEL_DEPLOY.md](../VERCEL_DEPLOY.md) for deploy steps.
 

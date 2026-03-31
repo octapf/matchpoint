@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
+import { rateLimitJson } from '../../server/lib/rateLimit';
 import { requireAuth } from '../../server/lib/auth';
 import { issueSessionAndUser } from '../../server/lib/authResponse';
 import { allocateUniqueUsernameFromEmail } from '../../server/lib/usernameFromEmail';
@@ -25,6 +26,7 @@ function serializeUser(doc: Record<string, unknown> | null) {
 // ------------------------
 async function handleGoogle(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!rateLimitJson(req, res, 'auth:google', 30)) return;
 
   const webClientId = process.env.GOOGLE_CLIENT_ID;
   const androidClientId = process.env.GOOGLE_ANDROID_CLIENT_ID;
@@ -100,6 +102,7 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
 // ------------------------
 async function handleMe(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (!rateLimitJson(req, res, 'auth:me', 120)) return;
   const auth = await requireAuth(req, res);
   if (!auth) return;
 
@@ -427,6 +430,7 @@ async function handleVerifyEmail(body: Record<string, unknown>, res: VercelRespo
 
 async function handleEmail(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!rateLimitJson(req, res, 'auth:email', 40)) return;
   const action = req.query.action as string;
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {});
@@ -453,8 +457,8 @@ async function handleEmail(req: VercelRequest, res: VercelResponse) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
-  const corsRes = withCors(res);
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
+  const corsRes = withCors(req, res);
 
   const raw = req.query.slug;
   const parts = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];

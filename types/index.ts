@@ -89,6 +89,14 @@ export interface Tournament {
     }[];
   };
   organizerIds: string[];
+  /**
+   * Subset of organizerIds who do not play (no roster entry). They must list which divisions they cover in `organizerOnlyCovers`.
+   */
+  organizerOnlyIds?: string[];
+  /**
+   * Per organize-only organizer: divisions they are responsible for (must cover collectively with playing organizers per division rules).
+   */
+  organizerOnlyCovers?: Partial<Record<string, TournamentDivision[]>>;
   /** Populated by GET /api/tournaments list (count of entry documents). */
   entriesCount?: number;
   /** Populated by GET /api/tournaments list (count of team documents). */

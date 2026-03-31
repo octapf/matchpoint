@@ -11,6 +11,9 @@ import { requireAdmin } from '../server/lib/auth';
 import { getDevSeedInfo, purgeDevSeed, runDevSeed } from '../server/lib/seedDevTournament';
 import { runDbBackfill } from '../server/lib/dbBackfill';
 import { ensureDbIndexes } from '../server/lib/dbIndexes';
+import { adminPostSchema } from '../server/lib/schemas/adminPost';
+import { insertAuditLogSafe } from '../server/lib/auditLog';
+import { captureException } from '../server/lib/observability';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -26,42 +29,74 @@ function queryString(q: unknown): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
 
   if (req.method === 'POST') {
     const admin = await requireAdmin(req, corsRes);
     if (!admin) return;
     const raw = req.body;
-    const body = (typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {}) as Record<string, unknown>;
+    const rawObj = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {};
+    const parsed = adminPostSchema.safeParse(rawObj);
+    if (!parsed.success) {
+      return corsRes.status(400).json({ error: 'Invalid payload' });
+    }
+    const body = parsed.data;
     try {
       const db = await getDb();
       if (body.action === 'devSeedPurge') {
         const result = await purgeDevSeed(db);
+        await insertAuditLogSafe(db, {
+          actorId: admin.userId,
+          action: 'admin.devSeedPurge',
+          resource: 'admin',
+          meta: { result },
+          req,
+        });
         return corsRes.status(200).json(result);
       }
       if (body.action === 'dbBackfill') {
-        const tournamentId = typeof body.tournamentId === 'string' ? body.tournamentId : null;
+        const tournamentId = body.tournamentId ?? null;
         const result = await runDbBackfill(db, { tournamentId });
+        await insertAuditLogSafe(db, {
+          actorId: admin.userId,
+          action: 'admin.dbBackfill',
+          resource: 'admin',
+          resourceId: tournamentId ?? undefined,
+          meta: { result },
+          req,
+        });
         return corsRes.status(200).json(result);
       }
       if (body.action === 'dbIndexes') {
         const result = await ensureDbIndexes(db);
+        await insertAuditLogSafe(db, {
+          actorId: admin.userId,
+          action: 'admin.dbIndexes',
+          resource: 'admin',
+          meta: { result },
+          req,
+        });
         return corsRes.status(200).json(result);
       }
-      if (body.action !== 'devSeed') {
-        return corsRes.status(400).json({ error: 'Invalid action (devSeed | devSeedPurge | dbBackfill | dbIndexes)' });
-      }
       const result = await runDevSeed(db, { force: !!body.force });
+      await insertAuditLogSafe(db, {
+        actorId: admin.userId,
+        action: 'admin.devSeed',
+        resource: 'admin',
+        meta: { force: !!body.force, result },
+        req,
+      });
       return corsRes.status(200).json(result);
     } catch (err) {
       console.error(err);
+      captureException(err, { route: 'admin:POST' });
       return corsRes.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  if (req.method !== 'GET') return withCors(res).status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'GET') return withCors(req, res).status(405).json({ error: 'Method not allowed' });
 
   const admin = await requireAdmin(req, corsRes);
   if (!admin) return;
@@ -116,6 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return corsRes.status(400).json({ error: 'Invalid or missing type (stats|tournaments|users|devSeedInfo)' });
   } catch (err) {
     console.error(err);
+    captureException(err, { route: 'admin:GET' });
     return corsRes.status(500).json({ error: 'Internal server error' });
   }
 }

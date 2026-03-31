@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    padding: 24,
+    padding: 16,
     paddingBottom: 40,
   },
   centered: {
@@ -104,17 +104,17 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 18,
   },
   name: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.text,
-    marginTop: 12,
+    marginTop: 10,
     textAlign: 'center',
   },
   section: {
-    marginBottom: 18,
+    marginBottom: 12,
   },
   label: {
     fontSize: 12,
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   value: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.text,
   },
   errorText: {

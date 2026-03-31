@@ -2,8 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
+import { waitlistPostSchema } from '../server/lib/schemas/waitlistPost';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
-import { maxPlayerSlotsForTournament } from '../lib/tournamentGroups';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -14,9 +14,9 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 const COLLECTION = 'waitlist';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   try {
     const db = await getDb();
     const col = db.collection(COLLECTION);
@@ -47,14 +47,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!actorId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { tournamentId, userId } = body as { tournamentId?: string; userId?: string };
-      if (!tournamentId || !userId) {
-        return corsRes.status(400).json({ error: 'Missing tournamentId or userId' });
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsed = waitlistPostSchema.safeParse(raw);
+      if (!parsed.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
       }
-      if (!ObjectId.isValid(tournamentId)) {
-        return corsRes.status(400).json({ error: 'Invalid tournament ID' });
-      }
+      const { tournamentId, userId } = parsed.data;
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       if (!admin && userId !== actorId) {
@@ -67,9 +65,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const entriesCol = db.collection('entries');
-      const inTournament = await entriesCol.findOne({ tournamentId, userId });
-      if (inTournament) {
-        return corsRes.status(400).json({ error: 'Already registered for this tournament' });
+      const playing = await entriesCol.findOne({ tournamentId, userId, teamId: { $ne: null } });
+      if (playing) {
+        return corsRes.status(400).json({ error: 'Already in a team for this tournament' });
       }
 
       const tournamentsCol = db.collection('tournaments');
@@ -77,15 +75,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournament) {
         return corsRes.status(404).json({ error: 'Tournament not found' });
       }
-      const tdoc = tournament as { status?: string; maxTeams?: number };
+      const tdoc = tournament as { status?: string; organizerOnlyIds?: string[] };
       if (tdoc.status === 'cancelled') {
         return corsRes.status(400).json({ error: 'Tournament is cancelled' });
       }
-
-      const cap = maxPlayerSlotsForTournament(Number(tdoc.maxTeams ?? 16));
-      const entryCount = await entriesCol.countDocuments({ tournamentId });
-      if (entryCount < cap) {
-        return corsRes.status(400).json({ error: 'Tournament is not full yet — join normally' });
+      const organizeOnly = (tdoc.organizerOnlyIds ?? []).includes(userId);
+      if (organizeOnly) {
+        return corsRes.status(400).json({
+          error: 'Organize-only organizers cannot join the player waitlist',
+        });
       }
 
       const now = new Date().toISOString();

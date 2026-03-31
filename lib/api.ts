@@ -98,8 +98,9 @@ export const tournamentsApi = {
     }),
 
   rebalanceTeams: (id: string) =>
-    apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}/rebalance-teams`, {
+    apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}`, {
       method: 'POST',
+      body: JSON.stringify({ action: 'rebalanceGroups' }),
     }),
 
   action: (id: string, body: Record<string, unknown>) =>
@@ -111,8 +112,14 @@ export const tournamentsApi = {
 
 // Entries
 export const entriesApi = {
-  find: (params?: { tournamentId?: string; userId?: string; teamId?: string }) =>
-    apiRequest<unknown[]>('/api/entries', { params: params as Record<string, string> }),
+  find: (params?: { tournamentId?: string; userId?: string; teamId?: string; inTeamOnly?: boolean }) => {
+    const p: Record<string, string> = {};
+    if (params?.tournamentId) p.tournamentId = params.tournamentId;
+    if (params?.userId) p.userId = params.userId;
+    if (params?.teamId) p.teamId = params.teamId;
+    if (params?.inTeamOnly) p.inTeamOnly = '1';
+    return apiRequest<unknown[]>('/api/entries', { params: p });
+  },
 
   findOne: (id: string) => apiRequest<unknown>(`/api/entries/${id}`),
 

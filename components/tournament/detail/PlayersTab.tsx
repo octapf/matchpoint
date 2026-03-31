@@ -19,6 +19,8 @@ export function PlayersTab({
   onOpenProfile,
   onPromoteOrganizer,
   onDemoteOrganizer,
+  onDemoteOrganizeOnly,
+  organizeOnlyUserIds,
   onConfirmLeave,
   onConfirmRemovePlayer,
   emptyTextStyle,
@@ -42,6 +44,9 @@ export function PlayersTab({
   onOpenProfile: (userId: string) => void;
   onPromoteOrganizer: (targetUserId: string, playerName: string) => void;
   onDemoteOrganizer: (targetUserId: string, playerName: string) => void;
+  onDemoteOrganizeOnly: (targetUserId: string, playerName: string) => void;
+  /** Organizers who are not on the player roster (organize-only). */
+  organizeOnlyUserIds: string[];
   onConfirmLeave: () => void;
   onConfirmRemovePlayer: (entry: Entry, playerName: string) => void;
   emptyTextStyle: unknown;
@@ -54,14 +59,77 @@ export function PlayersTab({
   orgBadgeStyle: unknown;
   playerRowRightStyle: unknown;
 }) {
+  const header =
+    organizeOnlyUserIds.length > 0 ? (
+      <View style={{ marginBottom: 12 }}>
+        <Text
+          style={[
+            playerRowNameStyle as never,
+            { fontSize: 13, opacity: 0.85, marginBottom: 8, fontWeight: '600' } as never,
+          ]}
+        >
+          {t('tournamentDetail.organizersOrganizeOnlySection')}
+        </Text>
+        {organizeOnlyUserIds.map((uid) => {
+          const u = userMap[uid];
+          const playerName = getPlayerListName(u) || t('common.player');
+          const showDemote = canManageTournament;
+          return (
+            <View
+              key={uid}
+              style={[playerRowStyle as never, playerRowOrganizerStyle as never]}
+            >
+              <View style={playerRowTopStyle as never}>
+                <Pressable
+                  style={playerRowMainStyle as never}
+                  onPress={() => onOpenProfile(uid)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.viewProfile')}
+                >
+                  <Avatar
+                    firstName={u?.firstName ?? ''}
+                    lastName={u?.lastName ?? ''}
+                    gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
+                    size="sm"
+                  />
+                  <View style={playerRowTextStyle as never}>
+                    <Text style={playerRowNameStyle as never}>{playerName}</Text>
+                    <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerOrganizeOnlyBadge')}</Text>
+                  </View>
+                </Pressable>
+                <View style={playerRowRightStyle as never}>
+                  {showDemote ? (
+                    <IconButton
+                      icon="person-circle-outline"
+                      onPress={() => onDemoteOrganizeOnly(uid, playerName)}
+                      disabled={mutationBusy}
+                      accessibilityLabel={t('tournamentDetail.removeOrganizer')}
+                      color={Colors.violet}
+                      compact
+                    />
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    ) : null;
+
   if (sortedEntries.length === 0) {
-    return <Text style={emptyTextStyle as never}>{t('tournamentDetail.noPlayersYet')}</Text>;
+    return (
+      <View>
+        {header}
+        <Text style={emptyTextStyle as never}>{t('tournamentDetail.noPlayersYet')}</Text>
+      </View>
+    );
   }
 
   return (
     <FlashList
       data={sortedEntries}
       keyExtractor={(entry) => entry._id}
+      ListHeaderComponent={header}
       renderItem={({ item: entry }) => {
         const u = userMap[entry.userId];
         const playerName = getPlayerListName(u) || t('common.player');

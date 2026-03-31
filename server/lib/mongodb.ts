@@ -8,6 +8,11 @@ import { MongoClient, Db } from 'mongodb';
 
 const uri = process.env.MONGODB_URI || '';
 
+/** Exposed for MongoDB transactions (`startSession` / `withTransaction`). */
+export async function getMongoClient(): Promise<MongoClient> {
+  return getClient();
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;

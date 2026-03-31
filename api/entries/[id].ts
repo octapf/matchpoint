@@ -2,10 +2,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
+import { entryPatchSchema } from '../../server/lib/schemas/entryPatch';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
 import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
+import {
+  assertOrganizersCoverAllDivisions,
+  mergedCoverageAfterRemovingOrganizer,
+} from '../../server/lib/tournamentOrganizerDivisionCoverage';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -14,9 +19,9 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   const id = req.query.id as string;
   if (!id || !ObjectId.isValid(id)) {
     return corsRes.status(400).json({ error: 'Invalid entry ID' });
@@ -34,7 +39,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PATCH') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsed = entryPatchSchema.safeParse(raw);
+      if (!parsed.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
+      }
+      const body = parsed.data as Record<string, unknown>;
       const actingUserId = resolveActorUserId(req, body);
       if (!actingUserId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
@@ -143,9 +153,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               error: 'Promote another organizer before you leave the tournament',
             });
           }
+          const mergedSelf = mergedCoverageAfterRemovingOrganizer(
+            tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
+            next,
+            entryUserId
+          );
+          const covSelf = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedSelf);
+          if (!covSelf.ok) {
+            return corsRes.status(400).json({ error: covSelf.error });
+          }
           await tournamentsCol.updateOne(
             { _id: new ObjectId(tournamentId) },
-            { $pull: { organizerIds: entryUserId }, $set: { updatedAt: new Date().toISOString() } } as never
+            {
+              $pull: { organizerIds: entryUserId },
+              $set: {
+                organizerOnlyIds: mergedSelf.organizerOnlyIds,
+                organizerOnlyCovers: mergedSelf.organizerOnlyCovers,
+                updatedAt: new Date().toISOString(),
+              },
+            } as never
           );
         }
       } else {
@@ -154,6 +180,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const nextKick = orgsKick.filter((o) => o !== entryUserId);
           if (nextKick.length === 0 && !actorIsAdmin) {
             return corsRes.status(400).json({ error: 'Cannot remove the last organizer' });
+          }
+          if (nextKick.length > 0) {
+            const mergedKick = mergedCoverageAfterRemovingOrganizer(
+              tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
+              nextKick,
+              entryUserId
+            );
+            const covKick = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedKick);
+            if (!covKick.ok) {
+              return corsRes.status(400).json({ error: covKick.error });
+            }
           }
         }
       }
@@ -170,9 +207,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (finalOrgs.length === 0 && actorIsAdmin) {
             finalOrgs = [actingUserId];
           }
+          const mergedFinal = mergedCoverageAfterRemovingOrganizer(
+            tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
+            finalOrgs,
+            entryUserId
+          );
+          const covFinal = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedFinal);
+          if (!covFinal.ok) {
+            return corsRes.status(400).json({ error: covFinal.error });
+          }
           await tournamentsCol.updateOne(
             { _id: new ObjectId(tournamentId) },
-            { $set: { organizerIds: finalOrgs, updatedAt: now } }
+            {
+              $set: {
+                organizerIds: finalOrgs,
+                organizerOnlyIds: mergedFinal.organizerOnlyIds,
+                organizerOnlyCovers: mergedFinal.organizerOnlyCovers,
+                updatedAt: now,
+              },
+            }
           );
         }
       }

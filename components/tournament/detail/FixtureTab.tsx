@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, Pressable, Animated, Easing } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import type { Team } from '@/types';
@@ -7,8 +7,44 @@ import Colors from '@/constants/Colors';
 
 const BRONZE = '#cd7f32';
 
+/** Subtle breathe on the “live” match icon so it feels in progress */
+function LiveMatchStatusIcon({ color, size }: { color: string; size: number }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, {
+          toValue: 1.18,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 0.82,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scale]);
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Ionicons name="radio-button-on" size={size} color={color} />
+    </Animated.View>
+  );
+}
+
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
-type MatchSubTab = 'classification' | MatchCategoryTab;
+type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
 type MatchRow = {
   id: string;
@@ -16,8 +52,14 @@ type MatchRow = {
   teamB: Team;
   setsWonA: number;
   setsWonB: number;
+  /** Final / current rally points (shown in list); not set wins */
+  pointsA: number;
+  pointsB: number;
   winnerId: string;
   status?: 'scheduled' | 'in_progress' | 'completed';
+  orderIndex?: number;
+  scheduledAt?: string;
+  createdAt?: string;
 };
 
 export function FixtureTab({
@@ -26,6 +68,7 @@ export function FixtureTab({
   selectedMatchesSubtab,
   onSelectSubtab,
   classificationCounts,
+  liveMatches,
   classificationData,
   categoryMatchesByCategory,
   onOpenMatch,
@@ -54,6 +97,8 @@ export function FixtureTab({
   selectedMatchesSubtab: MatchSubTab;
   onSelectSubtab: (tab: MatchSubTab) => void;
   classificationCounts: { total: number; completed: number } | null;
+  /** Matches with status `in_progress` for the current division (classification + category). */
+  liveMatches: MatchRow[];
   classificationData: {
     matches: MatchRow[];
     standings: { team: Team; wins: number; points: number }[];
@@ -81,6 +126,20 @@ export function FixtureTab({
   matchStandingTeamStyle: unknown;
   matchStandingMetaStyle: unknown;
 }) {
+  const sortMatches = (rows: MatchRow[]) => {
+    return [...rows].sort((a, b) => {
+      const ao = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY;
+      const bo = typeof b.orderIndex === 'number' ? b.orderIndex : Number.POSITIVE_INFINITY;
+      if (ao !== bo) return ao - bo;
+      const as = a.scheduledAt ? Date.parse(a.scheduledAt) : Number.POSITIVE_INFINITY;
+      const bs = b.scheduledAt ? Date.parse(b.scheduledAt) : Number.POSITIVE_INFINITY;
+      if (as !== bs) return as - bs;
+      const ac = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const bc = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return ac - bc;
+    });
+  };
+
   const renderMatchRow = (m: MatchRow) => {
     const statusLabel =
       m.status === 'completed'
@@ -110,7 +169,7 @@ export function FixtureTab({
             {m.teamA.name}
           </Text>
           <Text style={matchScoreStyle as never}>
-            {m.setsWonA} - {m.setsWonB}
+            {m.pointsA} - {m.pointsB}
           </Text>
           <Text style={[matchTeamNameStyle as never, m.winnerId === m.teamB._id ? (matchWinnerStyle as never) : null]}>
             {m.teamB.name}
@@ -131,22 +190,13 @@ export function FixtureTab({
             {m.status === 'completed' ? (
               <Ionicons name="checkmark" size={14} color={statusColor} />
             ) : m.status === 'in_progress' ? (
-              <Ionicons name="play" size={14} color={statusColor} />
+              <LiveMatchStatusIcon color={statusColor} size={14} />
             ) : (
-              <Text style={{ fontSize: 10, fontWeight: '800', color: statusColor, textTransform: 'uppercase' }}>{statusLabel}</Text>
+              <Ionicons name="time-outline" size={14} color={statusColor} />
             )}
           </View>
 
-          {canQuickEditMatches && onOpenMatch ? (
-            <Pressable
-              onPress={() => onOpenMatch(m.id)}
-              accessibilityRole="button"
-              accessibilityLabel={t('tournamentDetail.editMatch')}
-              hitSlop={10}
-            >
-              <Ionicons name="create-outline" size={16} color={Colors.textMuted} />
-            </Pressable>
-          ) : null}
+          {/* Row is already clickable; no redundant edit icon */}
         </View>
       </View>
     );
@@ -164,9 +214,14 @@ export function FixtureTab({
       <View style={matchesSubtabBarStyle as never}>
         {matchCategoryTabs.map((tab) => {
           const selected = selectedMatchesSubtab === tab;
-          const label = tab === 'classification' ? t('tournamentDetail.matchesClassification') : '';
-          // Give "Classification" more space; medal tabs can be narrower.
-          const flexWeight = tab === 'classification' ? 2.4 : 0.7;
+          const label =
+            tab === 'live'
+              ? t('tournamentDetail.matchesLiveTab')
+              : tab === 'classification'
+                ? t('tournamentDetail.matchesClassification')
+                : '';
+          // Text tabs need more room; medal icon tabs stay compact.
+          const flexWeight = tab === 'classification' ? 2.75 : tab === 'live' ? 1.25 : 0.48;
           const medalColor =
             tab === 'Gold' ? Colors.yellow : tab === 'Silver' ? Colors.textSecondary : tab === 'Bronze' ? BRONZE : Colors.textMuted;
           return (
@@ -181,15 +236,18 @@ export function FixtureTab({
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              {tab === 'classification' ? (
+              {tab === 'live' || tab === 'classification' ? (
                 <Text
                   style={[matchesSubtabLabelStyle as never, selected ? (matchesSubtabLabelSelectedStyle as never) : null]}
                   numberOfLines={1}
+                  ellipsizeMode="clip"
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
                 >
                   {label}
                 </Text>
               ) : (
-                <MaterialCommunityIcons name="medal-outline" size={18} color={medalColor} />
+                <MaterialCommunityIcons name="medal-outline" size={15} color={medalColor} />
               )}
             </Pressable>
           );
@@ -204,7 +262,26 @@ export function FixtureTab({
         </View>
       ) : null}
 
-      {selectedMatchesSubtab === 'classification' ? (
+      {selectedMatchesSubtab === 'live' ? (
+        <>
+          <View style={{ paddingTop: 10, paddingBottom: 6 }}>
+            <Text style={classificationCountsTextStyle as never}>
+              {t('tournamentDetail.matchesLiveCount', { n: liveMatches.length })}
+            </Text>
+          </View>
+          {liveMatches.length === 0 ? (
+            <Text style={emptyTextStyle as never}>{t('tournamentDetail.noLiveMatches')}</Text>
+          ) : (
+            <View style={groupBlockStyle as never}>
+              <FlashList
+                data={sortMatches(liveMatches)}
+                keyExtractor={(m) => m.id}
+                renderItem={({ item }) => renderMatchRow(item) as never}
+              />
+            </View>
+          )}
+        </>
+      ) : selectedMatchesSubtab === 'classification' ? (
         classificationData.length === 0 ? (
           <Text style={emptyTextStyle as never}>{t('tournamentDetail.fixturePlaceholder')}</Text>
         ) : (
@@ -216,7 +293,7 @@ export function FixtureTab({
               <View style={groupBlockStyle as never}>
                 <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
                 <FlashList
-                  data={groupData.matches}
+                  data={sortMatches(groupData.matches)}
                   keyExtractor={(m) => m.id}
                   renderItem={({ item }) => renderMatchRow(item) as never}
                 />
@@ -230,7 +307,7 @@ export function FixtureTab({
           {(categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []).length > 0 ? (
             <View style={groupBlockStyle as never}>
               <FlashList
-                data={(categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []) as MatchRow[]}
+                data={sortMatches((categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []) as MatchRow[])}
                 keyExtractor={(m) => m.id}
                 renderItem={({ item }) => renderMatchRow(item) as never}
               />
@@ -248,7 +325,7 @@ export function FixtureTab({
                       <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
                     ) : (
                       <FlashList
-                        data={categoryRows}
+                        data={[...categoryRows]}
                         keyExtractor={(row, idx) => `${row.team._id}-${idx}`}
                         renderItem={({ item: row, index: idx }) => (
                           <View style={matchStandingRowStyle as never}>

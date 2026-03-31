@@ -87,7 +87,7 @@ export default function AdminHomeScreen() {
           </View>
           <Text style={[styles.subtitle, styles.subtitleSpaced]}>{t('admin.actions')}</Text>
           <View style={styles.actionsColumn}>
-            <Button title={t('admin.createTournament')} onPress={() => router.push('/tournament/create')} fullWidth />
+            <Button title={t('admin.createTournament')} onPress={() => router.push('/tournament/create')} size="sm" fullWidth />
             <AdminNavRow
               title={t('admin.browseTournaments')}
               subtitle={t('admin.browseTournamentsSub')}

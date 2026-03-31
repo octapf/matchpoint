@@ -77,6 +77,7 @@ export function useJoinWaitlist() {
     onSuccess: (_data, { tournamentId }) => {
       hapticSuccess();
       queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', tournamentId] });
     },
@@ -90,6 +91,7 @@ export function useLeaveWaitlist() {
     onSuccess: (_data, { tournamentId }) => {
       hapticSuccess();
       queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', tournamentId] });
     },

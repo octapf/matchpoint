@@ -14,6 +14,12 @@ import {
   actionRandomizeGroups,
   actionStartTournament,
 } from '../../server/lib/tournamentLifecycle';
+import { rebalanceTournamentTeams } from '../../server/lib/rebalanceTournamentTeams';
+import { tournamentDivisionsNormalized } from '../../lib/tournamentOrganizerCoverage';
+import type { TournamentDivision } from '../../types';
+import { assertOrganizersCoverAllDivisions } from '../../server/lib/tournamentOrganizerDivisionCoverage';
+import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
+import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentPostAction';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -22,9 +28,9 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   const id = req.query.id as string;
   if (!id || !ObjectId.isValid(id)) {
     return corsRes.status(400).json({ error: 'Invalid tournament ID' });
@@ -64,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const waitCol = db.collection('waitlist');
 
       const [entriesCount, teamsList, waitlistCount] = await Promise.all([
-        entriesCol.countDocuments({ tournamentId: id }),
+        entriesCol.countDocuments({ tournamentId: id, teamId: { $ne: null } }),
         teamsCol.find({ tournamentId: id }).project({ groupIndex: 1 }).toArray(),
         waitCol.countDocuments({ tournamentId: id }),
       ]);
@@ -207,6 +213,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const isOrg = isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId);
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const postCheck = tournamentPostActionSchema.safeParse(body);
+      if (!postCheck.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
+      }
       const action = typeof body?.action === 'string' ? body.action.trim() : '';
 
       // Most actions are organizer/admin only, but match refereeing is allowed for players.
@@ -218,6 +228,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (action === 'randomizeGroups') {
         const result = await actionRandomizeGroups(db, id);
+        return corsRes.status(200).json(result);
+      }
+
+      if (action === 'rebalanceGroups') {
+        const result = await rebalanceTournamentTeams(db, id);
         return corsRes.status(200).json(result);
       }
 
@@ -660,11 +675,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const playersB: string[] = Array.isArray(teamB?.playerIds) ? teamB.playerIds.map(String).filter(Boolean) : [];
         if (playersA.length < 1 || playersB.length < 1) return corsRes.status(400).json({ error: 'Teams missing players' });
 
-        const pointsToWin = Number((match as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21;
+        const tournamentDoc = await db.collection('tournaments').findOne({ _id: new ObjectId(id) }, { projection: { pointsToWin: 1 } });
+        const fallbackPts = Math.max(1, Math.min(99, Math.floor(Number((tournamentDoc as { pointsToWin?: unknown })?.pointsToWin ?? 21) || 21)));
+        const rawMatchPts = Number((match as { pointsToWin?: unknown }).pointsToWin ?? NaN);
+        const pointsToWin =
+          Number.isFinite(rawMatchPts) && rawMatchPts >= 1 && rawMatchPts <= 99 ? Math.floor(rawMatchPts) : fallbackPts;
         const curA = Math.max(0, Number((match as { pointsA?: unknown }).pointsA ?? 0) || 0);
         const curB = Math.max(0, Number((match as { pointsB?: unknown }).pointsB ?? 0) || 0);
         const nextA = side === 'A' ? Math.max(0, curA + delta) : curA;
         const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
+
+        if (delta === 1 && (nextA > pointsToWin || nextB > pointsToWin)) {
+          return corsRes.status(400).json({ error: 'Score exceeds points limit' });
+        }
 
         const now = new Date().toISOString();
         const update: Record<string, unknown> = { updatedAt: now, lastPointAt: now, pointsA: nextA, pointsB: nextB };
@@ -773,7 +796,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return corsRes.status(403).json({ error: 'Only the referee can update the score while the match is on' });
           }
         }
-        if (matchStatus !== 'in_progress') return corsRes.status(400).json({ error: 'Match is not in progress' });
+        // Allow organizer/admin to set serve order before start; referee can set once match is in progress.
+        if (matchStatus !== 'in_progress' && !actorIsAdmin && !isOrg) {
+          return corsRes.status(400).json({ error: 'Match is not in progress' });
+        }
 
         const order = Array.isArray(body?.order) ? (body.order as unknown[]).map(String).filter(Boolean) : [];
         const servingPlayerId = typeof body?.servingPlayerId === 'string' ? body.servingPlayerId.trim() : '';
@@ -1094,29 +1120,145 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const prevOrganizers = (cur.organizerIds as string[]) ?? [];
-      if (update.organizerIds !== undefined) {
-        const nextOrganizers = update.organizerIds as string[];
-        if (!Array.isArray(nextOrganizers) || nextOrganizers.length === 0) {
+      const prevOnlyRaw = Array.isArray((cur as { organizerOnlyIds?: unknown }).organizerOnlyIds)
+        ? ((cur as { organizerOnlyIds: string[] }).organizerOnlyIds)
+        : [];
+      const prevCoversRaw = (cur as { organizerOnlyCovers?: unknown }).organizerOnlyCovers;
+
+      const coverageRelevant =
+        update.organizerIds !== undefined ||
+        body.organizerOnlyIds !== undefined ||
+        body.organizerOnlyCovers !== undefined ||
+        update.divisions !== undefined;
+
+      let nextOnlyForRemoval: string[] = [];
+
+      if (coverageRelevant) {
+        const mergedDivisions =
+          update.divisions !== undefined ? (update.divisions as unknown) : (cur as { divisions?: unknown }).divisions;
+        const nextOrgs = (update.organizerIds !== undefined
+          ? update.organizerIds
+          : cur.organizerIds) as string[];
+        if (!Array.isArray(nextOrgs) || nextOrgs.length === 0) {
           return corsRes.status(400).json({ error: 'At least one organizer is required' });
         }
-        if (!actorIsAdmin) {
-          const entriesCol = db.collection('entries');
-          const entryUserIds = new Set((await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string));
-          for (const uid of nextOrganizers) {
-            if (prevOrganizers.includes(uid)) continue;
-            if (!entryUserIds.has(uid)) {
-              return corsRes.status(400).json({
-                error: 'New organizers must be players who joined this tournament',
-              });
-            }
+
+        let nextOnly: string[];
+        if (body.organizerOnlyIds !== undefined) {
+          if (!Array.isArray(body.organizerOnlyIds)) {
+            return corsRes.status(400).json({ error: 'organizerOnlyIds must be an array' });
+          }
+          nextOnly = body.organizerOnlyIds.filter((x: unknown) => typeof x === 'string' && ObjectId.isValid(x));
+          if (!nextOnly.every((uid) => nextOrgs.includes(uid))) {
+            return corsRes.status(400).json({ error: 'organizerOnlyIds must be a subset of organizerIds' });
           }
         } else {
-          for (const uid of nextOrganizers) {
-            if (!ObjectId.isValid(uid)) {
-              return corsRes.status(400).json({ error: 'Invalid organizer user id' });
+          nextOnly = prevOnlyRaw.filter((oid) => nextOrgs.includes(oid));
+        }
+
+        const divs = tournamentDivisionsNormalized(mergedDivisions);
+        const divSet = new Set(divs);
+
+        let nextCovers: Record<string, TournamentDivision[]>;
+        if (body.organizerOnlyCovers !== undefined) {
+          if (
+            body.organizerOnlyCovers !== null &&
+            (typeof body.organizerOnlyCovers !== 'object' || Array.isArray(body.organizerOnlyCovers))
+          ) {
+            return corsRes.status(400).json({ error: 'organizerOnlyCovers must be an object' });
+          }
+          const raw = (body.organizerOnlyCovers ?? {}) as Record<string, unknown>;
+          nextCovers = {};
+          for (const uid of nextOnly) {
+            const arr = raw[uid];
+            const list = Array.isArray(arr) ? arr : [];
+            nextCovers[uid] = [
+              ...new Set(
+                list
+                  .filter((x): x is TournamentDivision => x === 'men' || x === 'women' || x === 'mixed')
+                  .filter((x) => divSet.has(x))
+              ),
+            ];
+          }
+        } else {
+          const prevObj =
+            prevCoversRaw && typeof prevCoversRaw === 'object' && !Array.isArray(prevCoversRaw)
+              ? (prevCoversRaw as Record<string, unknown>)
+              : {};
+          nextCovers = {};
+          for (const uid of nextOnly) {
+            const arr = prevObj[uid];
+            const list = Array.isArray(arr) ? arr : [];
+            nextCovers[uid] = [
+              ...new Set(
+                list
+                  .filter((x): x is TournamentDivision => x === 'men' || x === 'women' || x === 'mixed')
+                  .filter((x) => divSet.has(x))
+              ),
+            ];
+          }
+        }
+
+        for (const uid of nextOnly) {
+          if (!nextCovers[uid]?.length) {
+            return corsRes.status(400).json({
+              error: 'Organize-only organizers must cover at least one division',
+            });
+          }
+        }
+
+        const entriesCol = db.collection('entries');
+        const entryUserIds = new Set(
+          (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
+        );
+
+        if (update.organizerIds !== undefined) {
+          if (!actorIsAdmin) {
+            for (const uid of nextOrgs) {
+              if (prevOrganizers.includes(uid)) continue;
+              if (!entryUserIds.has(uid)) {
+                return corsRes.status(400).json({
+                  error: 'New organizers must be players who joined this tournament',
+                });
+              }
+            }
+          } else {
+            for (const uid of nextOrgs) {
+              if (!ObjectId.isValid(uid)) {
+                return corsRes.status(400).json({ error: 'Invalid organizer user id' });
+              }
+            }
+            for (const uid of nextOrgs) {
+              if (prevOrganizers.includes(uid)) continue;
+              if (!entryUserIds.has(uid)) {
+                if (!nextOnly.includes(uid)) {
+                  return corsRes.status(400).json({
+                    error: 'Organizers who are not registered must be marked organize-only',
+                  });
+                }
+                if (!nextCovers[uid]?.length) {
+                  return corsRes.status(400).json({
+                    error: 'Organize-only organizers must cover at least one division',
+                  });
+                }
+              }
             }
           }
         }
+
+        const cov = await assertOrganizersCoverAllDivisions(db, id, {
+          divisions: mergedDivisions,
+          organizerIds: nextOrgs,
+          organizerOnlyIds: nextOnly,
+          organizerOnlyCovers: nextCovers,
+        });
+        if (!cov.ok) {
+          return corsRes.status(400).json({ error: cov.error });
+        }
+
+        update.organizerOnlyIds = nextOnly;
+        update.organizerOnlyCovers = nextCovers;
+        nextOnlyForRemoval = nextOnly;
       }
 
       update.updatedAt = new Date().toISOString();
@@ -1126,6 +1268,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { returnDocument: 'after' }
       );
       if (!result) return corsRes.status(404).json({ error: 'Tournament not found' });
+      for (const uid of nextOnlyForRemoval) {
+        await removePlayerFromTournament(db, id, uid);
+      }
       const afterStatus = (result as { status?: string }).status;
       if (afterStatus !== 'cancelled') {
         await syncTournamentOpenFullStatus(db, id);

@@ -46,7 +46,7 @@ function EntryCard({
             accessibilityRole="button"
             accessibilityLabel={t('profile.viewProfile')}
           >
-            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="sm" />
+            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="xs" />
           </Pressable>
           <Pressable onPress={openTournament} style={styles.teamNamePress} accessibilityRole="button">
             <Text style={styles.teamName}>{teamName ?? t('common.team')}</Text>
@@ -133,20 +133,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: 12,
     paddingBottom: 32,
   },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 10,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   teamRow: {
     flexDirection: 'row',

@@ -1,9 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../server/lib/mongodb';
+import { getDb, getMongoClient } from '../server/lib/mongodb';
+import { mergedCoverageAfterRemovingOrganizer } from '../server/lib/tournamentOrganizerDivisionCoverage';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isValidUsername, normalizeUsername } from '../server/lib/usernameRules';
+import { userPatchSchema } from '../server/lib/schemas/userPatch';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -24,9 +26,9 @@ function toPublicUser(doc: Record<string, unknown>) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   try {
     const db = await getDb();
     const col = db.collection('users');
@@ -106,44 +108,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const existing = await col.findOne({ _id: oid });
       if (!existing) return corsRes.status(404).json({ error: 'User not found' });
 
-      const entriesCol = db.collection('entries');
-      const teamsCol = db.collection('teams');
-      const tournamentsCol = db.collection('tournaments');
       const now = new Date().toISOString();
+      const client = await getMongoClient();
+      const session = client.startSession();
+      try {
+        let deleted = 0;
+        await session.withTransaction(async () => {
+          const tdb = client.db('matchpoint');
+          const entriesCol = tdb.collection('entries');
+          const teamsCol = tdb.collection('teams');
+          const tournamentsCol = tdb.collection('tournaments');
+          const waitlistCol = tdb.collection('waitlist');
+          const matchesCol = tdb.collection('matches');
+          const usersCol = tdb.collection('users');
 
-      const teamsWithUser = await teamsCol.find({ playerIds: id }).toArray();
+          await entriesCol.deleteMany({ userId: id }, { session });
+          await waitlistCol.deleteMany({ userId: id }, { session });
 
-      await entriesCol.deleteMany({ userId: id });
-
-      for (const team of teamsWithUser) {
-        const tid = team._id as ObjectId;
-        const teamIdStr = tid.toString();
-        await teamsCol.deleteOne({ _id: tid });
-        await entriesCol.updateMany(
-          { $or: [{ teamId: teamIdStr }, { teamId: tid }] },
-          {
-            $set: {
-              teamId: null,
-              status: 'joined',
-              lookingForPartner: true,
-              updatedAt: now,
-            },
+          const teamsWithUser = await teamsCol.find({ playerIds: id }, { session }).toArray();
+          for (const team of teamsWithUser) {
+            const tid = team._id as ObjectId;
+            const teamIdStr = tid.toString();
+            await teamsCol.deleteOne({ _id: tid }, { session });
+            await entriesCol.updateMany(
+              { $or: [{ teamId: teamIdStr }, { teamId: tid }] },
+              {
+                $set: {
+                  teamId: null,
+                  status: 'joined',
+                  lookingForPartner: true,
+                  updatedAt: now,
+                },
+              },
+              { session }
+            );
           }
-        );
+
+          const orgCursor = tournamentsCol.find({ organizerIds: id }, { session });
+          for await (const t of orgCursor) {
+            const rawOrg = (t as Record<string, unknown>).organizerIds;
+            const orgIds = Array.isArray(rawOrg) ? rawOrg.map((x) => String(x)) : [];
+            const nextIds = orgIds.filter((x) => x !== id);
+            const merged = mergedCoverageAfterRemovingOrganizer(
+              t as {
+                divisions?: unknown;
+                organizerOnlyIds?: unknown;
+                organizerOnlyCovers?: unknown;
+              },
+              nextIds,
+              id
+            );
+            await tournamentsCol.updateOne(
+              { _id: t._id },
+              {
+                $set: {
+                  organizerIds: nextIds,
+                  organizerOnlyIds: merged.organizerOnlyIds,
+                  organizerOnlyCovers: merged.organizerOnlyCovers,
+                  updatedAt: now,
+                },
+              },
+              { session }
+            );
+          }
+
+          await tournamentsCol.updateMany(
+            { organizerIds: { $size: 0 } },
+            { $set: { status: 'cancelled', updatedAt: now } },
+            { session }
+          );
+
+          await matchesCol.updateMany(
+            { refereeUserId: id },
+            { $unset: { refereeUserId: '', refereeTeamId: '' } },
+            { session }
+          );
+
+          const del = await usersCol.deleteOne({ _id: oid }, { session });
+          deleted = del.deletedCount ?? 0;
+        });
+        if (deleted === 0) return corsRes.status(404).json({ error: 'User not found' });
+        return corsRes.status(204).end();
+      } finally {
+        await session.endSession();
       }
-
-      await tournamentsCol.updateMany(
-        { organizerIds: id },
-        { $pull: { organizerIds: id }, $set: { updatedAt: now } } as never
-      );
-      await tournamentsCol.updateMany(
-        { organizerIds: { $size: 0 } },
-        { $set: { status: 'cancelled', updatedAt: now } }
-      );
-
-      const del = await col.deleteOne({ _id: oid });
-      if (del.deletedCount === 0) return corsRes.status(404).json({ error: 'User not found' });
-      return corsRes.status(204).end();
     }
 
     if (req.method === 'PATCH') {
@@ -163,7 +211,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Forbidden' });
       }
 
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsed = userPatchSchema.safeParse(raw);
+      if (!parsed.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
+      }
+      const body = parsed.data as Record<string, unknown>;
       const allowed = ['firstName', 'lastName', 'phone', 'gender'];
       if (admin) allowed.push('role');
       const update: Record<string, unknown> = {};

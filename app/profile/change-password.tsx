@@ -74,7 +74,7 @@ export default function ChangePasswordScreen() {
               autoCapitalize="none"
             />
             <Pressable onPress={() => setShowCurrent((s) => !s)} style={styles.eyeBtn}>
-              <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={22} color={Colors.textMuted} />
+              <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textMuted} />
             </Pressable>
           </View>
         </View>
@@ -92,7 +92,7 @@ export default function ChangePasswordScreen() {
               autoCapitalize="none"
             />
             <Pressable onPress={() => setShowNew((s) => !s)} style={styles.eyeBtn}>
-              <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={22} color={Colors.textMuted} />
+              <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textMuted} />
             </Pressable>
           </View>
         </View>
@@ -123,15 +123,15 @@ export default function ChangePasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, padding: 24 },
-  title: { fontSize: 24, fontWeight: '700', color: Colors.text, marginBottom: 24 },
+  container: { flex: 1, backgroundColor: Colors.background, padding: 16 },
+  title: { fontSize: 20, fontWeight: '700', color: Colors.text, marginBottom: 16 },
   field: { marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
-  input: { backgroundColor: Colors.surface, borderRadius: 12, height: 52, paddingHorizontal: 16, fontSize: 15, color: Colors.text, flex: 1 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingRight: 12 },
+  input: { backgroundColor: Colors.surface, borderRadius: 12, height: 44, paddingHorizontal: 12, fontSize: 14, color: Colors.text, flex: 1 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingRight: 10 },
   eyeBtn: { padding: 8 },
-  button: { backgroundColor: Colors.yellow, borderRadius: 50, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  button: { backgroundColor: Colors.yellow, borderRadius: 50, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: Colors.background, fontSize: 16, fontWeight: '700' },
+  buttonText: { color: Colors.background, fontSize: 14, fontWeight: '800' },
   errorText: { fontSize: 16, color: Colors.textSecondary, textAlign: 'center', marginTop: 24 },
 });

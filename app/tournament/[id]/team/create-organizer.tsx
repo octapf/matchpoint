@@ -5,7 +5,7 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useTournament } from '@/lib/hooks/useTournaments';
-import { useEntries } from '@/lib/hooks/useEntries';
+import { useWaitlist } from '@/lib/hooks/useWaitlist';
 import { useTeams, useCreateTeam } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
@@ -22,11 +22,14 @@ export default function CreateTeamOrganizerScreen() {
 
   const { data: tournament } = useTournament(id);
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
-  const { data: entries = [] } = useEntries(id ? { tournamentId: id } : undefined);
+  const { data: waitlistInfo } = useWaitlist(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
   const createTeam = useCreateTeam();
 
-  const allUserIds = useMemo(() => entries.map((e) => e.userId).filter(Boolean), [entries]);
+  const allUserIds = useMemo(
+    () => (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean),
+    [waitlistInfo?.users]
+  );
   const { data: users = [] } = useUsers(allUserIds);
   const userMap = useMemo(() => Object.fromEntries(users.map((u) => [u._id, u])), [users]);
 
@@ -39,13 +42,12 @@ export default function CreateTeamOrganizerScreen() {
   }, [teams]);
 
   const availablePlayers = useMemo(() => {
-    const list = entries
-      .map((e) => e.userId)
-      .filter((uid): uid is string => !!uid && !inTeamUserIds.has(uid))
+    const list = allUserIds
+      .filter((uid) => !inTeamUserIds.has(uid))
       .filter((uid, idx, arr) => arr.indexOf(uid) === idx)
       .sort((a, b) => getPlayerSortKey(userMap[a]).localeCompare(getPlayerSortKey(userMap[b])));
     return list;
-  }, [entries, inTeamUserIds, userMap]);
+  }, [allUserIds, inTeamUserIds, userMap]);
 
   const [query, setQuery] = useState('');
   const [teamName, setTeamName] = useState('');

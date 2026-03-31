@@ -135,10 +135,6 @@ export const MOCK_DEV_ENTRIES: Entry[] = [
   { _id: 'mock-e-10', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-10', teamId: 'mock-team-5', lookingForPartner: false, status: 'in_team', createdAt: TS, updatedAt: TS },
   { _id: 'mock-e-11', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-11', teamId: 'mock-team-6', lookingForPartner: false, status: 'in_team', createdAt: TS, updatedAt: TS },
   { _id: 'mock-e-12', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-12', teamId: 'mock-team-7', lookingForPartner: false, status: 'in_team', createdAt: TS, updatedAt: TS },
-  { _id: 'mock-e-13', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-13', teamId: null, lookingForPartner: true, status: 'joined', createdAt: TS, updatedAt: TS },
-  { _id: 'mock-e-14', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-14', teamId: null, lookingForPartner: true, status: 'joined', createdAt: TS, updatedAt: TS },
-  { _id: 'mock-e-15', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-15', teamId: null, lookingForPartner: true, status: 'joined', createdAt: TS, updatedAt: TS },
-  { _id: 'mock-e-16', tournamentId: DEV_TOURNAMENT_ID, userId: 'mock-u-16', teamId: null, lookingForPartner: true, status: 'joined', createdAt: TS, updatedAt: TS },
 ];
 
 const userById = new Map(MOCK_DEV_USERS.map((u) => [u._id, u]));

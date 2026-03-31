@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, TextInput, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, Pressable, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
-import { useCreateTeam } from '@/lib/hooks/useTeams';
-import { useTeams } from '@/lib/hooks/useTeams';
+import { useCreateTeam, useTeams } from '@/lib/hooks/useTeams';
 import { useTournament } from '@/lib/hooks/useTournaments';
+import { useWaitlist } from '@/lib/hooks/useWaitlist';
+import { useUsers } from '@/lib/hooks/useUsers';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
-import { useEntries, useUpdateEntry } from '@/lib/hooks/useEntries';
+import { isPairValidForTournamentDivisions } from '@/lib/teamDivisionPairing';
 import { useUserStore } from '@/store/useUserStore';
+import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
+import type { TournamentDivision } from '@/types';
 
 export default function CreateTeamScreen() {
   const { t } = useTranslation();
@@ -31,16 +34,45 @@ export default function CreateTeamScreen() {
   }, [hasValidGender, userId, router, t]);
 
   const createTeam = useCreateTeam();
-  const updateEntry = useUpdateEntry();
   const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: entries = [] } = useEntries(
-    id && userId ? { tournamentId: id, userId } : undefined,
-    { enabled: !!id && !!userId }
-  );
+  const { data: waitlistInfo } = useWaitlist(id);
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
+  const inTeamUserIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const tm of teams) for (const pid of tm.playerIds ?? []) if (pid) s.add(pid);
+    return s;
+  }, [teams]);
+
+  const partnerCandidates = useMemo(() => {
+    const wl = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
+    return wl.filter((uid) => uid !== userId && !inTeamUserIds.has(uid));
+  }, [waitlistInfo?.users, userId, inTeamUserIds]);
+
+  const { data: partnerUsers = [] } = useUsers(partnerCandidates);
+  const partnerMap = useMemo(() => Object.fromEntries(partnerUsers.map((u) => [u._id, u])), [partnerUsers]);
+
+  const onWaitlist = useMemo(
+    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
+    [waitlistInfo?.users, userId]
+  );
+
   const [teamName, setTeamName] = useState('');
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  const sortedPartners = useMemo(() => {
+    return [...partnerCandidates].sort((a, b) =>
+      getPlayerSortKey(partnerMap[a]).localeCompare(getPlayerSortKey(partnerMap[b]))
+    );
+  }, [partnerCandidates, partnerMap]);
+
+  const filteredPartners = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sortedPartners;
+    return sortedPartners.filter((pid) => getPlayerListName(partnerMap[pid]).toLowerCase().includes(q));
+  }, [sortedPartners, query, partnerMap]);
 
   const groupCount = tournament ? normalizeGroupCount(tournament.groupCount) : 4;
   const vg = tournament
@@ -49,9 +81,15 @@ export default function CreateTeamScreen() {
   const perGroup = vg.ok ? vg.teamsPerGroup : 4;
   const groupsConfigInvalid = !!tournament && !vg.ok;
 
+  const divisions = (tournament?.divisions ?? []) as TournamentDivision[];
+
   const handleCreate = () => {
     if (userHasTeam) {
       Alert.alert(t('common.error'), t('team.alreadyInTeam'));
+      return;
+    }
+    if (!onWaitlist) {
+      Alert.alert(t('common.error'), t('team.joinWaitlistFirst'));
       return;
     }
     if (!teamName.trim()) {
@@ -62,8 +100,19 @@ export default function CreateTeamScreen() {
       Alert.alert(t('common.error'), t('team.missingTournamentOrUser'));
       return;
     }
+    if (!partnerId) {
+      Alert.alert(t('common.error'), t('team.twoPlayersRequired'));
+      return;
+    }
     if (groupsConfigInvalid) {
       Alert.alert(t('common.error'), t('tournaments.invalidGroups'));
+      return;
+    }
+
+    const partnerUser = partnerMap[partnerId];
+    const divCheck = isPairValidForTournamentDivisions(divisions, user?.gender, partnerUser?.gender);
+    if (!divCheck.ok) {
+      Alert.alert(t('common.error'), t('apiErrors.divisionNotEnabledForPair'));
       return;
     }
 
@@ -71,24 +120,11 @@ export default function CreateTeamScreen() {
       {
         tournamentId: id,
         name: teamName.trim(),
-        playerIds: [userId],
+        playerIds: [userId, partnerId],
         createdBy: userId,
       },
       {
-        onSuccess: (team) => {
-          const myEntry = entries.find((e) => e.tournamentId === id && e.userId === userId);
-          if (myEntry?._id && team?._id) {
-            updateEntry.mutate(
-              { id: myEntry._id, update: { teamId: team._id } },
-              {
-                onSuccess: () => router.back(),
-                onError: (err: unknown) => alertApiError(t, err, 'team.failedToLinkEntry'),
-              }
-            );
-          } else {
-            router.back();
-          }
-        },
+        onSuccess: () => router.back(),
         onError: (err: unknown) => {
           alertApiError(t, err, 'team.failedToCreate');
         },
@@ -101,7 +137,7 @@ export default function CreateTeamScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>{t('team.createTeam')}</Text>
 
       <View style={styles.field}>
@@ -132,23 +168,52 @@ export default function CreateTeamScreen() {
           <Avatar firstName={user?.firstName ?? t('common.you')} lastName={user?.lastName ?? ''} gender={user?.gender} size="md" />
           <Text style={styles.playerLabel}>{t('team.youCreator')}</Text>
         </Pressable>
-        <View style={styles.slot}>
-          <Text style={styles.slotText}>{t('team.openSlotInvite')}</Text>
+
+        <Text style={styles.partnerHint}>{t('team.pickPartnerFromWaitlist')}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder={t('tournamentDetail.searchTeams')}
+          placeholderTextColor={Colors.textMuted}
+          value={query}
+          onChangeText={setQuery}
+        />
+        <View style={styles.partnerList}>
+          {filteredPartners.map((pid) => {
+            const u = partnerMap[pid];
+            const selected = partnerId === pid;
+            return (
+              <Pressable
+                key={pid}
+                style={[styles.partnerRow, selected && styles.partnerRowSelected]}
+                onPress={() => setPartnerId((prev) => (prev === pid ? null : pid))}
+              >
+                <Avatar
+                  firstName={u?.firstName ?? ''}
+                  lastName={u?.lastName ?? ''}
+                  gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
+                  size="sm"
+                />
+                <Text style={styles.partnerName}>{getPlayerListName(u) || t('common.player')}</Text>
+              </Pressable>
+            );
+          })}
+          {filteredPartners.length === 0 ? <Text style={styles.emptyPartners}>{t('common.noResults')}</Text> : null}
         </View>
       </View>
 
       <Button
         title={t('team.createTeam')}
         onPress={handleCreate}
-        disabled={createTeam.isPending || userHasTeam || groupsConfigInvalid}
+        disabled={createTeam.isPending || userHasTeam || groupsConfigInvalid || !onWaitlist}
         fullWidth
       />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, padding: 20 },
+  scroll: { flex: 1, backgroundColor: Colors.background },
+  container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '700', color: Colors.text, marginBottom: 24 },
   field: { marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
@@ -164,6 +229,17 @@ const styles = StyleSheet.create({
   players: { marginBottom: 24 },
   playerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   playerLabel: { fontSize: 16, color: Colors.text },
-  slot: { padding: 16, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.surfaceLight, borderStyle: 'dashed' },
-  slotText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center' },
+  partnerHint: { fontSize: 13, color: Colors.textMuted, marginBottom: 8 },
+  partnerList: { marginTop: 8, gap: 8 },
+  partnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+  },
+  partnerRowSelected: { borderWidth: 1, borderColor: Colors.yellow },
+  partnerName: { fontSize: 16, color: Colors.text, fontWeight: '600' },
+  emptyPartners: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', padding: 12 },
 });

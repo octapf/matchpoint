@@ -6,7 +6,7 @@ import { MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
 import type { Entry, Tournament } from '@/types';
 
 export function useEntries(
-  params?: { tournamentId?: string; userId?: string; teamId?: string },
+  params?: { tournamentId?: string; userId?: string; teamId?: string; inTeamOnly?: boolean },
   options?: { enabled?: boolean }
 ) {
   return useQuery({
@@ -19,6 +19,7 @@ export function useEntries(
               if (params?.tournamentId && e.tournamentId !== params.tournamentId) return false;
               if (params?.userId && e.userId !== params.userId) return false;
               if (params?.teamId != null && params.teamId !== '' && e.teamId !== params.teamId) return false;
+              if (params?.inTeamOnly && (e.teamId == null || e.teamId === '')) return false;
               return true;
             })
           )
@@ -32,59 +33,8 @@ type CreateEntryDoc = { tournamentId: string; userId: string; lookingForPartner?
 export function useCreateEntry() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (doc: Record<string, unknown>) => entriesApi.insertOne(doc) as Promise<Entry>,
-    onMutate: async (doc) => {
-      const tournamentId = typeof doc.tournamentId === 'string' ? doc.tournamentId : '';
-      const userId = typeof doc.userId === 'string' ? doc.userId : '';
-      if (!tournamentId || !userId) return {};
-
-      await queryClient.cancelQueries({ queryKey: ['entries', { tournamentId }] });
-      await queryClient.cancelQueries({ queryKey: ['tournament', tournamentId] });
-      await queryClient.cancelQueries({ queryKey: ['tournaments'] });
-
-      const prevEntries = queryClient.getQueryData<Entry[]>(['entries', { tournamentId }]);
-      const prevTournament = queryClient.getQueryData<Tournament>(['tournament', tournamentId]);
-      const prevTournaments = queryClient.getQueryData<Tournament[]>(['tournaments']);
-
-      const tempId = `optimistic-${Date.now()}`;
-      const optimistic: Entry = {
-        _id: tempId,
-        tournamentId,
-        userId,
-        teamId: null,
-        lookingForPartner: doc.lookingForPartner !== false,
-        status: 'joined',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      queryClient.setQueryData<Entry[]>(['entries', { tournamentId }], (old) =>
-        old ? [...old, optimistic] : [optimistic]
-      );
-      queryClient.setQueryData<Tournament>(['tournament', tournamentId], (old) =>
-        old ? { ...old, entriesCount: (old.entriesCount ?? 0) + 1 } : old
-      );
-      queryClient.setQueryData<Tournament[]>(['tournaments'], (old) =>
-        old?.map((t) =>
-          t._id === tournamentId ? { ...t, entriesCount: (t.entriesCount ?? 0) + 1 } : t
-        )
-      );
-
-      return { prevEntries, prevTournament, prevTournaments, tournamentId } as const;
-    },
-    onError: (_err, _doc, ctx) => {
-      if (!ctx?.tournamentId) return;
-      const tid = ctx.tournamentId;
-      if (ctx.prevEntries !== undefined) {
-        queryClient.setQueryData(['entries', { tournamentId: tid }], ctx.prevEntries);
-      }
-      if (ctx.prevTournament !== undefined) {
-        queryClient.setQueryData(['tournament', tid], ctx.prevTournament);
-      }
-      if (ctx.prevTournaments !== undefined) {
-        queryClient.setQueryData(['tournaments'], ctx.prevTournaments);
-      }
-    },
+    /** Join tournament = join waiting list (no roster entry until a team exists). */
+    mutationFn: (doc: Record<string, unknown>) => entriesApi.insertOne(doc) as Promise<unknown>,
     onSuccess: (_data, variables) => {
       hapticSuccess();
       const v = variables as CreateEntryDoc;

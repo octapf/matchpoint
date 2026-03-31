@@ -2,9 +2,9 @@ import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Share, Alert, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import type { Gender, User, TournamentDivision, Team, Entry } from '@/types';
+import type { Gender, User, TournamentDivision, Team, Entry, TournamentCategory } from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -49,6 +49,14 @@ import {
   validateTournamentGroups,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
+import {
+  missingDivisionForOrganizers,
+  organizerOnlyCoversFromTournament,
+  tournamentDivisionsNormalized,
+} from '@/lib/tournamentOrganizerCoverage';
+import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
+
+const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 
 function TeamCard({
   team,
@@ -59,6 +67,7 @@ function TeamCard({
   onRemoveTeam,
   removeTeamPending,
   onOpenProfile,
+  classificationSummary,
 }: {
   team: Team;
   userMap: Record<string, User>;
@@ -68,14 +77,109 @@ function TeamCard({
   onRemoveTeam?: () => void;
   removeTeamPending?: boolean;
   onOpenProfile: (userId: string) => void;
+  classificationSummary?: {
+    wins: number;
+    points: number;
+    category: TournamentCategory | null;
+    classified: boolean;
+  };
 }) {
+  const medalColor =
+    classificationSummary?.category === 'Gold'
+      ? Colors.yellow
+      : classificationSummary?.category === 'Silver'
+        ? Colors.textSecondary
+        : classificationSummary?.category === 'Bronze'
+          ? TEAM_TAB_BRONZE_MEDAL
+          : Colors.textMuted;
+
+  const a11yIcons =
+    classificationSummary != null
+      ? [
+          classificationSummary.classified
+            ? t('tournamentDetail.teamClassified')
+            : t('tournamentDetail.teamEliminated'),
+          classificationSummary.category
+            ? t('tournamentDetail.teamCategoryMedalA11y', { medal: classificationSummary.category })
+            : t('tournamentDetail.teamCategoryClassificationA11y'),
+          `${t('tournamentDetail.teamTabWins')}: ${classificationSummary.wins}`,
+          `${t('tournamentDetail.teamTabPoints')}: ${classificationSummary.points}`,
+        ].join('. ')
+      : undefined;
+
+  const showDelete = Boolean(canRemoveTeam && onRemoveTeam);
+
   return (
     <View style={styles.teamCard}>
-      <View style={styles.teamCardHeader}>
-        <View style={styles.teamCardHeaderLeft}>
-          <Text style={styles.teamName}>{team.name}</Text>
+      <View style={styles.teamCardTopRow}>
+        <View style={styles.teamCardNameWrap}>
+          <Text style={styles.teamName} numberOfLines={1} ellipsizeMode="tail">
+            {team.name}
+          </Text>
         </View>
-        {canRemoveTeam && onRemoveTeam ? (
+        {classificationSummary ? (
+          <View style={styles.teamCardActionsRow}>
+            <View
+              style={styles.teamCardIconsCluster}
+              accessibilityLabel={a11yIcons}
+              accessible={true}
+            >
+              <Ionicons
+                name={classificationSummary.classified ? 'checkmark-circle' : 'close-circle'}
+                size={20}
+                color={classificationSummary.classified ? Colors.success : Colors.error}
+              />
+              {classificationSummary.category ? (
+                <MaterialCommunityIcons name="medal-outline" size={20} color={medalColor} />
+              ) : (
+                <Ionicons name="git-network-outline" size={20} color={Colors.textSecondary} />
+              )}
+              <Ionicons name="trophy-outline" size={17} color={Colors.textSecondary} />
+              <Text style={styles.teamCardStatNumber}>{classificationSummary.wins}</Text>
+              <Text style={styles.teamCardPtsLabel}>{t('tournamentDetail.teamTabPoints')}</Text>
+              <Text style={styles.teamCardStatNumber}>{classificationSummary.points}</Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={[styles.teamCardBottomRow, showDelete ? styles.teamCardBottomRowWithDelete : null]}>
+        <View style={styles.teamCardPlayersWrap}>
+          <View style={styles.teamCardPlayersRow}>
+            {[0, 1].map((i) => {
+              const pid = team.playerIds?.[i];
+              const user = pid ? userMap[pid] : null;
+              const playerName = user ? getPlayerListName(user) : null;
+              const isYou = pid === currentUserId;
+              return pid ? (
+                <Pressable
+                  key={i}
+                  style={styles.teamCardPlayerCell}
+                  onPress={() => onOpenProfile(pid)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.viewProfile')}
+                >
+                  <Avatar
+                    firstName={user?.firstName ?? ''}
+                    lastName={user?.lastName ?? ''}
+                    gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
+                    size="xs"
+                  />
+                  <Text style={[styles.playerNameSmall, isYou && styles.playerNameHighlight]} numberOfLines={1}>
+                    {playerName || t('common.player')}
+                  </Text>
+                </Pressable>
+              ) : (
+                <View key={i} style={styles.teamCardSlotCell}>
+                  <Text style={styles.slotText}>{t('tournamentDetail.openSlot')}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+      {showDelete && onRemoveTeam ? (
+        <View style={styles.teamCardDeleteAbsolute}>
           <IconButton
             icon="trash-outline"
             onPress={onRemoveTeam}
@@ -85,37 +189,8 @@ function TeamCard({
             size={16}
             compact
           />
-        ) : null}
-      </View>
-      <View style={styles.players}>
-        {[0, 1].map((i) => {
-          const pid = team.playerIds?.[i];
-          const user = pid ? userMap[pid] : null;
-          const playerName = user ? getPlayerListName(user) : null;
-          const isYou = pid === currentUserId;
-          return pid ? (
-            <Pressable
-              key={i}
-              style={styles.player}
-              onPress={() => onOpenProfile(pid)}
-              accessibilityRole="button"
-              accessibilityLabel={t('profile.viewProfile')}
-            >
-              <Avatar
-                firstName={user?.firstName ?? ''}
-                lastName={user?.lastName ?? ''}
-                gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
-                size="xs"
-              />
-              <Text style={[styles.playerNameSmall, isYou && styles.playerNameHighlight]}>{playerName || t('common.player')}</Text>
-            </Pressable>
-          ) : (
-            <View key={i} style={styles.slot}>
-              <Text style={styles.slotText}>{t('tournamentDetail.openSlot')}</Text>
-            </View>
-          );
-        })}
-      </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -141,7 +216,7 @@ const headerTitleStyle = {
 type TournamentTab = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
 type DivisionTab = DivisionTabUtil;
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
-type MatchSubTab = 'classification' | MatchCategoryTab;
+type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
 const TAB_CONFIG: {
   id: TournamentTab;
@@ -168,6 +243,12 @@ export default function TournamentDetailScreen() {
   const [activeDivision, setActiveDivision] = useState<DivisionTab>('mixed');
   const [activeMatchesSubtab, setActiveMatchesSubtab] = useState<MatchSubTab>('classification');
   const [onlyMyClassificationMatches, setOnlyMyClassificationMatches] = useState(false);
+  const [organizeOnlyModal, setOrganizeOnlyModal] = useState<{
+    mode: 'promote' | 'self';
+    targetUserId: string;
+    playerName: string;
+    selected: TournamentDivision[];
+  } | null>(null);
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const storedLanguage = useLanguageStore((s) => s.language);
@@ -182,7 +263,7 @@ export default function TournamentDetailScreen() {
 
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: entries = [] } = useEntries(id ? { tournamentId: id } : undefined);
+  const { data: entries = [] } = useEntries(id ? { tournamentId: id, inTeamOnly: true } : undefined);
   const { data: waitlistInfo } = useWaitlist(id);
   const joinWaitlist = useJoinWaitlist();
   const leaveWaitlist = useLeaveWaitlist();
@@ -213,14 +294,21 @@ export default function TournamentDetailScreen() {
   const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
   const entryUserIds = entries.map((e) => e.userId);
   const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
-  const combinedUserIds = [...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds])];
+  const combinedUserIds = [
+    ...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds, ...(tournament?.organizerIds ?? [])]),
+  ];
   const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
-  const hasJoined = entries.some((e) => e.userId === userId);
   const userHasTeam = teams.some(
     (t) => (t.playerIds ?? []).includes(userId ?? '') && String((t as { tournamentId?: unknown }).tournamentId ?? '') === String(id ?? '')
   );
+  const onWaitlist = useMemo(
+    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
+    [waitlistInfo?.users, userId]
+  );
+  /** On waiting list or already on a team (registered for the tournament flow). */
+  const isRegistered = onWaitlist || userHasTeam;
   const isLoading = loadingTournament;
   const isError = errorTournament;
 
@@ -292,7 +380,7 @@ export default function TournamentDetailScreen() {
     }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
   }, [i18n.locale, storedLanguage, t, tournament?.inviteLink, tournament?.name]);
 
-  const organizerMenuItems = useMemo((): OrganizerMenuItem[] => {
+  const organizerMenuBaseItems = useMemo((): OrganizerMenuItem[] => {
     const list: OrganizerMenuItem[] = [];
 
     if (!tournament) return list;
@@ -464,10 +552,14 @@ export default function TournamentDetailScreen() {
 
   // Everything below must be declared before any early `return` so hook order stays stable.
   const organizerIds = tournament?.organizerIds ?? [];
+  const organizeOnlyUserIds = useMemo(() => {
+    if (!tournament) return [];
+    const only = new Set(tournament.organizerOnlyIds ?? []);
+    return (tournament.organizerIds ?? []).filter((uid) => only.has(uid));
+  }, [tournament]);
   const dateLabel = tournament?.date || tournament?.startDate;
   const isCancelled = tournament?.status === 'cancelled';
-  const playerCap = maxPlayerSlotsForTournament(tournament?.maxTeams ?? 16);
-  const isFull = entries.length >= playerCap;
+  const isOrganizeOnlyOrganizer = !!(userId && (tournament?.organizerOnlyIds ?? []).includes(userId));
 
   const divisions = (((tournament as { divisions?: unknown } | undefined)?.divisions ?? []) as TournamentDivision[]).filter(Boolean);
   const availableDivisions: DivisionTab[] = (divisions.length ? divisions : ['mixed']) as DivisionTab[];
@@ -538,24 +630,18 @@ export default function TournamentDetailScreen() {
     });
   }, [waitlistInfo?.users, userMap, currentDivision]);
 
-  const waitlistPositionForDivision = useMemo(() => {
-    if (!userId) return null;
-    const idx = filteredWaitlist.findIndex((r) => r.userId === userId);
-    return idx >= 0 ? idx + 1 : null;
-  }, [filteredWaitlist, userId]);
-
   const matchCategoryTabs = (() => {
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
       (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
     );
-    return ['classification', ...cats] as MatchSubTab[];
+    return ['classification', ...cats, 'live'] as MatchSubTab[];
   })();
 
   const selectedMatchesSubtab = matchCategoryTabs.includes(activeMatchesSubtab)
     ? activeMatchesSubtab
     : matchCategoryTabs[0]!;
 
-  const classificationData = useMemo(() => {
+  const classificationBundle = useMemo(() => {
     // Dev mocks: keep deterministic seeded fixture.
     if (shouldUseDevMocks()) {
       const pointsToWin = Math.max(
@@ -571,6 +657,13 @@ export default function TournamentDetailScreen() {
         matchCategoryTabs,
         pointsToWin,
         setsPerMatch,
+        categoryFractions: (tournament as { categoryFractions?: unknown } | undefined)?.categoryFractions as
+          | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
+          | null
+          | undefined,
+        singleCategoryAdvanceFraction: Number(
+          (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
+        ),
       });
     }
 
@@ -599,15 +692,14 @@ export default function TournamentDetailScreen() {
       (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
     );
 
-    const { teamCategory } = assignCategories({
+    const { teamCategory, eliminated } = assignCategories({
       standingsByGroup,
       categories: cats,
       categoryFractions: categoryFractions ?? null,
       singleCategoryAdvanceFraction,
     });
 
-    // Shape expected by FixtureTab.
-    return standingsByGroup.map((standings, localGi) => {
+    const perGroup = standingsByGroup.map((standings, localGi) => {
       const matches = (groupMatchesByLocal.get(localGi) ?? []).map((m) => {
         const teamA =
           teamById[m.teamAId] ??
@@ -621,8 +713,13 @@ export default function TournamentDetailScreen() {
           teamB,
           setsWonA: m.setsWonA ?? 0,
           setsWonB: m.setsWonB ?? 0,
+          pointsA: Math.max(0, Math.floor(Number((m as { pointsA?: unknown }).pointsA ?? 0) || 0)),
+          pointsB: Math.max(0, Math.floor(Number((m as { pointsB?: unknown }).pointsB ?? 0) || 0)),
           winnerId: m.winnerId ?? '',
           status: m.status,
+          orderIndex: typeof (m as { orderIndex?: unknown }).orderIndex === 'number' ? (m as { orderIndex: number }).orderIndex : undefined,
+          scheduledAt: typeof (m as { scheduledAt?: unknown }).scheduledAt === 'string' ? (m as { scheduledAt: string }).scheduledAt : undefined,
+          createdAt: (m as { createdAt?: string }).createdAt,
         };
       });
 
@@ -632,6 +729,8 @@ export default function TournamentDetailScreen() {
       }
       return { matches, standings, categories: categoriesMap };
     });
+
+    return { perGroup, teamCategory, eliminated };
   }, [
     classificationMatches,
     divisionTeamsByGroup,
@@ -642,6 +741,33 @@ export default function TournamentDetailScreen() {
     id,
     teamById,
   ]);
+
+  const classificationData = classificationBundle.perGroup;
+
+  const teamClassificationLookup = useMemo(() => {
+    const m = new Map<string, { wins: number; points: number }>();
+    for (const g of classificationData) {
+      for (const row of g.standings) {
+        m.set(row.team._id, { wins: row.wins, points: row.points });
+      }
+    }
+    return m;
+  }, [classificationData]);
+
+  /** Teams tab: best record first (wins, then points, then name). */
+  const teamsSortedForTeamsTab = useMemo(() => {
+    return [...filteredTeams].sort((a, b) => {
+      const sa = teamClassificationLookup.get(a._id);
+      const sb = teamClassificationLookup.get(b._id);
+      const wa = sa?.wins ?? 0;
+      const wb = sb?.wins ?? 0;
+      if (wb !== wa) return wb - wa;
+      const pa = sa?.points ?? 0;
+      const pb = sb?.points ?? 0;
+      if (pb !== pa) return pb - pa;
+      return a.name.localeCompare(b.name);
+    });
+  }, [filteredTeams, teamClassificationLookup]);
 
   const categoryMatchesByCategory = useMemo(() => {
     const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', any[]>> = {};
@@ -672,8 +798,13 @@ export default function TournamentDetailScreen() {
         teamB,
         setsWonA: m.setsWonA ?? 0,
         setsWonB: m.setsWonB ?? 0,
+        pointsA: Math.max(0, Math.floor(Number((m as { pointsA?: unknown }).pointsA ?? 0) || 0)),
+        pointsB: Math.max(0, Math.floor(Number((m as { pointsB?: unknown }).pointsB ?? 0) || 0)),
         winnerId: m.winnerId ?? '',
         status: m.status,
+        orderIndex: typeof (m as { orderIndex?: unknown }).orderIndex === 'number' ? (m as { orderIndex: number }).orderIndex : undefined,
+        scheduledAt: typeof (m as { scheduledAt?: unknown }).scheduledAt === 'string' ? (m as { scheduledAt: string }).scheduledAt : undefined,
+        createdAt: (m as { createdAt?: string }).createdAt,
       });
     }
 
@@ -725,6 +856,7 @@ export default function TournamentDetailScreen() {
   }, [classificationData, myTeamIdForDivision, onlyMyClassificationMatches]);
 
   const fixtureCounts = useMemo(() => {
+    if (selectedMatchesSubtab === 'live') return null;
     if (selectedMatchesSubtab === 'classification') {
       const ms = filteredClassificationData.flatMap((g) => g.matches ?? []);
       const total = ms.length;
@@ -737,11 +869,176 @@ export default function TournamentDetailScreen() {
     return { total, completed };
   }, [categoryMatchesByCategory, filteredClassificationData, selectedMatchesSubtab]);
 
+  /** Ongoing matches in the current division (classification + category stages). */
+  const liveMatchesRows = useMemo(() => {
+    const out: {
+      id: string;
+      teamA: Team;
+      teamB: Team;
+      setsWonA: number;
+      setsWonB: number;
+      pointsA: number;
+      pointsB: number;
+      winnerId: string;
+      status?: 'scheduled' | 'in_progress' | 'completed';
+      orderIndex?: number;
+      scheduledAt?: string;
+      createdAt?: string;
+    }[] = [];
+
+    for (const g of classificationData) {
+      for (const m of g.matches ?? []) {
+        if (m.status === 'in_progress') out.push(m);
+      }
+    }
+
+    for (const m of categoryMatches) {
+      if ((m as { status?: string }).status !== 'in_progress') continue;
+      const div = (m as { division?: unknown }).division;
+      if (div && div !== currentDivision) continue;
+      const teamA =
+        teamById[m.teamAId] ??
+        ({
+          _id: m.teamAId,
+          name: m.teamAId,
+          tournamentId: id ?? '',
+          playerIds: [],
+          createdBy: '',
+          createdAt: '',
+          updatedAt: '',
+        } as Team);
+      const teamB =
+        teamById[m.teamBId] ??
+        ({
+          _id: m.teamBId,
+          name: m.teamBId,
+          tournamentId: id ?? '',
+          playerIds: [],
+          createdBy: '',
+          createdAt: '',
+          updatedAt: '',
+        } as Team);
+      out.push({
+        id: m._id,
+        teamA,
+        teamB,
+        setsWonA: m.setsWonA ?? 0,
+        setsWonB: m.setsWonB ?? 0,
+        pointsA: Math.max(0, Math.floor(Number((m as { pointsA?: unknown }).pointsA ?? 0) || 0)),
+        pointsB: Math.max(0, Math.floor(Number((m as { pointsB?: unknown }).pointsB ?? 0) || 0)),
+        winnerId: m.winnerId ?? '',
+        status: m.status,
+        orderIndex:
+          typeof (m as { orderIndex?: unknown }).orderIndex === 'number'
+            ? (m as { orderIndex: number }).orderIndex
+            : undefined,
+        scheduledAt:
+          typeof (m as { scheduledAt?: unknown }).scheduledAt === 'string'
+            ? (m as { scheduledAt: string }).scheduledAt
+            : undefined,
+        createdAt: (m as { createdAt?: string }).createdAt,
+      });
+    }
+
+    return [...out].sort((a, b) => {
+      const ao = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY;
+      const bo = typeof b.orderIndex === 'number' ? b.orderIndex : Number.POSITIVE_INFINITY;
+      if (ao !== bo) return ao - bo;
+      const as = a.scheduledAt ? Date.parse(a.scheduledAt) : Number.POSITIVE_INFINITY;
+      const bs = b.scheduledAt ? Date.parse(b.scheduledAt) : Number.POSITIVE_INFINITY;
+      if (as !== bs) return as - bs;
+      const ac = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const bc = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return ac - bc;
+    });
+  }, [classificationData, categoryMatches, currentDivision, id, teamById]);
+
   const tournamentStarted =
     !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'classification' ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'categories' ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'completed';
+
+  const handleRegisterAsPlayer = useCallback(() => {
+    if (!id || !userId || !tournament) return;
+    if (!requireOnline()) return;
+    const only = (tournament.organizerOnlyIds ?? []).filter((x) => x !== userId);
+    const raw = (tournament.organizerOnlyCovers ?? {}) as Partial<Record<string, TournamentDivision[]>>;
+    const nextCovers: Record<string, TournamentDivision[]> = {};
+    for (const uid of only) {
+      const v = raw[uid];
+      nextCovers[uid] = Array.isArray(v) ? v : [];
+    }
+    updateTournament.mutate(
+      { id, organizerOnlyIds: only, organizerOnlyCovers: nextCovers },
+      {
+        onSuccess: () => {
+          createEntry.mutate(
+            { tournamentId: id, userId, lookingForPartner: true },
+            {
+              onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+            }
+          );
+        },
+        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+      }
+    );
+  }, [id, userId, tournament, requireOnline, updateTournament, createEntry, t]);
+
+  const organizerMenuRoleItems = useMemo((): OrganizerMenuItem[] => {
+    const list: OrganizerMenuItem[] = [];
+    if (!tournament || !userId || !id) return list;
+    const isOrg = (tournament.organizerIds ?? []).includes(userId);
+    const isOrganizeOnly = (tournament.organizerOnlyIds ?? []).includes(userId);
+    if (!isOrg || tournamentStarted) return list;
+    if (!isOrganizeOnly && isRegistered) {
+      list.push({
+        key: 'organizeOnly',
+        label: t('tournamentDetail.menuOrganizeOnly'),
+        icon: 'clipboard-outline',
+        color: Colors.yellow,
+        onPress: () =>
+          setOrganizeOnlyModal({
+            mode: 'self',
+            targetUserId: userId,
+            playerName: t('common.you'),
+            selected: [...availableDivisions],
+          }),
+      });
+    }
+    if (isOrganizeOnly) {
+      list.push({
+        key: 'playAsPlayer',
+        label: t('tournamentDetail.menuPlayAsPlayer'),
+        icon: 'person-outline',
+        color: Colors.success,
+        onPress: () =>
+          Alert.alert(
+            t('tournamentDetail.menuPlayAsPlayer'),
+            t('tournamentDetail.menuPlayAsPlayerConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              { text: t('common.ok'), onPress: handleRegisterAsPlayer },
+            ]
+          ),
+      });
+    }
+    return list;
+  }, [
+    tournament,
+    userId,
+    id,
+    isRegistered,
+    tournamentStarted,
+    t,
+    availableDivisions,
+    handleRegisterAsPlayer,
+  ]);
+
+  const organizerMenuItems = useMemo(
+    () => [...organizerMenuBaseItems, ...organizerMenuRoleItems],
+    [organizerMenuBaseItems, organizerMenuRoleItems]
+  );
 
   const [reorderPendingTeamId, setReorderPendingTeamId] = useState<string | null>(null);
   const [swapSourceTeamId, setSwapSourceTeamId] = useState<string | null>(null);
@@ -754,7 +1051,8 @@ export default function TournamentDetailScreen() {
     rebalanceGroupsMutation.isPending ||
     randomizeGroupsMutation.isPending ||
     startTournamentMutation.isPending ||
-    updateTeam.isPending;
+    updateTeam.isPending ||
+    leaveWaitlist.isPending;
 
   if (isLoading || !tournament) {
     return (
@@ -768,10 +1066,10 @@ export default function TournamentDetailScreen() {
           <Skeleton height={20} width="30%" style={{ marginBottom: 12 }} />
           {[1, 2].map((i) => (
             <View key={i} style={styles.teamCard}>
-              <Skeleton height={18} width="40%" style={{ marginBottom: 12 }} />
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <Skeleton height={36} width={80} borderRadius={18} />
-                <Skeleton height={36} width={80} borderRadius={18} />
+              <Skeleton height={18} width="50%" style={{ marginBottom: 10 }} />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Skeleton height={28} width="45%" />
+                <Skeleton height={28} width="45%" />
               </View>
             </View>
           ))}
@@ -850,11 +1148,11 @@ export default function TournamentDetailScreen() {
   };
 
   const promoteOrganizer = (targetUserId: string, playerName: string) => {
-    if (!userId || !id) return;
-    Alert.alert(t('tournamentDetail.makeOrganizer'), t('tournamentDetail.makeOrganizerConfirm', { name: playerName }), [
+    if (!userId || !id || !tournament) return;
+    Alert.alert(t('tournamentDetail.makeOrganizer'), t('tournamentDetail.makeOrganizerRoleHint'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('common.ok'),
+        text: t('tournamentDetail.organizerRolePlay'),
         onPress: () => {
           const next = [...new Set([...(tournament.organizerIds ?? []), targetUserId])];
           updateTournament.mutate(
@@ -866,17 +1164,98 @@ export default function TournamentDetailScreen() {
           );
         },
       },
+      {
+        text: t('tournamentDetail.organizerRoleOrganizeOnly'),
+        onPress: () =>
+          setOrganizeOnlyModal({
+            mode: 'promote',
+            targetUserId,
+            playerName,
+            selected: [...availableDivisions],
+          }),
+      },
     ]);
   };
 
+  const submitOrganizeOnlyModal = () => {
+    if (!organizeOnlyModal || !id || !tournament) return;
+    if (!requireOnline()) return;
+    const sel = organizeOnlyModal.selected;
+    if (sel.length === 0) {
+      Alert.alert(t('common.error'), t('tournamentDetail.organizeOnlyPickDivision'));
+      return;
+    }
+    if (organizeOnlyModal.mode === 'promote') {
+      const uid = organizeOnlyModal.targetUserId;
+      const nextOrgs = [...new Set([...(tournament.organizerIds ?? []), uid])];
+      const nextOnly = [...new Set([...(tournament.organizerOnlyIds ?? []), uid])];
+      const covers = {
+        ...(tournament.organizerOnlyCovers as Partial<Record<string, TournamentDivision[]>> | undefined),
+        [uid]: sel,
+      } as Record<string, TournamentDivision[]>;
+      updateTournament.mutate(
+        { id, organizerIds: nextOrgs, organizerOnlyIds: nextOnly, organizerOnlyCovers: covers },
+        {
+          onSuccess: () => setOrganizeOnlyModal(null),
+          onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+        }
+      );
+      return;
+    }
+    if (!userId) return;
+    const nextOnly = [...new Set([...(tournament.organizerOnlyIds ?? []), userId])];
+    const covers = {
+      ...(tournament.organizerOnlyCovers as Partial<Record<string, TournamentDivision[]>> | undefined),
+      [userId]: sel,
+    } as Record<string, TournamentDivision[]>;
+    updateTournament.mutate(
+      {
+        id,
+        organizerOnlyIds: nextOnly,
+        organizerOnlyCovers: covers,
+      },
+      {
+        onSuccess: () => setOrganizeOnlyModal(null),
+        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+      }
+    );
+  };
+
   const demoteOrganizer = (targetUserId: string, playerName: string) => {
-    if (!userId || !id) return;
+    if (!userId || !id || !tournament) return;
     const prev = tournament.organizerIds ?? [];
     if (prev.length <= 1) {
       Alert.alert(t('common.error'), t('tournamentDetail.cannotRemoveLastOrganizer'));
       return;
     }
     if (!prev.includes(targetUserId)) return;
+    const nextOrgs = prev.filter((x) => x !== targetUserId);
+    const divisions = tournamentDivisionsNormalized(tournament.divisions);
+    const teamsById = new Map(teams.map((tm) => [tm._id, { playerIds: tm.playerIds ?? [] }]));
+    const userGender = new Map<string, string>();
+    for (const u of Object.values(userMap)) {
+      userGender.set(u._id, u.gender === 'male' || u.gender === 'female' ? u.gender : '');
+    }
+    const entriesSlim = entries.map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    const nextOnlyAfterDemote = (tournament.organizerOnlyIds ?? []).filter((x) => x !== targetUserId);
+    const nextCoversAfterDemote = organizerOnlyCoversFromTournament(
+      tournament.organizerOnlyCovers,
+      nextOnlyAfterDemote
+    );
+    const missing = missingDivisionForOrganizers(divisions, nextOrgs, entriesSlim, teamsById, userGender, {
+      organizerOnlyIds: nextOnlyAfterDemote,
+      organizerOnlyCovers: nextCoversAfterDemote,
+    });
+    if (missing) {
+      const divLabel =
+        missing === 'men'
+          ? t('tournaments.divisionMen')
+          : missing === 'women'
+            ? t('tournaments.divisionWomen')
+            : t('tournaments.divisionMixed');
+      Alert.alert(t('common.error'), t('tournamentDetail.organizerMustCoverDivision', { division: divLabel }));
+      return;
+    }
     Alert.alert(
       t('tournamentDetail.removeOrganizer'),
       t('tournamentDetail.removeOrganizerConfirm', { name: playerName }),
@@ -886,9 +1265,72 @@ export default function TournamentDetailScreen() {
           text: t('common.ok'),
           style: 'destructive',
           onPress: () => {
-            const next = prev.filter((x) => x !== targetUserId);
             updateTournament.mutate(
-              { id, organizerIds: next },
+              {
+                id,
+                organizerIds: nextOrgs,
+                organizerOnlyIds: nextOnlyAfterDemote,
+                organizerOnlyCovers: nextCoversAfterDemote,
+              },
+              {
+                onError: (err: unknown) =>
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+              }
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const demoteOrganizeOnlyOrganizer = (targetUserId: string, playerName: string) => {
+    if (!userId || !id || !tournament) return;
+    const prev = tournament.organizerIds ?? [];
+    if (prev.length <= 1) {
+      Alert.alert(t('common.error'), t('tournamentDetail.cannotRemoveLastOrganizer'));
+      return;
+    }
+    if (!prev.includes(targetUserId)) return;
+    const nextOrgs = prev.filter((x) => x !== targetUserId);
+    const nextOnly = (tournament.organizerOnlyIds ?? []).filter((x) => x !== targetUserId);
+    const nextCovers = organizerOnlyCoversFromTournament(tournament.organizerOnlyCovers, nextOnly);
+    const divisions = tournamentDivisionsNormalized(tournament.divisions);
+    const teamsById = new Map(teams.map((tm) => [tm._id, { playerIds: tm.playerIds ?? [] }]));
+    const userGender = new Map<string, string>();
+    for (const u of Object.values(userMap)) {
+      userGender.set(u._id, u.gender === 'male' || u.gender === 'female' ? u.gender : '');
+    }
+    const entriesSlim = entries.map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    const missing = missingDivisionForOrganizers(divisions, nextOrgs, entriesSlim, teamsById, userGender, {
+      organizerOnlyIds: nextOnly,
+      organizerOnlyCovers: nextCovers,
+    });
+    if (missing) {
+      const divLabel =
+        missing === 'men'
+          ? t('tournaments.divisionMen')
+          : missing === 'women'
+            ? t('tournaments.divisionWomen')
+            : t('tournaments.divisionMixed');
+      Alert.alert(t('common.error'), t('tournamentDetail.organizerMustCoverDivision', { division: divLabel }));
+      return;
+    }
+    Alert.alert(
+      t('tournamentDetail.removeOrganizer'),
+      t('tournamentDetail.removeOrganizerConfirm', { name: playerName }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.ok'),
+          style: 'destructive',
+          onPress: () => {
+            updateTournament.mutate(
+              {
+                id,
+                organizerIds: nextOrgs,
+                organizerOnlyIds: nextOnly,
+                organizerOnlyCovers: nextCovers,
+              },
               {
                 onError: (err: unknown) =>
                   alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
@@ -928,13 +1370,28 @@ export default function TournamentDetailScreen() {
     if (!userId || !id) return;
     if (!requireOnline()) return;
     const ownEntry = entries.find((e) => e.userId === userId);
+    if (onWaitlist && !ownEntry) {
+      Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveWaitlistConfirm'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('tournaments.waitlistLeave'),
+          style: 'destructive',
+          onPress: () =>
+            leaveWaitlist.mutate(
+              { tournamentId: id },
+              { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+            ),
+        },
+      ]);
+      return;
+    }
     if (!ownEntry) return;
     Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('tournamentDetail.leaveTournament'),
         style: 'destructive',
-            onPress: () =>
+        onPress: () =>
           deleteEntry.mutate(
             { id: ownEntry._id, tournamentId: id },
             {
@@ -988,6 +1445,7 @@ export default function TournamentDetailScreen() {
   })();
 
   return (
+    <>
     <FlashList
       data={[0]}
       keyExtractor={() => 'tournament-detail'}
@@ -1017,16 +1475,19 @@ export default function TournamentDetailScreen() {
           />
 
           {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
+          {!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
+            <Text style={styles.waitlistExplainer}>{t('tournamentDetail.waitlistExplainer')}</Text>
+          ) : null}
           <WaitlistActions
             t={t}
-            show={!hasJoined && canEnroll && !isCancelled && isFull && filteredEntries.length >= playersPerDivisionCap}
-            waitlistPosition={waitlistPositionForDivision}
+            show={!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer}
+            waitlistPosition={waitlistInfo?.position ?? null}
             onJoin={() => {
               if (!userId || !id) return;
               if (!requireOnline()) return;
               joinWaitlist.mutate(
                 { tournamentId: id, userId },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
               );
             }}
             onLeave={() => {
@@ -1043,6 +1504,19 @@ export default function TournamentDetailScreen() {
             waitlistRowStyle={styles.waitlistRow}
             waitlistPositionTextStyle={styles.waitlistPositionText}
           />
+
+          {canManageTournament && id ? (
+            <View style={styles.organizerTournamentActions}>
+              <Button
+                title={t('tournamentDetail.editTournament')}
+                variant="primary"
+                onPress={() => router.push(`/admin/tournament/${id}` as never)}
+                size="sm"
+                fullWidth
+                disabled={isOffline}
+              />
+            </View>
+          ) : null}
 
           <TournamentTabsBar
             t={t}
@@ -1089,12 +1563,14 @@ export default function TournamentDetailScreen() {
             userMap={userMap}
             organizerIds={organizerIds}
             currentUserId={userId}
-            hasJoined={hasJoined}
+            hasJoined={isRegistered}
             canManageTournament={canManageTournament}
             mutationBusy={mutationBusy}
             onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
             onPromoteOrganizer={promoteOrganizer}
             onDemoteOrganizer={demoteOrganizer}
+            onDemoteOrganizeOnly={demoteOrganizeOnlyOrganizer}
+            organizeOnlyUserIds={organizeOnlyUserIds}
             onConfirmLeave={confirmLeave}
             onConfirmRemovePlayer={confirmRemovePlayer}
             emptyTextStyle={styles.emptyText}
@@ -1112,7 +1588,7 @@ export default function TournamentDetailScreen() {
         {activeTab === 'teams' ? (
           <TeamsTab
             t={t}
-            canCreateTeam={!userHasTeam && hasJoined && canEnroll && !!id}
+            canCreateTeam={!userHasTeam && onWaitlist && canEnroll && !!id}
             onCreateTeam={() => router.push(`/tournament/${id}/team/create`)}
             organizerActions={
               canManageTournament && id ? (
@@ -1124,32 +1600,34 @@ export default function TournamentDetailScreen() {
                     size="sm"
                     fullWidth
                   />
-                  <Button
-                    title={t('admin.manageRoster')}
-                    variant="secondary"
-                    onPress={() => router.push(`/admin/tournament/${id}` as never)}
-                    size="sm"
-                    fullWidth
-                    disabled={isOffline}
-                  />
                 </View>
               ) : null
             }
             loadingTeams={loadingTeams}
-            filteredTeams={filteredTeams}
-            renderTeam={(team) => (
-              <TeamCard
-                key={team._id}
-                team={team}
-                userMap={userMap}
-                currentUserId={userId}
-                t={t}
-                canRemoveTeam={canManageTournament}
-                onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
-                removeTeamPending={deleteTeam.isPending}
-                onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
-              />
-            )}
+            filteredTeams={teamsSortedForTeamsTab}
+            renderTeam={(team) => {
+              const row = teamClassificationLookup.get(team._id);
+              const cat = classificationBundle.teamCategory.get(team._id) ?? null;
+              return (
+                <TeamCard
+                  key={team._id}
+                  team={team}
+                  userMap={userMap}
+                  currentUserId={userId}
+                  t={t}
+                  canRemoveTeam={canManageTournament}
+                  onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
+                  removeTeamPending={deleteTeam.isPending}
+                  onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+                  classificationSummary={{
+                    wins: row?.wins ?? 0,
+                    points: row?.points ?? 0,
+                    category: cat,
+                    classified: classificationBundle.teamCategory.has(team._id),
+                  }}
+                />
+              );
+            }}
             emptyTextStyle={styles.emptyText}
             teamsTabCreateRowStyle={styles.teamsTabCreateRow}
             teamCardStyle={styles.teamCard}
@@ -1251,6 +1729,7 @@ export default function TournamentDetailScreen() {
               selectedMatchesSubtab={selectedMatchesSubtab}
               onSelectSubtab={setActiveMatchesSubtab}
               classificationCounts={fixtureCounts}
+              liveMatches={liveMatchesRows}
               classificationData={filteredClassificationData}
               categoryMatchesByCategory={categoryMatchesByCategory}
               onOpenMatch={(matchId) => {
@@ -1285,23 +1764,9 @@ export default function TournamentDetailScreen() {
         {!canEnroll && (
           <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
         )}
-        {!hasJoined && canEnroll && !isCancelled && !isFull && (
-          <Button
-            title={t('tournamentDetail.joinTournament')}
-            onPress={() => {
-              if (!userId || !id) return;
-              if (!requireOnline()) return;
-              createEntry.mutate(
-                { tournamentId: id, userId, lookingForPartner: true },
-                {
-                  onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed'),
-                }
-              );
-            }}
-            disabled={createEntry.isPending}
-            fullWidth
-          />
-        )}
+        {onWaitlist && !userHasTeam && canEnroll && !isCancelled ? (
+          <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
+        ) : null}
         {userHasTeam && (
           <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
         )}
@@ -1309,6 +1774,39 @@ export default function TournamentDetailScreen() {
         </>
       )}
     />
+    <OrganizeOnlyDivisionsModal
+      visible={organizeOnlyModal != null}
+      onClose={() => setOrganizeOnlyModal(null)}
+      title={
+        organizeOnlyModal?.mode === 'promote'
+          ? t('tournamentDetail.organizeOnlyDivisionsTitlePromote', { name: organizeOnlyModal.playerName })
+          : t('tournamentDetail.organizeOnlyDivisionsTitleSelf')
+      }
+      subtitle={t('tournamentDetail.organizeOnlyDivisionsSubtitle')}
+      divisionLabel={(d) =>
+        d === 'men'
+          ? t('tournaments.divisionMen')
+          : d === 'women'
+            ? t('tournaments.divisionWomen')
+            : t('tournaments.divisionMixed')
+      }
+      confirmLabel={t('common.ok')}
+      cancelLabel={t('common.cancel')}
+      divisionsEnabled={availableDivisions}
+      selected={new Set(organizeOnlyModal?.selected ?? [])}
+      onToggleDivision={(d) =>
+        setOrganizeOnlyModal((prev) => {
+          if (!prev) return prev;
+          const next = new Set(prev.selected);
+          if (next.has(d)) next.delete(d);
+          else next.add(d);
+          return { ...prev, selected: [...next] };
+        })
+      }
+      onConfirm={submitOrganizeOnlyModal}
+      confirmDisabled={!(organizeOnlyModal?.selected.length)}
+    />
+    </>
   );
 }
 
@@ -1342,6 +1840,10 @@ const styles = StyleSheet.create({
   },
   progressLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' },
   waitlistActions: { marginBottom: 16 },
+  organizerTournamentActions: {
+    marginBottom: 16,
+    marginTop: 4,
+  },
   tabsSection: { marginBottom: 8, overflow: 'visible' },
   divisionTabBar: {
     flexDirection: 'row',
@@ -1503,7 +2005,7 @@ const styles = StyleSheet.create({
   },
   matchesSubtabBar: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
     position: 'relative',
     zIndex: 3,
     marginTop: -2,
@@ -1513,7 +2015,7 @@ const styles = StyleSheet.create({
   matchesSubtabItem: {
     flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
@@ -1626,21 +2128,97 @@ const styles = StyleSheet.create({
   },
   emptyGroup: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', marginBottom: 8 },
   teamCard: {
+    position: 'relative',
     backgroundColor: Colors.surface,
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    marginBottom: 6,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
   },
-  teamCardHeader: {
+  teamCardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  teamCardHeaderLeft: { flex: 1, minWidth: 0 },
-  teamName: { fontSize: 13, fontWeight: '700', color: Colors.text, lineHeight: 16 },
+  teamCardNameWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teamCardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    gap: 6,
+  },
+  teamCardBottomRowWithDelete: {
+    paddingRight: 42,
+    paddingBottom: 8,
+  },
+  teamCardPlayersWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teamCardDeleteAbsolute: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    zIndex: 2,
+  },
+  teamName: { fontSize: 14, fontWeight: '700', color: Colors.text, lineHeight: 18 },
+  teamCardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  teamCardIconsCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexWrap: 'nowrap',
+    gap: 5,
+  },
+  teamCardPlayersRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+  },
+  teamCardPtsLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+    lineHeight: 20,
+  },
+  teamCardPlayerCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexGrow: 0,
+    flexShrink: 1,
+    maxWidth: '48%',
+    minWidth: 0,
+    paddingVertical: 2,
+  },
+  teamCardSlotCell: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxWidth: '48%',
+    minWidth: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minHeight: 28,
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 6,
+  },
+  teamCardStatNumber: { fontSize: 13, fontWeight: '700', color: Colors.text, lineHeight: 20 },
   players: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' },
   rebalanceBanner: {
     backgroundColor: Colors.surface,
@@ -1663,6 +2241,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: Colors.textMuted, fontStyle: 'italic' },
   joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
+  waitlistExplainer: { fontSize: 13, color: Colors.textMuted, lineHeight: 18, marginBottom: 12 },
+  waitlistOnWaitlistHint: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
   waitlistRow: { gap: 10 },
   waitlistPositionText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   playerRow: {

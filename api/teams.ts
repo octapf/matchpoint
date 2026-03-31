@@ -1,11 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb } from '../server/lib/mongodb';
+import { getDb, getMongoClient } from '../server/lib/mongodb';
+import { parseLimitOffset } from '../server/lib/pagination';
+import { teamsPostSchema } from '../server/lib/schemas/teamsPost';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isTournamentOrganizer } from '../server/lib/organizer';
 import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
 import { countTeamsInGroup, pickLeastLoadedGroup } from '../server/lib/tournamentGroupDb';
+import { isPairValidForTournamentDivisions } from '../server/lib/teamDivisionPairing';
+import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
+import type { TournamentDivision } from '../types';
 
 function hasExplicitGroupIndex(raw: unknown): boolean {
   if (raw === undefined || raw === null) return false;
@@ -20,9 +25,9 @@ function serializeDoc(doc: Record<string, unknown> | null) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'OPTIONS') return withCors(res).end();
+  if (req.method === 'OPTIONS') return withCors(req, res).end();
 
-  const corsRes = withCors(res);
+  const corsRes = withCors(req, res);
   try {
     const db = await getDb();
     const col = db.collection('teams');
@@ -33,7 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (tournamentId && typeof tournamentId === 'string') filter.tournamentId = tournamentId;
       if (createdBy && typeof createdBy === 'string') filter.createdBy = createdBy;
 
-      const docs = await col.find(filter).sort({ createdAt: -1 }).toArray();
+      let cursor = col.find(filter).sort({ createdAt: -1 });
+      const q = req.query;
+      if (q.limit != null || q.offset != null) {
+        const { limit, offset } = parseLimitOffset(q);
+        cursor = cursor.skip(offset).limit(limit);
+      }
+      const docs = await cursor.toArray();
       return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
     }
 
@@ -42,14 +53,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!actorId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const { tournamentId, name, playerIds, createdBy, groupIndex: rawGi } = body;
-      if (!tournamentId || !name || !playerIds?.length || !createdBy) {
-        return corsRes.status(400).json({ error: 'Missing required fields' });
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const parsed = teamsPostSchema.safeParse(raw);
+      if (!parsed.success) {
+        return corsRes.status(400).json({ error: 'Invalid payload' });
       }
-      if (!ObjectId.isValid(tournamentId)) {
-        return corsRes.status(400).json({ error: 'Invalid tournament ID' });
-      }
+      const { tournamentId, name, playerIds, createdBy, groupIndex: rawGi } = parsed.data;
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) {
@@ -58,12 +67,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const isOrg = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actorId);
-      if (!isOrg && !admin) {
-        return corsRes.status(403).json({ error: 'Only organizers can create teams' });
-      }
-      if (!admin && createdBy !== actorId) {
-        return corsRes.status(403).json({ error: 'Invalid createdBy' });
-      }
 
       const playerIdList = Array.isArray(playerIds) ? playerIds : [playerIds];
       const cleanPlayerIds = playerIdList
@@ -78,6 +81,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Invalid player id' });
         }
       }
+
+      const canCreateTeam =
+        isOrg || admin || (cleanPlayerIds.includes(actorId) && createdBy === actorId);
+      if (!canCreateTeam) {
+        return corsRes.status(403).json({ error: 'Not allowed to create this team' });
+      }
+      if (!admin && createdBy !== actorId) {
+        return corsRes.status(403).json({ error: 'Invalid createdBy' });
+      }
+
+      if (!isOrg && !admin) {
+        if (!cleanPlayerIds.includes(actorId)) {
+          return corsRes.status(403).json({ error: 'You must be one of the two players' });
+        }
+      }
+
+      const usersCol = db.collection('users');
+      const [u1, u2] = await Promise.all([
+        usersCol.findOne({ _id: new ObjectId(cleanPlayerIds[0]!) }),
+        usersCol.findOne({ _id: new ObjectId(cleanPlayerIds[1]!) }),
+      ]);
+      if (!u1 || !u2) {
+        return corsRes.status(400).json({ error: 'Player not found' });
+      }
+      const rawG1 = (u1 as Record<string, unknown>).gender;
+      const rawG2 = (u2 as Record<string, unknown>).gender;
+      const g1 = typeof rawG1 === 'string' ? rawG1 : undefined;
+      const g2 = typeof rawG2 === 'string' ? rawG2 : undefined;
+      const tDivs = (tournament as { divisions?: TournamentDivision[] }).divisions;
+      const divCheck = isPairValidForTournamentDivisions(tDivs, g1, g2);
+      if (!divCheck.ok) {
+        return corsRes.status(400).json({ error: divCheck.reason });
+      }
+      const pairDivision: TournamentDivision = divCheck.division;
 
       const maxT = Number((tournament as { maxTeams?: number }).maxTeams);
       const gc = normalizeGroupCount((tournament as { groupCount?: number }).groupCount);
@@ -111,24 +148,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
       }
 
-      // Organizers/admins can only form teams from players already signed up (entries exist),
-      // and players cannot already be assigned to a team.
       const entriesCol = db.collection('entries');
-      const [existingEntries, alreadyInTeam] = await Promise.all([
-        entriesCol
-          .find({ tournamentId, userId: { $in: Array.from(playerIdSet) } })
-          .project({ userId: 1, teamId: 1 })
-          .toArray(),
+      const waitlistCol = db.collection('waitlist');
+      const [w1, w2, inTeamCount] = await Promise.all([
+        waitlistCol.findOne({ tournamentId, userId: cleanPlayerIds[0] }),
+        waitlistCol.findOne({ tournamentId, userId: cleanPlayerIds[1] }),
         entriesCol.countDocuments({
           tournamentId,
-          userId: { $in: Array.from(playerIdSet) },
+          userId: { $in: cleanPlayerIds },
           teamId: { $ne: null },
         }),
       ]);
-      if (existingEntries.length !== cleanPlayerIds.length) {
-        return corsRes.status(400).json({ error: 'All players must be registered in this tournament' });
+      if (!w1 || !w2) {
+        return corsRes.status(400).json({ error: 'Both players must be on the waiting list' });
       }
-      if (alreadyInTeam > 0) {
+      if (inTeamCount > 0) {
         return corsRes.status(400).json({ error: 'One or more players are already in a team' });
       }
 
@@ -138,27 +172,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         name,
         playerIds: cleanPlayerIds,
         groupIndex,
+        division: pairDivision,
         createdBy,
         createdAt: now,
         updatedAt: now,
       };
-      const result = await col.insertOne(doc);
-      const inserted = await col.findOne({ _id: result.insertedId });
 
-      // Attach entries to the team.
-      await entriesCol.updateMany(
-        { tournamentId, userId: { $in: cleanPlayerIds } },
-        {
-          $set: {
-            teamId: result.insertedId.toString(),
-            status: 'in_team',
-            lookingForPartner: false,
-            updatedAt: now,
-          },
-        }
-      );
+      const client = await getMongoClient();
+      const session = client.startSession();
+      let inserted: Record<string, unknown> | null = null;
+      try {
+        await session.withTransaction(async () => {
+          const tdb = client.db('matchpoint');
+          const teamsCol = tdb.collection('teams');
+          const ec = tdb.collection('entries');
+          const wc = tdb.collection('waitlist');
+          const result = await teamsCol.insertOne(doc, { session });
+          const ins = await teamsCol.findOne({ _id: result.insertedId }, { session });
+          inserted = ins as Record<string, unknown> | null;
+          const tidStr = result.insertedId.toString();
+          for (const uid of cleanPlayerIds) {
+            await ec.deleteMany({ tournamentId, userId: uid, teamId: null }, { session });
+            await ec.insertOne(
+              {
+                tournamentId,
+                userId: uid,
+                teamId: tidStr,
+                status: 'in_team',
+                lookingForPartner: false,
+                createdAt: now,
+                updatedAt: now,
+              },
+              { session }
+            );
+          }
+          await wc.deleteMany({ tournamentId, userId: { $in: cleanPlayerIds } }, { session });
+        });
+      } finally {
+        await session.endSession();
+      }
 
-      return corsRes.status(201).json(serializeDoc(inserted as Record<string, unknown>));
+      if (!inserted) {
+        return corsRes.status(500).json({ error: 'Internal server error' });
+      }
+      await syncTournamentOpenFullStatus(db, tournamentId);
+      return corsRes.status(201).json(serializeDoc(inserted));
     }
 
     return corsRes.status(405).json({ error: 'Method not allowed' });

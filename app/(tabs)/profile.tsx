@@ -88,7 +88,7 @@ export default function ProfileScreen() {
           <TabScreenHeader title={t('profile.screenTitle')} />
           <View style={styles.centered}>
             <Text style={styles.errorText}>{t('profile.noUserData')}</Text>
-            <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} fullWidth />
+            <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} size="sm" fullWidth />
           </View>
         </View>
       </View>
@@ -127,9 +127,9 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('tabs.myEntries')}
         >
-          <Ionicons name="trophy-outline" size={22} color={Colors.yellow} />
+          <Ionicons name="trophy-outline" size={18} color={Colors.yellow} />
           <Text style={styles.menuRowText}>{t('tabs.myEntries')}</Text>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </Pressable>
 
         <Pressable
@@ -138,9 +138,9 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('profile.myData')}
         >
-          <Ionicons name="id-card-outline" size={22} color={Colors.yellow} />
+          <Ionicons name="id-card-outline" size={18} color={Colors.yellow} />
           <Text style={styles.menuRowText}>{t('profile.myData')}</Text>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </Pressable>
 
         {isAdminUser(user.role) ? (
@@ -150,9 +150,9 @@ export default function ProfileScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('profile.openAdmin')}
           >
-            <Ionicons name="settings-outline" size={22} color={Colors.violet} />
+            <Ionicons name="settings-outline" size={18} color={Colors.violet} />
             <Text style={[styles.menuRowText, styles.menuRowTextAdmin]}>{t('profile.openAdmin')}</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.violetOutline} />
+            <Ionicons name="chevron-forward" size={18} color={Colors.violetOutline} />
           </Pressable>
         ) : null}
 
@@ -160,6 +160,7 @@ export default function ProfileScreen() {
           <Button
             title={t('auth.signOut')}
             onPress={handleSignOut}
+            size="sm"
             fullWidth
             disabled={deletingAccount}
           />
@@ -167,6 +168,7 @@ export default function ProfileScreen() {
             title={deletingAccount ? t('profile.deleteAccountDeleting') : t('profile.deleteAccount')}
             onPress={handleDeleteAccount}
             variant="danger"
+            size="sm"
             fullWidth
             disabled={deletingAccount}
           />
@@ -234,18 +236,18 @@ const styles = StyleSheet.create({
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: Colors.surface,
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
   menuRowText: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.text,
   },

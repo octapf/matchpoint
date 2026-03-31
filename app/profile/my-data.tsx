@@ -153,7 +153,7 @@ export default function MyDataScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>{t('profile.noUserData')}</Text>
-        <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} fullWidth />
+        <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} size="sm" fullWidth />
       </View>
     );
   }
@@ -300,6 +300,7 @@ export default function MyDataScreen() {
             title={t('profile.changePassword')}
             onPress={() => router.push('/profile/change-password' as never)}
             variant="outline"
+            size="sm"
             fullWidth
           />
         ) : null}
@@ -314,7 +315,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    padding: 24,
+    padding: 16,
     paddingBottom: 40,
   },
   centered: {
@@ -329,10 +330,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   field: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   label: {
     fontSize: 14,
@@ -343,8 +344,8 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    padding: 12,
+    fontSize: 15,
     color: Colors.text,
   },
   hint: {
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 14,
     paddingVertical: 4,
   },
   switchRowText: {
@@ -365,12 +366,12 @@ const styles = StyleSheet.create({
   },
   genderRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   genderBtn: {
     flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
@@ -383,7 +384,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   genderBtnText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.text,
   },
@@ -403,7 +404,7 @@ const styles = StyleSheet.create({
   langPill: {
     flex: 1,
     flexBasis: 0,
-    minHeight: 42,
+    minHeight: 34,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -415,7 +416,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   langPillText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.textSecondary,
   },
@@ -426,10 +427,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   savingText: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.textMuted,
   },
   actionsColumn: {

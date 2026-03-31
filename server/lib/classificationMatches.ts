@@ -46,8 +46,7 @@ export async function randomizeTeamGroups(
     .map((d) => (typeof d === 'string' ? d.trim() : ''))
     .filter((d): d is TournamentDivision => d === 'men' || d === 'women' || d === 'mixed');
   const divisionCount = Math.max(1, divisions.length || 1);
-  const groupsPerDivision =
-    divisionCount > 1 && vg.groupCount % divisionCount === 0 ? vg.groupCount / divisionCount : vg.groupCount;
+  const cfg = deriveTournamentGroupConfig(t as { maxTeams?: unknown; groupCount?: unknown; divisions?: unknown });
 
   // Determine division by player genders so we never mix divisions.
   const allPlayerIds = Array.from(
@@ -97,14 +96,19 @@ export async function randomizeTeamGroups(
 
   for (const [slice, sliceTeams] of bySlice.entries()) {
     const shuffled = fisherYates(sliceTeams);
-    const base = slice * groupsPerDivision;
-    // Build fixed slots within this slice: groupsPerDivision groups × teamsPerGroup slots each.
+    const groupsThisSlice = cfg.groupsPerDivision(slice);
+    const groupBase = cfg.divisionGroupOffset(slice);
     const slots: number[] = [];
-    for (let gi = 0; gi < groupsPerDivision; gi++) {
-      for (let k = 0; k < vg.teamsPerGroup; k++) slots.push(base + gi);
+    for (let gi = 0; gi < groupsThisSlice; gi++) {
+      for (let k = 0; k < vg.teamsPerGroup; k++) slots.push(groupBase + gi);
+    }
+    if (shuffled.length > slots.length) {
+      throw new Error(
+        `Too many teams in division slice ${slice} (${shuffled.length}) for group capacity (${slots.length}). Check maxTeams / groupCount vs divisions.`
+      );
     }
     for (let i = 0; i < shuffled.length; i++) {
-      const nextGi = slots[i] ?? base;
+      const nextGi = slots[i]!;
       const doc = shuffled[i] as { _id: unknown; groupIndex?: number };
       const cur = typeof doc.groupIndex === 'number' ? doc.groupIndex : -1;
       if (cur !== nextGi) {
