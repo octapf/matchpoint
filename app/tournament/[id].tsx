@@ -1,10 +1,10 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Share, Alert, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import type { Gender, User, TournamentDivision } from '@/types';
+import type { Gender, User, TournamentDivision, Team, Entry } from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -27,7 +27,6 @@ import {
   useRebalanceTournamentGroups,
   useRandomizeTournamentGroups,
   useStartTournament,
-  useGenerateCategoryMatches,
   useFinalizeClassification,
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
@@ -37,14 +36,12 @@ import { useMatches } from '@/lib/hooks/useMatches';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
-import i18n from '@/lib/i18n';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
-import type { Team, Entry } from '@/types';
+import { useNetInfo } from '@react-native-community/netinfo';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup } from '@/lib/tournamentStandings';
 import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
 import {
-  countGroupsWithTeams,
   maxPlayerSlotsForTournament,
   normalizeGroupCount,
   shouldOfferGroupRebalance,
@@ -85,7 +82,7 @@ function TeamCard({
             disabled={removeTeamPending}
             accessibilityLabel={t('tournamentDetail.removeTeam')}
             color="#f87171"
-            size={18}
+            size={16}
             compact
           />
         ) : null}
@@ -110,7 +107,7 @@ function TeamCard({
                 gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
                 size="xs"
               />
-              <Text style={[styles.playerName, isYou && styles.playerNameHighlight]}>{playerName || t('common.player')}</Text>
+              <Text style={[styles.playerNameSmall, isYou && styles.playerNameHighlight]}>{playerName || t('common.player')}</Text>
             </Pressable>
           ) : (
             <View key={i} style={styles.slot}>
@@ -164,7 +161,7 @@ const TAB_CONFIG: {
 ];
 
 export default function TournamentDetailScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
@@ -175,10 +172,17 @@ export default function TournamentDetailScreen() {
   const userId = user?._id ?? null;
   const storedLanguage = useLanguageStore((s) => s.language);
   const canEnroll = hasValidGender(user?.gender);
+  const netInfo = useNetInfo();
+  const isOffline = (netInfo.isConnected === false || netInfo.isInternetReachable === false) && !shouldUseDevMocks();
+  const requireOnline = useCallback((): boolean => {
+    if (!isOffline) return true;
+    Alert.alert(t('common.error'), t('common.offlineBanner'));
+    return false;
+  }, [isOffline, t]);
 
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: entries = [], isLoading: loadingEntries } = useEntries(id ? { tournamentId: id } : undefined);
+  const { data: entries = [] } = useEntries(id ? { tournamentId: id } : undefined);
   const { data: waitlistInfo } = useWaitlist(id);
   const joinWaitlist = useJoinWaitlist();
   const leaveWaitlist = useLeaveWaitlist();
@@ -192,7 +196,6 @@ export default function TournamentDetailScreen() {
   const rebalanceGroupsMutation = useRebalanceTournamentGroups();
   const randomizeGroupsMutation = useRandomizeTournamentGroups();
   const startTournamentMutation = useStartTournament();
-  const generateCategoryMatchesMutation = useGenerateCategoryMatches();
   const finalizeClassificationMutation = useFinalizeClassification();
 
   const { data: allMatches = [] } = useMatches(id ? { tournamentId: id } : undefined);
@@ -215,7 +218,9 @@ export default function TournamentDetailScreen() {
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
   const hasJoined = entries.some((e) => e.userId === userId);
-  const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
+  const userHasTeam = teams.some(
+    (t) => (t.playerIds ?? []).includes(userId ?? '') && String((t as { tournamentId?: unknown }).tournamentId ?? '') === String(id ?? '')
+  );
   const isLoading = loadingTournament;
   const isError = errorTournament;
 
@@ -235,30 +240,15 @@ export default function TournamentDetailScreen() {
     };
   }, [tournament]);
 
-  const teamsByGroup = useMemo(() => {
-    if (!tournament) return [[], [], [], []] as Team[][];
-    const gc = groupMeta.groupCount;
-    const buckets: Team[][] = Array.from({ length: gc }, () => []);
-    for (const team of teams) {
-      const gi = Math.min(gc - 1, Math.max(0, teamGroupIndex(team)));
-      buckets[gi]!.push(team);
-    }
-    return buckets;
-  }, [tournament, teams, groupMeta.groupCount]);
-
   const offerGroupRebalance = useMemo(
     () => shouldOfferGroupRebalance(teams, groupMeta.groupCount, groupMeta.teamsPerGroup),
     [teams, groupMeta.groupCount, groupMeta.teamsPerGroup]
   );
 
-  const groupsWithTeams = useMemo(
-    () => countGroupsWithTeams(teams, groupMeta.groupCount),
-    [teams, groupMeta.groupCount],
-  );
-
   // Must be declared before any early `return` so hook order stays stable.
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     if (!userId || !id || !tournament) return;
+    if (!requireOnline()) return;
     const organizerIds = tournament.organizerIds ?? [];
     const hasNonOrganizerEntry = entries.some((e) => !organizerIds.includes(e.userId));
     if (hasNonOrganizerEntry) {
@@ -284,9 +274,9 @@ export default function TournamentDetailScreen() {
         },
       ]
     );
-  };
+  }, [deleteTournament, entries, id, requireOnline, t, tournament, userId]);
 
-  const handleShareInvite = () => {
+  const handleShareInvite = useCallback(() => {
     if (!tournament?.inviteLink) return;
     const lang: 'en' | 'es' | 'it' =
       storedLanguage === 'en' || storedLanguage === 'es' || storedLanguage === 'it'
@@ -300,7 +290,7 @@ export default function TournamentDetailScreen() {
       url,
       title: t('tournamentDetail.inviteTitle'),
     }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
-  };
+  }, [i18n.locale, storedLanguage, t, tournament?.inviteLink, tournament?.name]);
 
   const organizerMenuItems = useMemo((): OrganizerMenuItem[] => {
     const list: OrganizerMenuItem[] = [];
@@ -468,7 +458,6 @@ export default function TournamentDetailScreen() {
     deleteTournament.isPending,
     randomizeGroupsMutation,
     startTournamentMutation,
-    generateCategoryMatchesMutation,
     finalizeClassificationMutation,
     classificationMatches,
   ]);
@@ -479,8 +468,6 @@ export default function TournamentDetailScreen() {
   const isCancelled = tournament?.status === 'cancelled';
   const playerCap = maxPlayerSlotsForTournament(tournament?.maxTeams ?? 16);
   const isFull = entries.length >= playerCap;
-  const waitlistPosition = waitlistInfo?.position ?? null;
-  const waitlistCountForStats = waitlistInfo?.count ?? (tournament as { waitlistCount?: number } | undefined)?.waitlistCount ?? 0;
 
   const divisions = (((tournament as { divisions?: unknown } | undefined)?.divisions ?? []) as TournamentDivision[]).filter(Boolean);
   const availableDivisions: DivisionTab[] = (divisions.length ? divisions : ['mixed']) as DivisionTab[];
@@ -550,6 +537,12 @@ export default function TournamentDetailScreen() {
       return true;
     });
   }, [waitlistInfo?.users, userMap, currentDivision]);
+
+  const waitlistPositionForDivision = useMemo(() => {
+    if (!userId) return null;
+    const idx = filteredWaitlist.findIndex((r) => r.userId === userId);
+    return idx >= 0 ? idx + 1 : null;
+  }, [filteredWaitlist, userId]);
 
   const matchCategoryTabs = (() => {
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
@@ -804,6 +797,7 @@ export default function TournamentDetailScreen() {
     if (!id || !userId) return;
     if (!tournamentStarted) return;
     if (!canManageTournament) return;
+    if (!requireOnline()) return;
     if (!swapSourceTeamId) {
       setSwapSourceTeamId(team._id);
       Alert.alert(t('tournamentDetail.reorderTeam'), t('tournamentDetail.swapPickTarget'));
@@ -908,6 +902,7 @@ export default function TournamentDetailScreen() {
 
   const confirmRemovePlayer = (entry: Entry, playerName: string) => {
     if (!userId || !id) return;
+    if (!requireOnline()) return;
     Alert.alert(
       t('tournamentDetail.removePlayer'),
       t('tournamentDetail.removePlayerConfirm', { name: playerName }),
@@ -931,6 +926,7 @@ export default function TournamentDetailScreen() {
 
   const confirmLeave = () => {
     if (!userId || !id) return;
+    if (!requireOnline()) return;
     const ownEntry = entries.find((e) => e.userId === userId);
     if (!ownEntry) return;
     Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
@@ -952,9 +948,14 @@ export default function TournamentDetailScreen() {
 
   const confirmRemoveTeam = (team: Team) => {
     if (!userId || !id) return;
+    if (!requireOnline()) return;
+    const pNames = (team.playerIds ?? [])
+      .map((pid) => (pid ? getPlayerListName(userMap[pid]) : ''))
+      .filter(Boolean)
+      .join(' · ');
     Alert.alert(
       t('tournamentDetail.removeTeam'),
-      t('tournamentDetail.removeTeamConfirm', { name: team.name }),
+      `${t('tournamentDetail.removeTeamConfirm', { name: team.name })}${pNames ? `\n\n${pNames}` : ''}`,
       [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -1018,10 +1019,11 @@ export default function TournamentDetailScreen() {
           {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
           <WaitlistActions
             t={t}
-            show={!hasJoined && canEnroll && !isCancelled && isFull}
-            waitlistPosition={waitlistPosition}
+            show={!hasJoined && canEnroll && !isCancelled && isFull && filteredEntries.length >= playersPerDivisionCap}
+            waitlistPosition={waitlistPositionForDivision}
             onJoin={() => {
               if (!userId || !id) return;
+              if (!requireOnline()) return;
               joinWaitlist.mutate(
                 { tournamentId: id, userId },
                 { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
@@ -1029,6 +1031,7 @@ export default function TournamentDetailScreen() {
             }}
             onLeave={() => {
               if (!userId || !id) return;
+              if (!requireOnline()) return;
               leaveWaitlist.mutate(
                 { tournamentId: id },
                 { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
@@ -1118,7 +1121,16 @@ export default function TournamentDetailScreen() {
                     title={t('tournamentDetail.createTeamFromEntries')}
                     variant="outline"
                     onPress={() => router.push(`/tournament/${id}/team/create-organizer`)}
+                    size="sm"
                     fullWidth
+                  />
+                  <Button
+                    title={t('admin.manageRoster')}
+                    variant="secondary"
+                    onPress={() => router.push(`/admin/tournament/${id}` as never)}
+                    size="sm"
+                    fullWidth
+                    disabled={isOffline}
                   />
                 </View>
               ) : null
@@ -1278,6 +1290,7 @@ export default function TournamentDetailScreen() {
             title={t('tournamentDetail.joinTournament')}
             onPress={() => {
               if (!userId || !id) return;
+              if (!requireOnline()) return;
               createEntry.mutate(
                 { tournamentId: id, userId, lookingForPartner: true },
                 {
@@ -1475,7 +1488,7 @@ const styles = StyleSheet.create({
   tabPanel: { marginBottom: 8, minHeight: 80 },
   tabPanelTight: { marginTop: -10 },
   tabPanelSpaced: { marginTop: 10 },
-  teamsTabCreateRow: { marginBottom: 12 },
+  teamsTabCreateRow: { marginBottom: 8, gap: 8 },
   fixturePlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1615,7 +1628,7 @@ const styles = StyleSheet.create({
   teamCard: {
     backgroundColor: Colors.surface,
     borderRadius: 8,
-    paddingVertical: 5,
+    paddingVertical: 4,
     paddingHorizontal: 10,
     marginBottom: 6,
   },
@@ -1627,7 +1640,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   teamCardHeaderLeft: { flex: 1, minWidth: 0 },
-  teamName: { fontSize: 14, fontWeight: '600', color: Colors.text, lineHeight: 18 },
+  teamName: { fontSize: 13, fontWeight: '700', color: Colors.text, lineHeight: 16 },
   players: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' },
   rebalanceBanner: {
     backgroundColor: Colors.surface,
@@ -1641,6 +1654,7 @@ const styles = StyleSheet.create({
   rebalanceHint: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   player: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   playerName: { fontSize: 12, color: Colors.text, lineHeight: 16 },
+  playerNameSmall: { fontSize: 11, color: Colors.text, lineHeight: 14 },
   playerNameHighlight: { color: Colors.yellow, fontWeight: '600' },
   slot: { paddingVertical: 2, paddingHorizontal: 6, minHeight: 26, justifyContent: 'center', backgroundColor: Colors.surfaceLight, borderRadius: 4 },
   slotText: { fontSize: 11, color: Colors.textMuted },
@@ -1654,8 +1668,9 @@ const styles = StyleSheet.create({
   playerRow: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: 'transparent',
   },
@@ -1670,7 +1685,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  playerRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
+  playerRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
   playerRowRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1679,9 +1694,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   playerRowText: { flex: 1, minWidth: 0 },
-  playerRowName: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  playerRowName: { fontSize: 13, fontWeight: '700', color: Colors.text },
   orgBadge: {
-    fontSize: 11,
+    fontSize: 10,
     color: Colors.yellow,
     fontWeight: '600',
     marginTop: 2,

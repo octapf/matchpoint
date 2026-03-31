@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, Alert } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { IconButton } from '@/components/ui/IconButton';
 import type { Team } from '@/types';
 
 export function GroupsTab({
@@ -72,10 +71,6 @@ export function GroupsTab({
     );
   }
 
-  if (filteredTeams.length === 0) {
-    return <Text style={emptyTextStyle as never}>{t('tournamentDetail.noTeamsYet')}</Text>;
-  }
-
   return (
     <>
       {canManageTournament && (offerGroupRebalance || canReorganizeGroups) ? (
@@ -127,14 +122,7 @@ export function GroupsTab({
         </View>
       ) : null}
 
-      {canReorderTeams && swapSourceTeamId ? (
-        <View style={rebalanceBannerStyle as never}>
-          <Text style={rebalanceHintStyle as never}>
-            {t('tournamentDetail.swapPickTarget')}
-          </Text>
-          <Button title={t('common.cancel')} variant="outline" size="sm" onPress={onCancelSwap} fullWidth />
-        </View>
-      ) : null}
+      {filteredTeams.length === 0 ? <Text style={emptyTextStyle as never}>{t('tournamentDetail.noTeamsYet')}</Text> : null}
 
       {divisionTeamsByGroup.map((groupTeams, gi) => (
         <View key={`g-${gi}`} style={groupBlockStyle as never}>
@@ -145,27 +133,8 @@ export function GroupsTab({
             <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
           ) : null}
           {groupTeams.map((team) => (
-            <View key={team._id} style={{ position: 'relative' }}>
-              {canReorderTeams ? (
-                <View style={{ position: 'absolute', right: 6, top: 6, zIndex: 2 }}>
-                  <IconButton
-                    icon="swap-vertical-outline"
-                    onPress={() => onSwapTeam(team)}
-                    disabled={!!reorderPendingTeamId && reorderPendingTeamId !== team._id}
-                    accessibilityLabel={t('tournamentDetail.reorderTeam')}
-                    compact
-                    size={18}
-                  />
-                </View>
-              ) : null}
-              <View
-                style={[
-                  { borderRadius: 12 },
-                  swapSourceTeamId === team._id ? { borderWidth: 2, borderColor: '#a78bfa' } : null,
-                ] as never}
-              >
-                {renderTeam(team)}
-              </View>
+            <View key={team._id} style={{ borderRadius: 12 } as never}>
+              {renderTeam(team)}
             </View>
           ))}
         </View>

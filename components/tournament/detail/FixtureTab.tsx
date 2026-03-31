@@ -17,7 +17,7 @@ type MatchRow = {
   setsWonA: number;
   setsWonB: number;
   winnerId: string;
-  status?: 'scheduled' | 'completed';
+  status?: 'scheduled' | 'in_progress' | 'completed';
 };
 
 export function FixtureTab({
@@ -82,10 +82,26 @@ export function FixtureTab({
   matchStandingMetaStyle: unknown;
 }) {
   const renderMatchRow = (m: MatchRow) => {
-    const statusLabel = m.status === 'completed' ? t('tournamentDetail.statusCompleted') : t('tournamentDetail.statusScheduled');
-    const statusBg = m.status === 'completed' ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.12)';
-    const statusBorder = m.status === 'completed' ? 'rgba(34,197,94,0.35)' : 'rgba(148,163,184,0.25)';
-    const statusColor = m.status === 'completed' ? '#22c55e' : Colors.textMuted;
+    const statusLabel =
+      m.status === 'completed'
+        ? t('tournamentDetail.statusCompleted')
+        : m.status === 'in_progress'
+          ? t('tournamentDetail.statusInProgress')
+          : t('tournamentDetail.statusScheduled');
+    const statusBg =
+      m.status === 'completed'
+        ? 'rgba(34,197,94,0.15)'
+        : m.status === 'in_progress'
+          ? 'rgba(250,204,21,0.16)'
+          : 'rgba(148,163,184,0.12)';
+    const statusBorder =
+      m.status === 'completed'
+        ? 'rgba(34,197,94,0.35)'
+        : m.status === 'in_progress'
+          ? 'rgba(250,204,21,0.35)'
+          : 'rgba(148,163,184,0.25)';
+    const statusColor =
+      m.status === 'completed' ? '#22c55e' : m.status === 'in_progress' ? Colors.yellow : Colors.textMuted;
 
     const content = (
       <View style={matchRowStyle as never}>
@@ -112,7 +128,13 @@ export function FixtureTab({
               borderColor: statusBorder,
             }}
           >
-            <Text style={{ fontSize: 10, fontWeight: '800', color: statusColor, textTransform: 'uppercase' }}>{statusLabel}</Text>
+            {m.status === 'completed' ? (
+              <Ionicons name="checkmark" size={14} color={statusColor} />
+            ) : m.status === 'in_progress' ? (
+              <Ionicons name="play" size={14} color={statusColor} />
+            ) : (
+              <Text style={{ fontSize: 10, fontWeight: '800', color: statusColor, textTransform: 'uppercase' }}>{statusLabel}</Text>
+            )}
           </View>
 
           {canQuickEditMatches && onOpenMatch ? (

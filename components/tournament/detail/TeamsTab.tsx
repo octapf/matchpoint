@@ -37,6 +37,7 @@ export function TeamsTab({
             title={t('tournamentDetail.createTeam')}
             variant="secondary"
             onPress={onCreateTeam}
+            size="sm"
             fullWidth
           />
         </View>

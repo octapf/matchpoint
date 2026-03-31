@@ -38,3 +38,77 @@ export function useUpdateMatch() {
   });
 }
 
+export function useClaimReferee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
+      tournamentsApi.action(tournamentId, { action: 'claimReferee', matchId: id }) as Promise<Match>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
+export function useStartMatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
+      tournamentsApi.action(tournamentId, { action: 'startMatch', matchId: id }) as Promise<Match>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
+export function useRefereePoint() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      tournamentId,
+      side,
+      delta,
+    }: {
+      id: string;
+      tournamentId: string;
+      side: 'A' | 'B';
+      delta: 1 | -1;
+    }) =>
+      tournamentsApi.action(tournamentId, {
+        action: 'refereePoint',
+        matchId: id,
+        side,
+        delta,
+      }) as Promise<Match>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
+export function useSetServeOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      tournamentId,
+      order,
+      servingPlayerId,
+    }: {
+      id: string;
+      tournamentId: string;
+      order: string[];
+      servingPlayerId?: string;
+    }) =>
+      tournamentsApi.action(tournamentId, {
+        action: 'setServeOrder',
+        matchId: id,
+        order,
+        ...(servingPlayerId ? { servingPlayerId } : null),
+      }) as Promise<Match>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+

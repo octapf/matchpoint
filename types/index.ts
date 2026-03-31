@@ -103,7 +103,7 @@ export interface Tournament {
 
 export type MatchStage = 'classification' | 'category';
 
-export type MatchStatus = 'scheduled' | 'completed';
+export type MatchStatus = 'scheduled' | 'in_progress' | 'completed';
 
 export interface Match {
   _id: string;
@@ -126,6 +126,18 @@ export interface Match {
   winnerId?: string;
   startedAt?: string;
   completedAt?: string;
+  /** When set and status is in_progress, only this referee (or org/admin) can edit score. */
+  refereeUserId?: string;
+  /** Suggested/claimed referee team (must not be playing). */
+  refereeTeamId?: string;
+  /** Global serve order (length 4): A1, B1, A2, B2 by default. */
+  serveOrder?: string[];
+  /** Current server (while match is in progress). */
+  servingPlayerId?: string;
+  /** Current server index in serveOrder (0..3). */
+  serveIndex?: number;
+  /** Duration in seconds (set on completion). */
+  durationSeconds?: number;
   createdAt: string;
   updatedAt: string;
 }
