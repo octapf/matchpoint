@@ -52,7 +52,48 @@
     "feed": "Home",
     "tournaments": "Tornei",
     "myEntries": "Le mie iscrizioni",
+    "notifications": "Inbox",
     "profile": "Profilo"
+  },
+  "notifications": {
+    "inbox": "Inbox",
+    "empty": "Nessuna notifica per ora.",
+    "markAllRead": "Segna tutto come letto",
+    "tournament": "Torneo",
+    "match": "Partita",
+    "team": "Squadra",
+    "tournament.waitlistJoined": {
+      "title": "Sei in lista d'attesa",
+      "body": "Sei entrato in %{tournament}."
+    },
+    "team.created": {
+      "title": "Squadra creata",
+      "body": "Sei entrato in %{team} in %{tournament}."
+    },
+    "team.dissolved": {
+      "title": "Squadra sciolta",
+      "body": "La tua squadra è stata sciolta. Sei tornato in lista d'attesa per %{tournament}."
+    },
+    "match.scheduled": {
+      "title": "Prossima partita",
+      "body": "Prossima partita vs %{opponent}."
+    },
+    "match.started": {
+      "title": "Partita iniziata",
+      "body": "La tua partita vs %{opponent} è live."
+    },
+    "match.ended": {
+      "title": "Partita conclusa",
+      "body": "Risultato vs %{opponent}: %{result}."
+    },
+    "match.refereeAssigned": {
+      "title": "Sei arbitro",
+      "body": "Hai il controllo di una partita in %{tournament}."
+    },
+    "tournament.classified": {
+      "title": "Qualificato",
+      "body": "Ti sei qualificato per %{category} in %{tournament}."
+    }
   },
   "feed": {
     "homeTitle": "HOME",
@@ -469,7 +510,7 @@
     "removePlayerConfirm": "Rimuovere %{name} da questo torneo?",
     "removeTeam": "Sciogli squadra",
     "removeTeamConfirm": "Sciogliere \"%{name}\"? Entrambi i giocatori tornano liberi.",
-    "createTeamFromEntries": "Crea squadra (lista d'attesa)",
+    "createTeamFromEntries": "Crea squadra",
     "organizerCreateTeamHint": "Scegli 2 giocatori in lista d'attesa che non sono ancora in una squadra.",
     "reorderTeam": "Sposta squadra in un altro girone",
     "leaveTournament": "Lascia il torneo",

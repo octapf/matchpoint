@@ -15,6 +15,29 @@ import { I18nProvider, i18n, useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
 
+// Dev-only: prevent a known noisy unhandled rejection from crashing the app
+// when Android's Activity is restarting (dev-client / reload race).
+declare const __DEV__: boolean;
+if (__DEV__ && typeof process !== 'undefined' && typeof process.on === 'function') {
+  const key = '__matchpoint_keepawake_unhandled_rejection_handler__';
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (!g[key]) {
+    g[key] = true;
+    process.on('unhandledRejection', (reason: unknown) => {
+      const msg = reason instanceof Error ? reason.message : String(reason ?? '');
+      if (
+        msg.includes("ExpoKeepAwake.activate") &&
+        (msg.includes('current activity is no longer available') || msg.includes('The current activity is no longer available'))
+      ) {
+        return;
+      }
+      // Keep default behavior: surface other unhandled rejections.
+      // eslint-disable-next-line no-console
+      console.error('Unhandled promise rejection', reason);
+    });
+  }
+}
+
 export {
   // Catch any errors thrown by the Layout component.
   ErrorBoundary,

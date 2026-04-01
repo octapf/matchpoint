@@ -192,6 +192,32 @@ export interface Team {
   updatedAt: string;
 }
 
+export type NotificationType =
+  | 'tournament.waitlistJoined'
+  | 'team.created'
+  | 'team.dissolved'
+  | 'match.scheduled'
+  | 'match.started'
+  | 'match.ended'
+  | 'match.refereeAssigned'
+  | 'tournament.classified';
+
+export interface Notification {
+  _id: string;
+  userId: string;
+  type: NotificationType;
+  /** Translation params for client-side i18n rendering. */
+  params?: Record<string, string | number | boolean>;
+  /** Deep link payload. */
+  data?: {
+    tournamentId?: string;
+    matchId?: string;
+    teamId?: string;
+  } & Record<string, unknown>;
+  readAt?: string | null;
+  createdAt: string;
+}
+
 export type EntryStatus = 'joined' | 'in_team';
 
 export interface Entry {

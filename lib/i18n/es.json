@@ -52,7 +52,48 @@
     "feed": "Inicio",
     "tournaments": "Torneos",
     "myEntries": "Mis inscripciones",
+    "notifications": "Bandeja",
     "profile": "Perfil"
+  },
+  "notifications": {
+    "inbox": "Bandeja",
+    "empty": "Todavía no hay notificaciones.",
+    "markAllRead": "Marcar todo como leído",
+    "tournament": "Torneo",
+    "match": "Partido",
+    "team": "Equipo",
+    "tournament.waitlistJoined": {
+      "title": "Estás en la lista de espera",
+      "body": "Entraste a %{tournament}."
+    },
+    "team.created": {
+      "title": "Equipo creado",
+      "body": "Te uniste a %{team} en %{tournament}."
+    },
+    "team.dissolved": {
+      "title": "Equipo disuelto",
+      "body": "Tu equipo se disolvió. Volviste a la lista de espera de %{tournament}."
+    },
+    "match.scheduled": {
+      "title": "Próximo partido programado",
+      "body": "Próximo partido vs %{opponent}."
+    },
+    "match.started": {
+      "title": "Partido iniciado",
+      "body": "Tu partido vs %{opponent} está en vivo."
+    },
+    "match.ended": {
+      "title": "Partido finalizado",
+      "body": "Resultado vs %{opponent}: %{result}."
+    },
+    "match.refereeAssigned": {
+      "title": "Sos árbitro",
+      "body": "Tenés control de un partido en %{tournament}."
+    },
+    "tournament.classified": {
+      "title": "Clasificado",
+      "body": "Clasificaste a %{category} en %{tournament}."
+    }
   },
   "feed": {
     "homeTitle": "INICIO",
@@ -334,7 +375,7 @@
     "statsWaitlist": "Lista de espera: %{count}",
     "waitlistJoin": "Unirse a la lista de espera",
     "waitlistLeave": "Salir de la lista de espera",
-    "waitlistYouAre": "Eres el n.º %{n} en la lista de espera"
+    "waitlistYouAre": "Nº %{n}"
   },
   "tournamentDetail": {
     "bracketGeneratedAt": "Cuadro generado el",
@@ -469,7 +510,7 @@
     "removePlayerConfirm": "¿Quitar a %{name} de este torneo?",
     "removeTeam": "Disolver equipo",
     "removeTeamConfirm": "¿Disolver \"%{name}\"? Los dos jugadores quedan libres.",
-    "createTeamFromEntries": "Crear equipo (lista de espera)",
+    "createTeamFromEntries": "Crear equipo",
     "organizerCreateTeamHint": "Elegí 2 jugadores en la lista de espera que todavía no estén en un equipo.",
     "reorderTeam": "Mover equipo a otro grupo",
     "leaveTournament": "Salir del torneo",

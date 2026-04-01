@@ -37,7 +37,8 @@ export default function JoinViaLinkScreen() {
   const { data: tournament, isLoading, isError } = useTournamentByToken(token || undefined);
   const tournamentId = tournament?._id;
   const { data: teams = [] } = useTeams(tournamentId ? { tournamentId } : undefined);
-  const { data: waitlistInfo } = useWaitlist(tournamentId);
+  const div = ((tournament as any)?.divisions?.[0] ?? 'mixed') as 'men' | 'women' | 'mixed';
+  const { data: waitlistInfo } = useWaitlist(tournamentId, div);
   const createEntry = useCreateEntry();
 
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));

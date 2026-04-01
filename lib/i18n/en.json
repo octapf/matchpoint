@@ -52,7 +52,48 @@
     "feed": "Feed",
     "tournaments": "Tournaments",
     "myEntries": "My Entries",
+    "notifications": "Inbox",
     "profile": "Profile"
+  },
+  "notifications": {
+    "inbox": "Inbox",
+    "empty": "No notifications yet.",
+    "markAllRead": "Mark all read",
+    "tournament": "Tournament",
+    "match": "Match",
+    "team": "Team",
+    "tournament.waitlistJoined": {
+      "title": "You're on the waiting list",
+      "body": "You entered %{tournament}."
+    },
+    "team.created": {
+      "title": "Team created",
+      "body": "You joined %{team} in %{tournament}."
+    },
+    "team.dissolved": {
+      "title": "Team dissolved",
+      "body": "Your team was dissolved. You're back on the waiting list for %{tournament}."
+    },
+    "match.scheduled": {
+      "title": "Next match scheduled",
+      "body": "Next game vs %{opponent}."
+    },
+    "match.started": {
+      "title": "Match started",
+      "body": "Your match vs %{opponent} is live."
+    },
+    "match.ended": {
+      "title": "Match finished",
+      "body": "Result vs %{opponent}: %{result}."
+    },
+    "match.refereeAssigned": {
+      "title": "You are referee",
+      "body": "You have control of a match in %{tournament}."
+    },
+    "tournament.classified": {
+      "title": "Classified",
+      "body": "You qualified for %{category} in %{tournament}."
+    }
   },
   "feed": {
     "homeTitle": "HOME",
@@ -469,7 +510,7 @@
     "removePlayerConfirm": "Remove %{name} from this tournament?",
     "removeTeam": "Dissolve team",
     "removeTeamConfirm": "Dissolve \"%{name}\"? Both players become free agents.",
-    "createTeamFromEntries": "Create team (waitlist)",
+    "createTeamFromEntries": "Create team",
     "organizerCreateTeamHint": "Pick 2 players on the waiting list who are not yet in a team.",
     "reorderTeam": "Move team to another group",
     "leaveTournament": "Leave tournament",

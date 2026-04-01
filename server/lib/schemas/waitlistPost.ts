@@ -5,6 +5,7 @@ export const waitlistPostSchema = z
   .object({
     tournamentId: z.string().min(1),
     userId: z.string().min(1),
+    division: z.enum(['men', 'women', 'mixed']),
   })
   .superRefine((d, ctx) => {
     if (!ObjectId.isValid(d.tournamentId)) ctx.addIssue({ code: 'custom', path: ['tournamentId'], message: 'Invalid' });

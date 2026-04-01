@@ -147,6 +147,27 @@ export function useFinalizeClassification() {
   });
 }
 
+export function useRemoveTournamentPlayer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      userId,
+      mode,
+    }: {
+      id: string;
+      userId: string;
+      mode: 'removeFromTournament' | 'dissolveToWaitlist';
+    }) => tournamentsApi.action(id, { action: 'removePlayer', userId, mode }),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist'] });
+    },
+  });
+}
+
 export function useDeleteTournament() {
   const queryClient = useQueryClient();
   const router = useRouter();

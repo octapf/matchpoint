@@ -9,6 +9,7 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import type { OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
+import { TournamentOrganizerMenu } from '@/components/tournament/TournamentOrganizerMenu';
 import { config, shouldUseDevMocks } from '@/lib/config';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -28,6 +29,7 @@ import {
   useRandomizeTournamentGroups,
   useStartTournament,
   useFinalizeClassification,
+  useRemoveTournamentPlayer,
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
@@ -228,10 +230,10 @@ const TAB_CONFIG: {
     | 'tournamentDetail.tabWaitingList'
     | 'tournamentDetail.tabFixture';
 }[] = [
+  { id: 'waitinglist', icon: 'time-outline', labelKey: 'tournamentDetail.tabWaitingList' },
   { id: 'players', icon: 'people-outline', labelKey: 'tournamentDetail.tabPlayers' },
   { id: 'teams', icon: 'shield-outline', labelKey: 'tournamentDetail.tabTeams' },
   { id: 'groups', icon: 'grid-outline', labelKey: 'tournamentDetail.tabGroups' },
-  { id: 'waitinglist', icon: 'time-outline', labelKey: 'tournamentDetail.tabWaitingList' },
   { id: 'fixture', icon: 'volleyball', labelKey: 'tournamentDetail.tabFixture' },
 ];
 
@@ -264,7 +266,6 @@ export default function TournamentDetailScreen() {
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: entries = [] } = useEntries(id ? { tournamentId: id, inTeamOnly: true } : undefined);
-  const { data: waitlistInfo } = useWaitlist(id);
   const joinWaitlist = useJoinWaitlist();
   const leaveWaitlist = useLeaveWaitlist();
 
@@ -278,6 +279,7 @@ export default function TournamentDetailScreen() {
   const randomizeGroupsMutation = useRandomizeTournamentGroups();
   const startTournamentMutation = useStartTournament();
   const finalizeClassificationMutation = useFinalizeClassification();
+  const removeTournamentPlayer = useRemoveTournamentPlayer();
 
   const { data: allMatches = [] } = useMatches(
     id ? { tournamentId: id } : undefined,
@@ -293,27 +295,6 @@ export default function TournamentDetailScreen() {
   );
 
   const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
-
-  const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
-  const entryUserIds = entries.map((e) => e.userId);
-  const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
-  const combinedUserIds = [
-    ...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds, ...(tournament?.organizerIds ?? [])]),
-  ];
-  const { data: users = [] } = useUsers(combinedUserIds);
-  const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
-
-  const userHasTeam = teams.some(
-    (t) => (t.playerIds ?? []).includes(userId ?? '') && String((t as { tournamentId?: unknown }).tournamentId ?? '') === String(id ?? '')
-  );
-  const onWaitlist = useMemo(
-    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
-    [waitlistInfo?.users, userId]
-  );
-  /** On waiting list or already on a team (registered for the tournament flow). */
-  const isRegistered = onWaitlist || userHasTeam;
-  const isLoading = loadingTournament;
-  const isError = errorTournament;
 
   const navigation = useNavigation();
   useLayoutEffect(() => {
@@ -569,6 +550,7 @@ export default function TournamentDetailScreen() {
   const currentDivision: DivisionTab = availableDivisions.includes(activeDivision)
     ? activeDivision
     : availableDivisions[0]!;
+  const { data: waitlistInfo } = useWaitlist(id, currentDivision);
   const divisionCount = Math.max(1, availableDivisions.length);
   const teamsPerDivisionCap = Math.max(2, Math.floor(((tournament as { maxTeams?: number } | undefined)?.maxTeams ?? 16) / divisionCount));
   const playersPerDivisionCap = maxPlayerSlotsForTournament(teamsPerDivisionCap);
@@ -581,6 +563,27 @@ export default function TournamentDetailScreen() {
       : totalGroups;
   const divisionIndex = Math.max(0, availableDivisions.indexOf(currentDivision));
   const divisionGroupOffset = divisionIndex * groupsPerDivisionCap;
+
+  const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
+  const entryUserIds = entries.map((e) => e.userId);
+  const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
+  const combinedUserIds = [
+    ...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds, ...(tournament?.organizerIds ?? [])]),
+  ];
+  const { data: users = [] } = useUsers(combinedUserIds);
+  const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
+
+  const userHasTeam = teams.some(
+    (t) => (t.playerIds ?? []).includes(userId ?? '') && String((t as { tournamentId?: unknown }).tournamentId ?? '') === String(id ?? '')
+  );
+  const onWaitlist = useMemo(
+    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
+    [waitlistInfo?.users, userId]
+  );
+  /** On waiting list or already on a team (registered for the tournament flow). */
+  const isRegistered = onWaitlist || userHasTeam;
+  const isLoading = loadingTournament;
+  const isError = errorTournament;
 
   const teamDivisionById = useMemo(() => {
     const map: Record<string, DivisionTab> = {};
@@ -624,14 +627,7 @@ export default function TournamentDetailScreen() {
   }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset]);
 
   const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
-  const filteredWaitlist = useMemo(() => {
-    return (waitlistInfo?.users ?? []).filter((row) => {
-      const g = userMap[row.userId]?.gender;
-      if (currentDivision === 'men') return g === 'male' || g == null;
-      if (currentDivision === 'women') return g === 'female' || g == null;
-      return true;
-    });
-  }, [waitlistInfo?.users, userMap, currentDivision]);
+  const filteredWaitlist = useMemo(() => waitlistInfo?.users ?? [], [waitlistInfo?.users]);
 
   const matchCategoryTabs = (() => {
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
@@ -1357,12 +1353,30 @@ export default function TournamentDetailScreen() {
           text: t('common.delete'),
           style: 'destructive',
           onPress: () =>
-            deleteEntry.mutate(
-              { id: entry._id, tournamentId: id },
-              {
-                onError: (err: unknown) =>
-                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-              }
+            removeTournamentPlayer.mutate(
+              { id, userId: entry.userId, mode: 'dissolveToWaitlist' },
+              { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+            ),
+        },
+      ]
+    );
+  };
+
+  const confirmRemoveWaitlistPlayer = (targetUserId: string, playerName: string) => {
+    if (!userId || !id) return;
+    if (!requireOnline()) return;
+    Alert.alert(
+      t('tournamentDetail.removePlayer'),
+      t('tournamentDetail.removePlayerConfirm', { name: playerName }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () =>
+            removeTournamentPlayer.mutate(
+              { id, userId: targetUserId, mode: 'removeFromTournament' },
+              { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
             ),
         },
       ]
@@ -1381,7 +1395,7 @@ export default function TournamentDetailScreen() {
           style: 'destructive',
           onPress: () =>
             leaveWaitlist.mutate(
-              { tournamentId: id },
+              { tournamentId: id, division: currentDivision },
               { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
             ),
         },
@@ -1460,7 +1474,8 @@ export default function TournamentDetailScreen() {
             tournament={tournament}
             dateLabel={dateLabel}
             isCancelled={isCancelled}
-            canManageTournament={canManageTournament}
+            canManageTournament={false}
+            showMeta={false}
             organizerMenuItems={organizerMenuItems}
             headerStyle={styles.header}
             cancelledBannerStyle={styles.cancelledBanner}
@@ -1477,36 +1492,75 @@ export default function TournamentDetailScreen() {
             headerTopActionsStyle={styles.headerTopActions}
           />
 
-          {/* Waitlist join/leave lives under tournament info (not inside tabs). */}
-          {!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
-            <Text style={styles.waitlistExplainer}>{t('tournamentDetail.waitlistExplainer')}</Text>
+          {/* Tournament configuration */}
+          {tournament ? (
+            <View style={styles.tournamentConfigCard}>
+              {canManageTournament ? (
+                <View style={styles.tournamentConfigMenuAbs}>
+                  <TournamentOrganizerMenu
+                    menuLabel={t('tournamentDetail.actionsMenu')}
+                    items={organizerMenuItems}
+                  />
+                </View>
+              ) : null}
+              <View style={styles.tournamentConfigRow}>
+                <Ionicons name="location-outline" size={18} color={Colors.violet} />
+                <Text style={styles.tournamentConfigText}>{tournament.location?.trim() || '—'}</Text>
+              </View>
+              <View style={styles.tournamentConfigRow}>
+                <Ionicons name="calendar-outline" size={18} color={Colors.violet} />
+                <Text style={styles.tournamentConfigText}>{dateLabel || '—'}</Text>
+              </View>
+              <View style={styles.tournamentConfigRow}>
+                <Ionicons name="trophy-outline" size={18} color={Colors.violet} />
+                <Text style={styles.tournamentConfigText}>
+                  {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21}
+                </Text>
+              </View>
+              <View style={styles.tournamentConfigRow}>
+                <Ionicons name="layers-outline" size={18} color={Colors.violet} />
+                <Text style={styles.tournamentConfigText}>
+                  {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
+                </Text>
+              </View>
+            </View>
           ) : null}
-          <WaitlistActions
-            t={t}
-            show={!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer}
-            waitlistPosition={waitlistInfo?.position ?? null}
-            onJoin={() => {
-              if (!userId || !id) return;
-              if (!requireOnline()) return;
-              joinWaitlist.mutate(
-                { tournamentId: id, userId },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
-              );
-            }}
-            onLeave={() => {
-              if (!userId || !id) return;
-              if (!requireOnline()) return;
-              leaveWaitlist.mutate(
-                { tournamentId: id },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-              );
-            }}
-            joinPending={joinWaitlist.isPending}
-            leavePending={leaveWaitlist.isPending}
-            wrapStyle={styles.waitlistActions}
-            waitlistRowStyle={styles.waitlistRow}
-            waitlistPositionTextStyle={styles.waitlistPositionText}
-          />
+
+          {/* Single CTA below the panel: Join or Leave for the selected division */}
+          {!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
+            <>
+              {onWaitlist ? (
+                <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
+              ) : null}
+              <WaitlistActions
+                t={t}
+                show={true}
+                waitlistPosition={waitlistInfo?.position ?? null}
+                showPositionText={false}
+                onJoin={() => {
+                  if (!userId || !id) return;
+                  if (!requireOnline()) return;
+                  joinWaitlist.mutate(
+                    { tournamentId: id, division: currentDivision, userId },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
+                  );
+                }}
+                onLeave={() => {
+                  if (!userId || !id) return;
+                  if (!requireOnline()) return;
+                  leaveWaitlist.mutate(
+                    { tournamentId: id, division: currentDivision },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  );
+                }}
+                joinPending={joinWaitlist.isPending}
+                leavePending={leaveWaitlist.isPending}
+                wrapStyle={styles.waitlistActions}
+                waitlistRowStyle={styles.waitlistRow}
+                waitlistPositionTextStyle={styles.waitlistPositionText}
+              />
+            </>
+          ) : null}
 
           {canManageTournament && id ? (
             <View style={styles.organizerTournamentActions}>
@@ -1591,15 +1645,15 @@ export default function TournamentDetailScreen() {
         {activeTab === 'teams' ? (
           <TeamsTab
             t={t}
-            canCreateTeam={!userHasTeam && onWaitlist && canEnroll && !!id}
-            onCreateTeam={() => router.push(`/tournament/${id}/team/create`)}
+            canCreateTeam={!canManageTournament && !userHasTeam && onWaitlist && canEnroll && !!id}
+            onCreateTeam={() => router.push(`/tournament/${id}/team/create?division=${currentDivision}`)}
             organizerActions={
               canManageTournament && id ? (
                 <View style={styles.teamsTabCreateRow}>
                   <Button
                     title={t('tournamentDetail.createTeamFromEntries')}
                     variant="outline"
-                    onPress={() => router.push(`/tournament/${id}/team/create-organizer`)}
+                    onPress={() => router.push(`/tournament/${id}/team/create-organizer?division=${currentDivision}`)}
                     size="sm"
                     fullWidth
                   />
@@ -1701,6 +1755,9 @@ export default function TournamentDetailScreen() {
             filteredWaitlist={filteredWaitlist}
             userMap={userMap}
             onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
+            canManageTournament={canManageTournament}
+            mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
+            onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
             playerRowMainStyle={styles.playerRowMain}
@@ -1767,9 +1824,6 @@ export default function TournamentDetailScreen() {
         {!canEnroll && (
           <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
         )}
-        {onWaitlist && !userHasTeam && canEnroll && !isCancelled ? (
-          <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
-        ) : null}
         {userHasTeam && (
           <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
         )}
@@ -1818,7 +1872,7 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   centered: { justifyContent: 'center', padding: 24 },
   skeletonBlock: { marginBottom: 24 },
-  header: { marginBottom: 24 },
+  header: { marginBottom: 0 },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2245,9 +2299,40 @@ const styles = StyleSheet.create({
   joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
   waitlistExplainer: { fontSize: 13, color: Colors.textMuted, lineHeight: 18, marginBottom: 12 },
-  waitlistOnWaitlistHint: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
+  waitlistOnWaitlistHint: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 8 },
   waitlistRow: { gap: 10 },
   waitlistPositionText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
+  tournamentConfigCard: {
+    position: 'relative',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  tournamentConfigMenuAbs: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    zIndex: 2,
+  },
+  tournamentConfigRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    paddingRight: 34,
+  },
+  tournamentConfigText: {
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 18,
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
   playerRow: {
     backgroundColor: Colors.surface,
     borderRadius: 12,

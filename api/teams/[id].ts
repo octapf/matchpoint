@@ -8,6 +8,7 @@ import { isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { countTeamsInGroup } from '../../server/lib/tournamentGroupDb';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
+import { notifyMany } from '../../server/lib/notify';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -169,6 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const now = new Date().toISOString();
       const playerIds = ((team as { playerIds?: string[] }).playerIds ?? []).filter(Boolean);
+      const division = String((team as { division?: unknown }).division ?? 'mixed');
       const client = await getMongoClient();
       const session = client.startSession();
       try {
@@ -183,9 +185,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             throw new Error('TEAM_NOT_FOUND');
           }
           for (const uid of playerIds) {
-            const dup = await wc.findOne({ tournamentId, userId: uid }, { session });
+            const dup = await wc.findOne({ tournamentId, division, userId: uid }, { session });
             if (!dup) {
-              await wc.insertOne({ tournamentId, userId: uid, createdAt: now, updatedAt: now }, { session });
+              await wc.insertOne({ tournamentId, division, userId: uid, createdAt: now, updatedAt: now }, { session });
             }
           }
         });
@@ -198,6 +200,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await session.endSession();
       }
       await syncTournamentOpenFullStatus(db, tournamentId);
+
+      // In-app notifications: team dissolved (both players back to waitlist).
+      const tournamentName = String((tournament as { name?: unknown }).name ?? '');
+      await notifyMany(db, playerIds, {
+        type: 'team.dissolved',
+        params: { tournament: tournamentName || 'Tournament' },
+        data: { tournamentId },
+        dedupeKey: `team.dissolved:${tournamentId}:${id}`,
+      });
+
       return corsRes.status(204).end();
     }
 

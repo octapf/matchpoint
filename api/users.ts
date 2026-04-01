@@ -46,6 +46,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const admin = isUserAdmin(actor as { role?: string; email?: string });
 
       const { id, email, ids } = req.query;
+      const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
+
+      if (type === 'notifications') {
+        const limitRaw = typeof req.query.limit === 'string' ? req.query.limit : '';
+        const limit = Math.max(1, Math.min(50, Math.floor(Number(limitRaw || 30) || 30)));
+        const cursor = typeof req.query.cursor === 'string' ? req.query.cursor.trim() : '';
+
+        const ncol = db.collection('notifications');
+        const filter: Record<string, unknown> = { userId: actorId };
+        if (cursor) {
+          // cursor is an ISO timestamp (createdAt) for pagination
+          filter.createdAt = { $lt: cursor };
+        }
+        const rows = await ncol
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .toArray();
+        return corsRes.status(200).json(
+          rows.map((d) => {
+            const plain = d as Record<string, unknown>;
+            const { _id, ...rest } = plain;
+            return { _id: (_id as ObjectId).toString(), ...rest };
+          })
+        );
+      }
 
       if (ids && typeof ids === 'string') {
         const idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
@@ -85,6 +111,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       return corsRes.status(400).json({ error: 'Provide id, email, or ids' });
+    }
+
+    if (req.method === 'POST') {
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      if (!ObjectId.isValid(actorId)) {
+        return corsRes.status(401).json({ error: 'Invalid session' });
+      }
+      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const action = typeof raw?.action === 'string' ? raw.action.trim() : '';
+      const ncol = db.collection('notifications');
+      const now = new Date().toISOString();
+
+      if (action === 'notifications.markRead') {
+        const ids: string[] = Array.isArray(raw?.ids)
+          ? (raw.ids as unknown[]).map((x) => String(x)).filter(Boolean)
+          : [];
+        const valid = ids.filter((s: string) => ObjectId.isValid(s));
+        if (valid.length === 0) return corsRes.status(200).json({ ok: true, updated: 0 });
+        const r = await ncol.updateMany(
+          { _id: { $in: valid.map((s: string) => new ObjectId(s)) }, userId: actorId, readAt: null },
+          { $set: { readAt: now } }
+        );
+        return corsRes.status(200).json({ ok: true, updated: r.modifiedCount ?? 0 });
+      }
+
+      if (action === 'notifications.markAllRead') {
+        const r = await ncol.updateMany({ userId: actorId, readAt: null }, { $set: { readAt: now } });
+        return corsRes.status(200).json({ ok: true, updated: r.modifiedCount ?? 0 });
+      }
+
+      return corsRes.status(400).json({ error: 'Invalid action' });
     }
 
     if (req.method === 'DELETE') {

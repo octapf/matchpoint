@@ -6,6 +6,7 @@ export function WaitlistActions({
   t,
   show,
   waitlistPosition,
+  showPositionText = true,
   onJoin,
   onLeave,
   joinPending,
@@ -17,6 +18,7 @@ export function WaitlistActions({
   t: (key: string, options?: Record<string, string | number>) => string;
   show: boolean;
   waitlistPosition: number | null;
+  showPositionText?: boolean;
   onJoin: () => void;
   onLeave: () => void;
   joinPending: boolean;
@@ -38,7 +40,9 @@ export function WaitlistActions({
         />
       ) : (
         <View style={waitlistRowStyle as never}>
-          <Text style={waitlistPositionTextStyle as never}>{t('tournaments.waitlistYouAre', { n: waitlistPosition })}</Text>
+          {showPositionText ? (
+            <Text style={waitlistPositionTextStyle as never}>{t('tournaments.waitlistYouAre', { n: waitlistPosition })}</Text>
+          ) : null}
           <Button
             title={t('tournaments.waitlistLeave')}
             variant="outline"

@@ -5,6 +5,7 @@ import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { entriesPostSchema } from '../server/lib/schemas/entriesPost';
 import { parseLimitOffset } from '../server/lib/pagination';
+import { notifyOne } from '../server/lib/notify';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -66,6 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournament) {
         return corsRes.status(404).json({ error: 'Tournament not found' });
       }
+      const tournamentName = String((tournament as { name?: unknown }).name ?? '');
       const tdoc = tournament as { status?: string; organizerOnlyIds?: string[] };
       if (tdoc.status === 'cancelled') {
         return corsRes.status(400).json({ error: 'Tournament is cancelled' });
@@ -90,11 +92,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const now = new Date().toISOString();
       await waitlistCol.insertOne({
         tournamentId,
+        division: 'mixed',
         userId,
         createdAt: now,
         updatedAt: now,
       });
       await col.deleteMany({ tournamentId, userId, teamId: null });
+
+      // In-app notification.
+      await notifyOne(db, {
+        userId,
+        type: 'tournament.waitlistJoined',
+        params: { tournament: tournamentName || 'Tournament' },
+        data: { tournamentId },
+        dedupeKey: `tournament.waitlistJoined:${tournamentId}`,
+      });
       return corsRes.status(201).json({
         ok: true,
         waitlist: true,

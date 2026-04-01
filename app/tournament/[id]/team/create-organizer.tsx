@@ -12,17 +12,19 @@ import { useUserStore } from '@/store/useUserStore';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
 import { useTranslation } from '@/lib/i18n';
+import type { TournamentDivision } from '@/types';
 
 export default function CreateTeamOrganizerScreen() {
   const { t } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, division } = useLocalSearchParams<{ id: string; division?: string }>();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
 
   const { data: tournament } = useTournament(id);
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
-  const { data: waitlistInfo } = useWaitlist(id);
+  const div = division === 'men' || division === 'women' || division === 'mixed' ? division : 'mixed';
+  const { data: waitlistInfo } = useWaitlist(id, div as TournamentDivision);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
   const createTeam = useCreateTeam();
 

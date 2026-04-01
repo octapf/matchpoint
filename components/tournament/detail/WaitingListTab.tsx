@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Avatar } from '@/components/ui/Avatar';
+import { IconButton } from '@/components/ui/IconButton';
 import { getPlayerListName } from '@/lib/utils/userDisplay';
 import type { User } from '@/types';
 
@@ -10,6 +11,9 @@ export function WaitingListTab({
   filteredWaitlist,
   userMap,
   onOpenProfile,
+  canManageTournament,
+  mutationBusy,
+  onRemoveWaitlistPlayer,
   emptyTextStyle,
   playerRowStyle,
   playerRowMainStyle,
@@ -21,6 +25,9 @@ export function WaitingListTab({
   filteredWaitlist: { userId: string }[];
   userMap: Record<string, User>;
   onOpenProfile: (userId: string) => void;
+  canManageTournament: boolean;
+  mutationBusy: boolean;
+  onRemoveWaitlistPlayer: (userId: string, playerName: string) => void;
   emptyTextStyle: unknown;
   playerRowStyle: unknown;
   playerRowMainStyle: unknown;
@@ -40,7 +47,7 @@ export function WaitingListTab({
         const u = userMap[row.userId];
         const playerName = getPlayerListName(u) || t('common.player');
         return (
-          <View style={playerRowStyle as never}>
+          <View style={[playerRowStyle as never, { position: 'relative' } as never]}>
             <Pressable
               style={playerRowMainStyle as never}
               onPress={() => onOpenProfile(row.userId)}
@@ -58,6 +65,18 @@ export function WaitingListTab({
                 <Text style={waitlistRankTextStyle as never}>{t('tournaments.waitlistYouAre', { n: idx + 1 })}</Text>
               </View>
             </Pressable>
+            {canManageTournament ? (
+              <View style={{ position: 'absolute', top: 4, right: 4, zIndex: 2 } as never}>
+                <IconButton
+                  icon="trash-outline"
+                  onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
+                  disabled={mutationBusy}
+                  accessibilityLabel={t('tournamentDetail.removePlayer')}
+                  color="#f87171"
+                  compact
+                />
+              </View>
+            ) : null}
           </View>
         );
       }}

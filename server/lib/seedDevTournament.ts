@@ -411,12 +411,21 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     await entries.insertMany(entryDocs);
   }
 
-  const waitlistDocs = waitingUserIds.map((playerId) => ({
-    tournamentId,
-    userId: playerId,
-    createdAt: now,
-    updatedAt: now,
-  }));
+  // Seed waitlist: one row per allowed division.
+  // male -> men + mixed, female -> women + mixed
+  const waitlistDocs = waitingUserIds.flatMap((playerId) => {
+    const idx = userIds.indexOf(playerId);
+    const gender = idx >= 0 ? PLAYERS[idx]?.gender : undefined;
+    const divs: Array<'men' | 'women' | 'mixed'> =
+      gender === 'male' ? ['men', 'mixed'] : gender === 'female' ? ['women', 'mixed'] : (['mixed'] as const);
+    return divs.map((division) => ({
+      tournamentId,
+      division,
+      userId: playerId,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  });
   if (waitlistDocs.length) {
     await waitlist.insertMany(waitlistDocs);
   }

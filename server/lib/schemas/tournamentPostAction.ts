@@ -9,6 +9,7 @@ export const tournamentPostActionSchema = z
       'start',
       'generateCategoryMatches',
       'finalizeClassification',
+      'removePlayer',
       'updateMatch',
       'claimReferee',
       'refereeHeartbeat',

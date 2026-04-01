@@ -139,21 +139,21 @@ export const entriesApi = {
 };
 
 export const waitlistApi = {
-  get: (tournamentId: string) =>
+  get: (tournamentId: string, division: 'men' | 'women' | 'mixed') =>
     apiRequest<{ count: number; position: number | null; users: { userId: string; createdAt: string }[] }>('/api/waitlist', {
-      params: { tournamentId },
+      params: { tournamentId, division },
     }),
 
-  join: (tournamentId: string, userId: string) =>
+  join: (tournamentId: string, division: 'men' | 'women' | 'mixed', userId: string) =>
     apiRequest<unknown>('/api/waitlist', {
       method: 'POST',
-      body: JSON.stringify({ tournamentId, userId }),
+      body: JSON.stringify({ tournamentId, division, userId }),
     }),
 
-  leave: (tournamentId: string) =>
+  leave: (tournamentId: string, division: 'men' | 'women' | 'mixed') =>
     apiRequest<void>('/api/waitlist', {
       method: 'DELETE',
-      params: { tournamentId },
+      params: { tournamentId, division },
     }),
 };
 
@@ -245,6 +245,28 @@ export const usersApi = {
 
   deleteOne: (id: string) =>
     apiRequest<void>(`/api/users?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // Notifications (in-app inbox)
+  notificationsList: (params?: { limit?: string; cursor?: string }) =>
+    apiRequest<unknown[]>('/api/users', {
+      params: {
+        type: 'notifications',
+        ...(params?.limit ? { limit: params.limit } : {}),
+        ...(params?.cursor ? { cursor: params.cursor } : {}),
+      },
+    }),
+
+  notificationsMarkRead: (ids: string[]) =>
+    apiRequest<unknown>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'notifications.markRead', ids }),
+    }),
+
+  notificationsMarkAllRead: () =>
+    apiRequest<unknown>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'notifications.markAllRead' }),
+    }),
 };
 
 /** Dev seed users (admin GET devSeedInfo / POST devSeed). */

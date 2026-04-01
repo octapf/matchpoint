@@ -34,7 +34,7 @@ export function TeamsTab({
       {canCreateTeam ? (
         <View style={teamsTabCreateRowStyle as never}>
           <Button
-            title={t('tournamentDetail.createTeam')}
+            title={t('tournamentDetail.createTeamFromEntries')}
             variant="secondary"
             onPress={onCreateTeam}
             size="sm"

@@ -20,6 +20,7 @@ import type { TournamentDivision } from '../../types';
 import { assertOrganizersCoverAllDivisions } from '../../server/lib/tournamentOrganizerDivisionCoverage';
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
 import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentPostAction';
+import { notifyMany, notifyOne } from '../../server/lib/notify';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -284,11 +285,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return corsRes.status(400).json({ error: 'Classification is not completed', remaining });
           }
           const result = await actionFinalizeClassification(db, id);
+
+          // Notify players about classification category (best-effort, de-duped).
+          const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1, classificationSnapshot: 1 } });
+          const tournamentName = String((tdoc as any)?.name ?? '');
+          const snap = (tdoc as any)?.classificationSnapshot as { teamCategory?: Record<string, string> } | undefined;
+          const teamCategory = snap?.teamCategory ?? {};
+          const teamIds = Object.keys(teamCategory).filter(Boolean);
+          if (teamIds.length) {
+            const teams = await db
+              .collection('teams')
+              .find({ tournamentId: id, _id: { $in: teamIds.map((s) => new ObjectId(s)) } })
+              .project({ _id: 1, playerIds: 1 })
+              .toArray();
+            const teamPlayers = new Map<string, string[]>();
+            for (const tm of teams as any[]) {
+              teamPlayers.set(String(tm._id), Array.isArray(tm.playerIds) ? tm.playerIds.map(String).filter(Boolean) : []);
+            }
+            await Promise.all(
+              teamIds.map(async (tid) => {
+                const cat = String((teamCategory as any)[tid] ?? '');
+                const pids = teamPlayers.get(tid) ?? [];
+                if (!cat || pids.length === 0) return;
+                await notifyMany(db, pids, {
+                  type: 'tournament.classified',
+                  params: { tournament: tournamentName || 'Tournament', category: cat },
+                  data: { tournamentId: id, teamId: tid },
+                  dedupeKey: `tournament.classified:${id}:${tid}:${cat}`,
+                });
+              })
+            );
+          }
           return corsRes.status(200).json(result);
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : 'Could not finalize classification';
           return corsRes.status(400).json({ error: msg });
         }
+      }
+
+      if (action === 'removePlayer') {
+        const uid = typeof body?.userId === 'string' ? body.userId.trim() : '';
+        if (!uid || !ObjectId.isValid(uid)) {
+          return corsRes.status(400).json({ error: 'Invalid userId' });
+        }
+        const mode = body?.mode === 'dissolveToWaitlist' || body?.mode === 'removeFromTournament' ? body.mode : 'removeFromTournament';
+        // organizer/admin only (enforced by action guard above)
+        await removePlayerFromTournament(db, id, uid, { leaveTournament: mode === 'removeFromTournament' });
+        await syncTournamentOpenFullStatus(db, id);
+        return corsRes.status(200).json({ ok: true });
       }
 
       if (action === 'updateMatch') {
@@ -303,6 +347,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
+        const prevScheduledAt = String((match as any).scheduledAt ?? '');
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
 
         // Permission:
@@ -433,6 +478,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .collection('matches')
           .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
         if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+
+        // Notifications: schedule changes + match completion.
+        const updated = result as any;
+        const tournamentName = String((await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } }))?.name ?? '');
+        const teamA = await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } });
+        const teamB = await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } });
+        const aPlayers: string[] = Array.isArray((teamA as any)?.playerIds) ? (teamA as any).playerIds.map(String).filter(Boolean) : [];
+        const bPlayers: string[] = Array.isArray((teamB as any)?.playerIds) ? (teamB as any).playerIds.map(String).filter(Boolean) : [];
+        const aName = String((teamA as any)?.name ?? 'Team A');
+        const bName = String((teamB as any)?.name ?? 'Team B');
+
+        const nextScheduledAt = String((updated as any).scheduledAt ?? '');
+        if (nextScheduledAt && nextScheduledAt !== prevScheduledAt) {
+          await notifyMany(db, aPlayers, {
+            type: 'match.scheduled',
+            params: { opponent: bName },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.scheduled:${matchId}:${nextScheduledAt}:A`,
+          });
+          await notifyMany(db, bPlayers, {
+            type: 'match.scheduled',
+            params: { opponent: aName },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.scheduled:${matchId}:${nextScheduledAt}:B`,
+          });
+        }
+
+        const prevStatus = matchStatus;
+        const nextStatusDoc = String((updated as any).status ?? '');
+        if (prevStatus !== 'completed' && nextStatusDoc === 'completed') {
+          const winnerId = String((updated as any).winnerId ?? '');
+          const aResult = winnerId === teamAId ? 'W' : winnerId === teamBId ? 'L' : '';
+          const bResult = winnerId === teamBId ? 'W' : winnerId === teamAId ? 'L' : '';
+          await notifyMany(db, aPlayers, {
+            type: 'match.ended',
+            params: { opponent: bName, result: aResult || '-' },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.ended:${matchId}`,
+          });
+          await notifyMany(db, bPlayers, {
+            type: 'match.ended',
+            params: { opponent: aName, result: bResult || '-' },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.ended:${matchId}:b`,
+          });
+        }
+
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -629,6 +721,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { returnDocument: 'after' }
         );
         if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+        // Notify referee that they have control.
+        const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } });
+        const tournamentName = String((tdoc as any)?.name ?? '');
+        await notifyOne(db, {
+          userId: actingUserId,
+          type: 'match.refereeAssigned',
+          params: { tournament: tournamentName || 'Tournament' },
+          data: { tournamentId: id, matchId },
+          dedupeKey: `match.refereeAssigned:${matchId}:${actingUserId}`,
+        });
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -725,6 +827,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { returnDocument: 'after' }
         );
         if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+
+        // Notifications: match started (both teams) + referee assigned (organizer).
+        const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } });
+        const tournamentName = String((tdoc as any)?.name ?? '');
+        const ta = await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } });
+        const tb = await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } });
+        const aPlayers: string[] = Array.isArray((ta as any)?.playerIds) ? (ta as any).playerIds.map(String).filter(Boolean) : [];
+        const bPlayers: string[] = Array.isArray((tb as any)?.playerIds) ? (tb as any).playerIds.map(String).filter(Boolean) : [];
+        const aName = String((ta as any)?.name ?? 'Team A');
+        const bName = String((tb as any)?.name ?? 'Team B');
+        await notifyMany(db, aPlayers, {
+          type: 'match.started',
+          params: { opponent: bName },
+          data: { tournamentId: id, matchId },
+          dedupeKey: `match.started:${matchId}:A`,
+        });
+        await notifyMany(db, bPlayers, {
+          type: 'match.started',
+          params: { opponent: aName },
+          data: { tournamentId: id, matchId },
+          dedupeKey: `match.started:${matchId}:B`,
+        });
+        await notifyOne(db, {
+          userId: actingUserId,
+          type: 'match.refereeAssigned',
+          params: { tournament: tournamentName || 'Tournament' },
+          data: { tournamentId: id, matchId },
+          dedupeKey: `match.refereeAssigned:${matchId}:${actingUserId}`,
+        });
+
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -894,6 +1026,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!result) {
           console.log('[tournaments.action] refereePoint concurrent_or_missing', { tournamentId: id, actingUserId, matchId });
           return corsRes.status(409).json({ error: 'Concurrent score update, retry' });
+        }
+        // Notification: match ended if auto-completed.
+        if (update.status === 'completed') {
+          const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } });
+          const ta = await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } });
+          const tb = await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } });
+          const aPlayers: string[] = Array.isArray((ta as any)?.playerIds) ? (ta as any).playerIds.map(String).filter(Boolean) : [];
+          const bPlayers: string[] = Array.isArray((tb as any)?.playerIds) ? (tb as any).playerIds.map(String).filter(Boolean) : [];
+          const aName = String((ta as any)?.name ?? 'Team A');
+          const bName = String((tb as any)?.name ?? 'Team B');
+          const winnerId = String((result as any).winnerId ?? '');
+          const aResult = winnerId === teamAId ? 'W' : winnerId === teamBId ? 'L' : '';
+          const bResult = winnerId === teamBId ? 'W' : winnerId === teamAId ? 'L' : '';
+          await notifyMany(db, aPlayers, {
+            type: 'match.ended',
+            params: { opponent: bName, result: aResult || '-' },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.ended:${matchId}`,
+          });
+          await notifyMany(db, bPlayers, {
+            type: 'match.ended',
+            params: { opponent: aName, result: bResult || '-' },
+            data: { tournamentId: id, matchId },
+            dedupeKey: `match.ended:${matchId}:b`,
+          });
+          void tdoc;
         }
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }

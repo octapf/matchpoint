@@ -11,6 +11,7 @@ import { countTeamsInGroup, pickLeastLoadedGroup } from '../server/lib/tournamen
 import { isPairValidForTournamentDivisions } from '../server/lib/teamDivisionPairing';
 import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
 import type { TournamentDivision } from '../types';
+import { notifyMany } from '../server/lib/notify';
 
 function hasExplicitGroupIndex(raw: unknown): boolean {
   if (raw === undefined || raw === null) return false;
@@ -151,8 +152,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const entriesCol = db.collection('entries');
       const waitlistCol = db.collection('waitlist');
       const [w1, w2, inTeamCount] = await Promise.all([
-        waitlistCol.findOne({ tournamentId, userId: cleanPlayerIds[0] }),
-        waitlistCol.findOne({ tournamentId, userId: cleanPlayerIds[1] }),
+        waitlistCol.findOne({ tournamentId, division: pairDivision, userId: cleanPlayerIds[0] }),
+        waitlistCol.findOne({ tournamentId, division: pairDivision, userId: cleanPlayerIds[1] }),
         entriesCol.countDocuments({
           tournamentId,
           userId: { $in: cleanPlayerIds },
@@ -206,7 +207,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               { session }
             );
           }
-          await wc.deleteMany({ tournamentId, userId: { $in: cleanPlayerIds } }, { session });
+          await wc.deleteMany({ tournamentId, division: pairDivision, userId: { $in: cleanPlayerIds } }, { session });
         });
       } finally {
         await session.endSession();
@@ -216,6 +217,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(500).json({ error: 'Internal server error' });
       }
       await syncTournamentOpenFullStatus(db, tournamentId);
+
+      // In-app notifications: team created.
+      const tournamentName = String((tournament as { name?: unknown }).name ?? '');
+      await notifyMany(db, cleanPlayerIds, {
+        type: 'team.created',
+        params: { tournament: tournamentName || 'Tournament', team: name },
+        data: { tournamentId, teamId: (inserted as any)?._id ?? '' },
+        dedupeKey: `team.created:${tournamentId}:${(inserted as any)?._id ?? ''}`,
+      });
+
       return corsRes.status(201).json(serializeDoc(inserted));
     }
 

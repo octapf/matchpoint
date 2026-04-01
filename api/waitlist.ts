@@ -27,7 +27,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !ObjectId.isValid(tournamentId)) {
         return corsRes.status(400).json({ error: 'Invalid or missing tournamentId' });
       }
-      const rows = await col.find({ tournamentId }).sort({ createdAt: 1 }).toArray();
+      const division =
+        typeof req.query.division === 'string' ? req.query.division.trim() : '';
+      if (division !== 'men' && division !== 'women' && division !== 'mixed') {
+        return corsRes.status(400).json({ error: 'Invalid or missing division' });
+      }
+      const rows = await col.find({ tournamentId, division }).sort({ createdAt: 1 }).toArray();
       const count = rows.length;
       const users = rows.map((r) => ({
         userId: String((r as { userId?: unknown }).userId ?? ''),
@@ -52,14 +57,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!parsed.success) {
         return corsRes.status(400).json({ error: 'Invalid payload' });
       }
-      const { tournamentId, userId } = parsed.data;
+      const { tournamentId, userId, division } = parsed.data;
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       if (!admin && userId !== actorId) {
         return corsRes.status(403).json({ error: 'You can only join the waiting list for yourself' });
       }
 
-      const dup = await col.findOne({ tournamentId, userId });
+      const dup = await col.findOne({ tournamentId, division, userId });
       if (dup) {
         return corsRes.status(409).json({ error: 'Already on the waiting list' });
       }
@@ -89,6 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const now = new Date().toISOString();
       const doc = {
         tournamentId,
+        division,
         userId,
         createdAt: now,
         updatedAt: now,
@@ -108,6 +114,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId) {
         return corsRes.status(400).json({ error: 'Missing tournamentId' });
       }
+      const division =
+        typeof req.query.division === 'string' ? req.query.division.trim() : '';
+      if (division !== 'men' && division !== 'women' && division !== 'mixed') {
+        return corsRes.status(400).json({ error: 'Invalid or missing division' });
+      }
       const targetUserId =
         typeof req.query.userId === 'string' && req.query.userId.trim()
           ? req.query.userId.trim()
@@ -118,10 +129,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Not allowed' });
       }
 
-      const del = await col.deleteOne({ tournamentId, userId: targetUserId });
-      if (del.deletedCount === 0) {
+      const existing = await col.findOne({ tournamentId, division, userId: targetUserId });
+      if (!existing) {
         return corsRes.status(404).json({ error: 'Not on the waiting list' });
       }
+      // Leaving a division waitlist does NOT remove you from the tournament.
+      await col.deleteOne({ tournamentId, division, userId: targetUserId });
       return corsRes.status(204).end();
     }
 

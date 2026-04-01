@@ -18,7 +18,7 @@ import type { TournamentDivision } from '@/types';
 
 export default function CreateTeamScreen() {
   const { t } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, division } = useLocalSearchParams<{ id: string; division?: string }>();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
@@ -36,7 +36,8 @@ export default function CreateTeamScreen() {
   const createTeam = useCreateTeam();
   const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: waitlistInfo } = useWaitlist(id);
+  const div = division === 'men' || division === 'women' || division === 'mixed' ? division : 'mixed';
+  const { data: waitlistInfo } = useWaitlist(id, div as TournamentDivision);
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
   const inTeamUserIds = useMemo(() => {

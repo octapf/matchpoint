@@ -12,6 +12,7 @@ export function TournamentHeader({
   dateLabel,
   isCancelled,
   canManageTournament,
+  showMeta = true,
   organizerMenuItems,
   headerStyle,
   cancelledBannerStyle,
@@ -32,6 +33,7 @@ export function TournamentHeader({
   dateLabel: string | undefined;
   isCancelled: boolean;
   canManageTournament: boolean;
+  showMeta?: boolean;
   organizerMenuItems: OrganizerMenuItem[];
   headerStyle: unknown;
   cancelledBannerStyle: unknown;
@@ -63,26 +65,32 @@ export function TournamentHeader({
         </View>
       ) : null}
 
-      <View style={headerTopRowStyle as never}>
-        <View style={dateLocationLeftStyle as never}>
-          <View style={dateLocationRowStyle as never}>
-            <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
-            <Text style={locationStyle as never}>{tournament.location?.trim() || '—'}</Text>
-            <Text style={dateLocationSepStyle as never}>·</Text>
-            <Text style={dateStyle as never}>{formatTournamentDate(dateLabel) || '—'}</Text>
-          </View>
+      {showMeta || canManageTournament ? (
+        <View style={headerTopRowStyle as never}>
+          {showMeta ? (
+            <View style={dateLocationLeftStyle as never}>
+              <View style={dateLocationRowStyle as never}>
+                <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+                <Text style={locationStyle as never}>{tournament.location?.trim() || '—'}</Text>
+                <Text style={dateLocationSepStyle as never}>·</Text>
+                <Text style={dateStyle as never}>{formatTournamentDate(dateLabel) || '—'}</Text>
+              </View>
 
-          <Text style={matchRulesTextStyle as never}>
-            {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
-          </Text>
+              <Text style={matchRulesTextStyle as never}>
+                {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
+              </Text>
+            </View>
+          ) : (
+            <View />
+          )}
+
+          {canManageTournament ? (
+            <View style={headerTopActionsStyle as never}>
+              <TournamentOrganizerMenu menuLabel={t('tournamentDetail.actionsMenu')} items={organizerMenuItems} />
+            </View>
+          ) : null}
         </View>
-
-        {canManageTournament ? (
-          <View style={headerTopActionsStyle as never}>
-            <TournamentOrganizerMenu menuLabel={t('tournamentDetail.actionsMenu')} items={organizerMenuItems} />
-          </View>
-        ) : null}
-      </View>
+      ) : null}
     </View>
   );
 }

@@ -23,6 +23,8 @@
     "seed:dev:purge": "tsx scripts/seed-dev-tournament.ts --purge",
     "seed:dev:reset": "npm run seed:dev:purge && npm run seed:dev:refresh",
     "db:indexes": "tsx scripts/create-indexes.ts",
+    "create-indexes": "npm run db:indexes",
+    "db:backfill:waitlist-division": "tsx scripts/backfill-waitlist-division.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "export:web": "npx expo export -p web && node scripts/verify-web-og.js",
