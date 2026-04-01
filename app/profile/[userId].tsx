@@ -60,6 +60,7 @@ export default function PublicProfileScreen() {
           lastName={profile.lastName ?? ''}
           gender={profile.gender === 'male' || profile.gender === 'female' ? profile.gender : undefined}
           size="lg"
+          photoUrl={profile.photoUrl}
         />
         <Text style={styles.name}>{getUserDisplayName(profile)}</Text>
       </View>

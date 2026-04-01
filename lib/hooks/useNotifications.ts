@@ -3,8 +3,9 @@ import { usersApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
 import type { Notification } from '@/types';
 
-export function useNotifications(params?: { limit?: number }) {
+export function useNotifications(params?: { limit?: number; enabled?: boolean }) {
   const limit = Math.max(1, Math.min(50, params?.limit ?? 30));
+  const enabled = params?.enabled ?? true;
   return useQuery({
     queryKey: ['notifications', { limit }],
     queryFn: () => {
@@ -12,6 +13,7 @@ export function useNotifications(params?: { limit?: number }) {
       return usersApi.notificationsList({ limit: String(limit) }) as Promise<Notification[]>;
     },
     staleTime: 10_000,
+    enabled,
   });
 }
 

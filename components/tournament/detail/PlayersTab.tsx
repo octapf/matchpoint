@@ -91,6 +91,7 @@ export function PlayersTab({
                     lastName={u?.lastName ?? ''}
                     gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
                     size="sm"
+                    photoUrl={u?.photoUrl}
                   />
                   <View style={playerRowTextStyle as never}>
                     <Text style={playerRowNameStyle as never}>{playerName}</Text>
@@ -155,6 +156,7 @@ export function PlayersTab({
                   lastName={u?.lastName ?? ''}
                   gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
                   size="sm"
+                  photoUrl={u?.photoUrl}
                 />
                 <View style={playerRowTextStyle as never}>
                   <Text style={playerRowNameStyle as never}>{playerName}</Text>

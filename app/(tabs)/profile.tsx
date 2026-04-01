@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -68,7 +69,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.container}>
         <View style={[styles.content, { paddingTop: topPad }]}>
-          <TabScreenHeader title={t('profile.screenTitle')} />
+          <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
           <View style={styles.hydrateSkeleton}>
             <Skeleton height={80} width={80} borderRadius={40} style={{ marginBottom: 16 }} />
             <Skeleton height={22} width="55%" style={{ marginBottom: 8 }} />
@@ -85,7 +86,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.container}>
         <View style={[styles.noUserOuter, { paddingTop: topPad }]}>
-          <TabScreenHeader title={t('profile.screenTitle')} />
+          <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
           <View style={styles.centered}>
             <Text style={styles.errorText}>{t('profile.noUserData')}</Text>
             <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} size="sm" fullWidth />
@@ -104,7 +105,7 @@ export default function ProfileScreen() {
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
-        <TabScreenHeader title={t('profile.screenTitle')} />
+        <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         <Pressable
           style={styles.avatarSection}
           onPress={() => router.push(`/profile/${user._id}` as never)}
@@ -116,6 +117,7 @@ export default function ProfileScreen() {
             lastName={user.lastName || ''}
             gender={user.gender}
             size="lg"
+            photoUrl={user.photoUrl}
           />
           <Text style={styles.name}>{getUserDisplayName(user) || '—'}</Text>
           <Text style={styles.email}>{user.email || '—'}</Text>

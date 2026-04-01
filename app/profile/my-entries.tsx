@@ -16,6 +16,7 @@ function EntryCard({
   tournamentName,
   teamName,
   userGender,
+  userPhotoUrl,
   currentUserId,
   t,
 }: {
@@ -23,6 +24,7 @@ function EntryCard({
   tournamentName?: string;
   teamName?: string;
   userGender?: 'male' | 'female';
+  userPhotoUrl?: string;
   currentUserId: string | null;
   t: (k: string) => string;
 }) {
@@ -46,7 +48,7 @@ function EntryCard({
             accessibilityRole="button"
             accessibilityLabel={t('profile.viewProfile')}
           >
-            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="xs" />
+            <Avatar firstName={t('common.you')} lastName="" gender={userGender} size="xs" photoUrl={userPhotoUrl} />
           </Pressable>
           <Pressable onPress={openTournament} style={styles.teamNamePress} accessibilityRole="button">
             <Text style={styles.teamName}>{teamName ?? t('common.team')}</Text>
@@ -118,6 +120,7 @@ function EntryCardWithData({ entry, t }: { entry: Entry; t: (k: string) => strin
       tournamentName={tournament?.name}
       teamName={team?.name}
       userGender={userGender}
+      userPhotoUrl={user?.photoUrl}
       currentUserId={user?._id ?? null}
       t={t}
     />

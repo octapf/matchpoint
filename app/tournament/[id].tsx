@@ -166,6 +166,7 @@ function TeamCard({
                     lastName={user?.lastName ?? ''}
                     gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
                     size="xs"
+                    photoUrl={user?.photoUrl}
                   />
                   <Text style={[styles.playerNameSmall, isYou && styles.playerNameHighlight]} numberOfLines={1}>
                     {playerName || t('common.player')}

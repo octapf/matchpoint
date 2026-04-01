@@ -54,6 +54,9 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
     const email = payload.email;
     const firstName = payload.given_name || payload.name?.split(' ')[0] || '';
     const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
+    const pictureRaw = payload.picture;
+    const photoUrl =
+      typeof pictureRaw === 'string' && pictureRaw.startsWith('https://') ? pictureRaw : undefined;
 
     const db = await getDb();
     const col = db.collection('users');
@@ -66,6 +69,7 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
         authProvider: 'google',
         firstName,
         lastName,
+        ...(photoUrl ? { photoUrl } : {}),
       };
       const existingUsername = (user as { username?: unknown }).username;
       if (typeof existingUsername !== 'string' || !existingUsername.trim()) {
@@ -83,6 +87,7 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
         lastName,
         phone: '',
         authProvider: 'google',
+        ...(photoUrl ? { photoUrl } : {}),
         createdAt: now,
         updatedAt: now,
       });

@@ -446,6 +446,7 @@ export default function EditMatchScreen() {
                         lastName={(u as any)?.lastName ?? ''}
                         gender={(u as any)?.gender === 'male' || (u as any)?.gender === 'female' ? (u as any).gender : undefined}
                         size="xs"
+                        photoUrl={(u as any)?.photoUrl}
                       />
                     </View>
                     <View style={styles.serveOrderRow}>
@@ -495,6 +496,7 @@ export default function EditMatchScreen() {
                         lastName={(u as any)?.lastName ?? ''}
                         gender={(u as any)?.gender === 'male' || (u as any)?.gender === 'female' ? (u as any).gender : undefined}
                         size="xs"
+                        photoUrl={(u as any)?.photoUrl}
                       />
                     </View>
                     <View style={styles.serveOrderRow}>

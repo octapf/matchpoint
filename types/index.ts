@@ -19,6 +19,8 @@ export interface User {
   /** When true, other authenticated users may see `phone` on your public profile. */
   phoneVisible?: boolean;
   gender?: Gender;
+  /** Profile photo URL (e.g. from Google sign-in; hosted by Google, not stored by us). */
+  photoUrl?: string;
   authProvider: 'google' | 'apple' | 'email';
   /** Set server-side or via ADMIN_EMAILS bootstrap */
   role?: UserRole;

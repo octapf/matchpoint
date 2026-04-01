@@ -139,7 +139,13 @@ export default function CreateTeamOrganizerScreen() {
           const selected = uid === p1 || uid === p2;
           return (
             <Pressable key={uid} style={[styles.row, selected && styles.rowSelected]} onPress={() => pick(uid)}>
-              <Avatar firstName={u?.firstName ?? ''} lastName={u?.lastName ?? ''} gender={u?.gender} size="sm" />
+              <Avatar
+                firstName={u?.firstName ?? ''}
+                lastName={u?.lastName ?? ''}
+                gender={u?.gender}
+                size="sm"
+                photoUrl={u?.photoUrl}
+              />
               <Text style={styles.rowText}>{getPlayerListName(u) || t('common.player')}</Text>
             </Pressable>
           );

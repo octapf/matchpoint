@@ -9,6 +9,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { TournamentListRow } from '@/components/tournament/TournamentListRow';
 import { useTournaments } from '@/lib/hooks/useTournaments';
 import { config } from '@/lib/config';
@@ -85,7 +86,9 @@ export default function TournamentsScreen() {
   );
 
   const listHeader = useCallback(
-    () => <TabScreenHeader title={t('tournaments.screenTitle')} />,
+    () => (
+      <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+    ),
     [t],
   );
 
@@ -112,7 +115,7 @@ export default function TournamentsScreen() {
     return (
       <View style={styles.container}>
         <ScrollView style={styles.scroll} contentContainerStyle={scrollContentStyle}>
-          <TabScreenHeader title={t('tournaments.screenTitle')} />
+          <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
           {[1, 2, 3].map((i) => (
             <View key={i} style={styles.cardOuter}>
               <View style={styles.cardPressable}>
@@ -132,7 +135,7 @@ export default function TournamentsScreen() {
     return (
       <View style={[styles.container, styles.errorOuter]}>
         <View style={[styles.errorInner, { paddingTop: topPad }]}>
-          <TabScreenHeader title={t('tournaments.screenTitle')} />
+          <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
           <Text style={styles.errorText}>{error?.message || t('tournaments.failedToLoad')}</Text>
         </View>
       </View>

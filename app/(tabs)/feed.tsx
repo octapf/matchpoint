@@ -9,6 +9,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import Colors from '@/constants/Colors';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
+import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TournamentListRow } from '@/components/tournament/TournamentListRow';
@@ -121,7 +122,7 @@ export default function FeedScreen() {
   const listHeader = useMemo(
     () => (
       <>
-        <TabScreenHeader title={t('feed.homeTitle')} />
+        <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
 
         <View style={styles.weatherCard}>
           {isLoading && !weatherReady ? (
@@ -138,7 +139,7 @@ export default function FeedScreen() {
           ) : (
             <View style={styles.weatherBody}>
               <View style={styles.weatherTopRow}>
-                <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={44} />
+                <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={30} />
                 <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
               </View>
               <Text style={styles.skyText}>{skyLabel}</Text>
@@ -166,50 +167,37 @@ export default function FeedScreen() {
               </View>
 
               {hourly.length > 0 ? (
-                <>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator
-                    nestedScrollEnabled
-                    contentContainerStyle={styles.hourlyScrollContent}
-                    style={styles.hourlyScroll}
-                  >
-                    {hourly.map((h, i) => {
-                      const hk = weatherCodeToSkyKey(h.weatherCode);
-                      return (
-                        <View key={`w-${h.timeIso}-${i}`} style={styles.hourSlot}>
-                          <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
-                          <WeatherGlyph skyKey={hk} isDay={isDayHour(h.timeIso)} size={22} />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator
+                  nestedScrollEnabled
+                  contentContainerStyle={styles.hourlyScrollContent}
+                  style={styles.hourlyScroll}
+                >
+                  {hourly.map((h, i) => {
+                    const hk = weatherCodeToSkyKey(h.weatherCode);
+                    return (
+                      <View key={`h-${h.timeIso}-${i}`} style={styles.hourSlot}>
+                        <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
+                        <View style={styles.hourlyTempRow}>
+                          <WeatherGlyph skyKey={hk} isDay={isDayHour(h.timeIso)} size={16} />
                           <Text style={styles.hourlyTemp}>{Math.round(h.temperatureC)}°</Text>
                         </View>
-                      );
-                    })}
-                  </ScrollView>
-
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator
-                    nestedScrollEnabled
-                    contentContainerStyle={styles.hourlyScrollContent}
-                    style={[styles.hourlyScroll, styles.hourlyWindRow]}
-                  >
-                    {hourly.map((h, i) => (
-                      <View key={`wind-${h.timeIso}-${i}`} style={styles.hourSlot}>
-                        <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
-                        <MaterialCommunityIcons
-                          name="weather-windy"
-                          size={18}
-                          color={Colors.violet}
-                          style={styles.hourlyWindIcon}
-                        />
-                        <View style={styles.hourlyWindSpeedRow}>
-                          <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
-                          <Text style={styles.hourlyWindUnit}>km/h</Text>
+                        <View style={styles.hourlyWindBlock}>
+                          <View style={styles.hourlyWindSpeedRow}>
+                            <MaterialCommunityIcons
+                              name="weather-windy"
+                              size={14}
+                              color={Colors.violet}
+                              style={styles.hourlyWindIcon}
+                            />
+                            <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
+                          </View>
                         </View>
                       </View>
-                    ))}
-                  </ScrollView>
-                </>
+                    );
+                  })}
+                </ScrollView>
               ) : null}
             </View>
           )}
@@ -325,99 +313,103 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { paddingHorizontal: 16, paddingBottom: 40 },
   weatherMetaBlock: {
-    marginBottom: 12,
+    marginBottom: 6,
   },
   weatherDateLine: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textMuted,
-    marginBottom: 6,
+    marginBottom: 4,
     textTransform: 'capitalize',
   },
   weatherCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
-    marginBottom: 22,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
-  weatherBody: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14 },
+  weatherBody: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
   weatherTopRow: {
     flexDirection: 'row',
+    direction: 'ltr',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    justifyContent: 'flex-start',
+    gap: 10,
+    marginBottom: 2,
   },
   temp: {
-    fontSize: 48,
+    fontSize: 34,
     fontWeight: '200',
     color: Colors.text,
-    letterSpacing: -1.5,
+    letterSpacing: -1.2,
   },
   skyText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.textSecondary,
-    marginBottom: 8,
-  },
-  hourlyWindRow: {
-    marginTop: 10,
+    marginBottom: 4,
   },
   hourlyScroll: {
-    marginBottom: 2,
+    marginBottom: 0,
     marginHorizontal: -4,
+    maxHeight: 118,
   },
   hourlyScrollContent: {
-    paddingVertical: 2,
-    paddingRight: 10,
+    paddingVertical: 0,
+    paddingRight: 8,
     gap: 0,
+    alignItems: 'flex-start',
   },
   hourSlot: {
-    width: 64,
+    width: 54,
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    marginRight: 6,
-    backgroundColor: Colors.background,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    marginRight: 4,
+    backgroundColor: 'transparent',
+    borderRadius: 8,
+    borderWidth: 0,
   },
   hourlyTime: {
     fontSize: 10,
     fontWeight: '600',
-    color: Colors.textMuted,
-    marginBottom: 3,
+    color: '#ffffff',
+    marginBottom: 2,
   },
   hourlyTemp: {
     fontSize: 13,
     fontWeight: '700',
     color: Colors.text,
-    marginTop: 3,
+    marginTop: 1,
+    marginBottom: 2,
+  },
+  hourlyTempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  hourlyWindBlock: {
+    alignItems: 'center',
+    marginTop: 0,
   },
   hourlyWindIcon: {
-    marginVertical: 2,
+    marginRight: 2,
   },
   hourlyWindSpeedRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'center',
-    flexWrap: 'wrap',
-    marginTop: 3,
+    flexWrap: 'nowrap',
   },
   hourlyWindValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: Colors.text,
   },
-  hourlyWindUnit: {
-    fontSize: 8,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    marginLeft: 2,
-  },
   locationHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.textMuted,
     fontStyle: 'italic',
   },
@@ -425,7 +417,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   updating: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.yellow,
     marginTop: 6,
   },

@@ -166,7 +166,13 @@ export default function CreateTeamScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('profile.viewProfile')}
         >
-          <Avatar firstName={user?.firstName ?? t('common.you')} lastName={user?.lastName ?? ''} gender={user?.gender} size="md" />
+          <Avatar
+            firstName={user?.firstName ?? t('common.you')}
+            lastName={user?.lastName ?? ''}
+            gender={user?.gender}
+            size="md"
+            photoUrl={user?.photoUrl}
+          />
           <Text style={styles.playerLabel}>{t('team.youCreator')}</Text>
         </Pressable>
 
@@ -193,6 +199,7 @@ export default function CreateTeamScreen() {
                   lastName={u?.lastName ?? ''}
                   gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
                   size="sm"
+                  photoUrl={u?.photoUrl}
                 />
                 <Text style={styles.partnerName}>{getPlayerListName(u) || t('common.player')}</Text>
               </Pressable>
