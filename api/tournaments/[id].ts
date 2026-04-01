@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../../server/lib/mongodb';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
-import { getSessionUserId, isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
+import { getSessionUserId, isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import { deriveTournamentGroupConfig } from '../../server/lib/tournamentConfig';
@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!actorId) {
           return corsRes.status(404).json({ error: 'Tournament not found' });
         }
-        const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
+        const actorUser = await loadActorUserWithAdminRefresh(db, actorId);
         const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
         const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
         if (!actorIsAdmin && !isOrg) {
@@ -89,11 +89,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamsCol = db.collection('teams');
       const waitCol = db.collection('waitlist');
 
-      const [entriesCount, teamsList, waitlistCount] = await Promise.all([
+      const [entriesCount, teamsList, waitByDiv] = await Promise.all([
         entriesCol.countDocuments({ tournamentId: id, teamId: { $ne: null } }),
         teamsCol.find({ tournamentId: id }).project({ groupIndex: 1 }).toArray(),
-        waitCol.countDocuments({ tournamentId: id }),
+        waitCol
+          .aggregate<{ _id: { division: string }; count: number }>([
+            { $match: { tournamentId: id, division: { $in: ['men', 'women', 'mixed'] } } },
+            { $group: { _id: { division: '$division' }, count: { $sum: 1 } } },
+          ])
+          .toArray(),
       ]);
+      const waitlistCountByDivision = { men: 0, women: 0, mixed: 0 };
+      for (const row of waitByDiv) {
+        const div = String(row._id.division);
+        if (div === 'men') waitlistCountByDivision.men = row.count;
+        else if (div === 'women') waitlistCountByDivision.women = row.count;
+        else if (div === 'mixed') waitlistCountByDivision.mixed = row.count;
+      }
+      const waitlistCount = waitlistCountByDivision.men + waitlistCountByDivision.women + waitlistCountByDivision.mixed;
 
       const teamsCount = teamsList.length;
       const gc = normalizeGroupCount((serialized as { groupCount?: number }).groupCount);
@@ -216,6 +229,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         teamsCount,
         groupsWithTeamsCount: groupsSet.size,
         waitlistCount,
+        waitlistCountByDivision,
         ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
         ...(includeStandings ? { standings, fixture } : null),
       });
@@ -229,7 +243,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const current = await col.findOne({ _id: oid });
       if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
       const cur = current as Record<string, unknown>;
-      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorUser = await loadActorUserWithAdminRefresh(db, actingUserId);
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const isOrg = isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId);
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -746,10 +760,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const currentRef = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
         const nowMs = Date.now();
-        const lockActive = isRefereeLockActive(match as any, nowMs);
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
-
-        if (!currentRef || currentRef !== actingUserId || !lockActive) {
+        // Do not require an *active* lock for the assigned referee — heartbeat exists to renew an expired lock.
+        if (!actorIsAdmin && !isOrg && (!currentRef || currentRef !== actingUserId)) {
           return corsRes.status(409).json({
             error: 'Referee changed',
             refereeUserId: currentRef || null,
@@ -762,6 +775,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           updatedAt: now,
           refereeLockExpiresAt: lockExpiresAtIso(nowMs),
         };
+        // Admin/org can "refresh" by taking control if needed.
+        if (actorIsAdmin || isOrg) {
+          update.refereeUserId = actingUserId;
+        }
         const result = await db
           .collection('matches')
           .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
@@ -887,9 +904,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
         const nowMs = Date.now();
-        const lockActive = isRefereeLockActive(match as any, nowMs);
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
-        if (!refereeUserId || refereeUserId !== actingUserId || !lockActive) {
+        // Assigned referee may continue scoring after the lock TTL; each point refreshes the lock.
+        if (!actorIsAdmin && !isOrg && (!refereeUserId || refereeUserId !== actingUserId)) {
           return corsRes.status(409).json({
             error: 'Referee changed',
             refereeUserId: refereeUserId || null,
@@ -941,6 +958,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const now = new Date().toISOString();
         const update: Record<string, unknown> = { updatedAt: now, lastPointAt: now, pointsA: nextA, pointsB: nextB };
+        // Keep the lock alive for the actor making the update.
+        update.refereeLockExpiresAt = lockExpiresAtIso(nowMs);
+        if (actorIsAdmin || isOrg) {
+          // Admin/org can update score even if they weren't the current referee.
+          update.refereeUserId = actingUserId;
+        }
 
         // Initialize global serve state if missing: A1, B1, A2, B2.
         const existingOrder = Array.isArray((match as { serveOrder?: unknown }).serveOrder) ? ((match as any).serveOrder as unknown[]) : [];
@@ -1068,9 +1091,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
         const nowMs = Date.now();
-        const lockActive = isRefereeLockActive(match as any, nowMs);
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
-        if (!refereeUserId || refereeUserId !== actingUserId || !lockActive) {
+        if (!actorIsAdmin && !isOrg && (!refereeUserId || refereeUserId !== actingUserId)) {
           return corsRes.status(409).json({
             error: 'Referee changed',
             refereeUserId: refereeUserId || null,
@@ -1092,6 +1114,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           update.servingPlayerId = servingPlayerId;
           const idx = order.findIndex((p) => p === servingPlayerId);
           if (idx >= 0) update.serveIndex = idx;
+        }
+        update.refereeLockExpiresAt = lockExpiresAtIso(nowMs);
+        if (actorIsAdmin || isOrg) {
+          update.refereeUserId = actingUserId;
         }
         const result = await db
           .collection('matches')
@@ -1189,7 +1215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const current = await col.findOne({ _id: oid });
       if (!current) return corsRes.status(404).json({ error: 'Tournament not found' });
       const cur = current as Record<string, unknown>;
-      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorUser = await loadActorUserWithAdminRefresh(db, actingUserId);
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const isOrg = isTournamentOrganizer(cur as { organizerIds?: string[] }, actingUserId);
       if (!isOrg && !actorIsAdmin) {
@@ -1566,7 +1592,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
-      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
+      const actorUser = await loadActorUserWithAdminRefresh(db, actingUserId);
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId) && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });

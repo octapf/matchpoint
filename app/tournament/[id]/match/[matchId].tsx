@@ -188,7 +188,8 @@ export default function EditMatchScreen() {
   useEffect(() => {
     if (!id || !matchId) return;
     if (!match) return;
-    if (!isReferee) return;
+    // Keep referee lock fresh: assigned referee, or organizer/admin (server assigns lock to them on heartbeat).
+    if (!isReferee && !canManageTournament) return;
     if ((match as { status?: string }).status !== 'in_progress') return;
     const h = setInterval(() => {
       refereeHeartbeat.mutate(
@@ -201,7 +202,7 @@ export default function EditMatchScreen() {
       );
     }, 5_000);
     return () => clearInterval(h);
-  }, [id, matchId, match, isReferee, refereeHeartbeat]);
+  }, [id, matchId, match, isReferee, canManageTournament, refereeHeartbeat]);
 
   const eligibleRefTeam = useMemo(() => {
     if (!userId || !match) return null;
@@ -345,7 +346,7 @@ export default function EditMatchScreen() {
     return () => loop.stop();
   }, [showSwitchSidesReminder, switchSidesPulse]);
 
-  const canEditScore = isReferee;
+  const canEditScore = isReferee || canManageTournament;
 
   if (!id || !matchId || !tournament || !match) {
     return (

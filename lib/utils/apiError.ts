@@ -1,4 +1,5 @@
 import { Alert } from 'react-native';
+import { captureAppException } from '@/lib/observability/app';
 
 /** Thrown by `apiRequest` when `fetch` fails (offline / DNS / TLS). */
 export const NETWORK_ERROR_SENTINEL = '__MP_NETWORK__';
@@ -75,6 +76,18 @@ export function apiErrorMessage(
   return t(fallbackKey);
 }
 
+function isExpectedApiError(err: unknown): boolean {
+  if (err instanceof Error && err.message === NETWORK_ERROR_SENTINEL) return true;
+  if (isNetworkError(err)) return true;
+  if (err instanceof Error && err.message.startsWith('API not configured')) return true;
+  if (err instanceof Error && API_ERROR_I18N[err.message]) return true;
+  if (err instanceof Error && err.message.includes('not enabled for this tournament')) return true;
+  return false;
+}
+
 export function alertApiError(t: (key: string) => string, err: unknown, fallbackKey: string): void {
+  if (!isExpectedApiError(err)) {
+    captureAppException(err, { kind: 'api', fallbackKey });
+  }
   Alert.alert(t('common.error'), apiErrorMessage(err, t, fallbackKey));
 }

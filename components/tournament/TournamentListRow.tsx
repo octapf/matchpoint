@@ -11,7 +11,7 @@ import {
   normalizeGroupCount,
   splitAcrossDivisions,
 } from '@/lib/tournamentGroups';
-import type { Tournament } from '@/types';
+import type { Tournament, TournamentDivision } from '@/types';
 
 const BRONZE = '#cd7f32';
 
@@ -36,7 +36,7 @@ function TournamentListRowInner({
   const totalGroups = normalizeGroupCount(tournament.groupCount);
   const hasInvite = !!tournament.inviteLink;
   const isCancelled = tournament.status === 'cancelled';
-  const divisions = tournament.divisions?.length ? tournament.divisions : ['mixed'];
+  const divisions = (tournament.divisions?.length ? tournament.divisions : ['mixed']) as TournamentDivision[];
   const divisionCount = Math.max(1, divisions.length);
   const totalTeams = tournament.maxTeams ?? 16;
   const totalPlayers = maxPlayerSlotsForTournament(totalTeams);
@@ -44,6 +44,7 @@ function TournamentListRowInner({
   const currentTeams = tournament.teamsCount ?? 0;
   const currentGroups = tournament.groupsWithTeamsCount ?? 0;
   const waitlistCount = tournament.waitlistCount ?? 0;
+  const waitlistByDivision = tournament.waitlistCountByDivision;
 
   const categoryLine = useMemo(() => {
     if (!tournament.categories?.length) return t('tournaments.categoryNone');
@@ -143,7 +144,11 @@ function TournamentListRowInner({
                 totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
                 currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
                 totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
-                waitlistCount={splitAcrossDivisions(waitlistCount, divisionCount, idx)}
+                waitlistCount={
+                  waitlistByDivision?.[division] ??
+                  // Back-compat for older cached tournaments; avoid showing nonsense splits once server provides per-division counts.
+                  splitAcrossDivisions(waitlistCount, divisionCount, idx)
+                }
               />
             </View>
           );

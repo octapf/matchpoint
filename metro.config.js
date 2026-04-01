@@ -1,6 +1,6 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 // Fix TanStack Query resolution with Metro/React Native
 config.resolver.sourceExts = [...(config.resolver.sourceExts || []), 'cjs'];

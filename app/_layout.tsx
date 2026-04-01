@@ -14,6 +14,7 @@ import { queryClient } from '@/lib/queryClient';
 import { I18nProvider, i18n, useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { initAppObservability } from '@/lib/observability/app';
 
 // Dev-only: prevent a known noisy unhandled rejection from crashing the app
 // when Android's Activity is restarting (dev-client / reload race).
@@ -49,6 +50,8 @@ export const unstable_settings = {
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+initAppObservability();
 
 export default function RootLayout() {
   // Required for OAuth: closes auth browser when redirect returns to app

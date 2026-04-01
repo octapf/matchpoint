@@ -183,16 +183,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const tid of tournamentIds) {
         waitlistCountByTid.set(tid, 0);
       }
+      const waitlistCountByDivisionByTid = new Map<
+        string,
+        { men: number; women: number; mixed: number }
+      >();
+      for (const tid of tournamentIds) {
+        waitlistCountByDivisionByTid.set(tid, { men: 0, women: 0, mixed: 0 });
+      }
       if (tournamentIds.length > 0) {
         const waitCol = db.collection('waitlist');
         const wagg = await waitCol
-          .aggregate<{ _id: string; count: number }>([
-            { $match: { tournamentId: tournamentIdMatch } },
-            { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
+          .aggregate<{ _id: { tournamentId: string; division: string }; count: number }>([
+            { $match: { tournamentId: tournamentIdMatch, division: { $in: ['men', 'women', 'mixed'] } } },
+            { $group: { _id: { tournamentId: '$tournamentId', division: '$division' }, count: { $sum: 1 } } },
           ])
           .toArray();
         for (const row of wagg) {
-          waitlistCountByTid.set(String(row._id), row.count);
+          const tid = String(row._id.tournamentId);
+          const div = String(row._id.division);
+          const prev = waitlistCountByDivisionByTid.get(tid) ?? { men: 0, women: 0, mixed: 0 };
+          if (div === 'men') waitlistCountByDivisionByTid.set(tid, { ...prev, men: row.count });
+          else if (div === 'women') waitlistCountByDivisionByTid.set(tid, { ...prev, women: row.count });
+          else if (div === 'mixed') waitlistCountByDivisionByTid.set(tid, { ...prev, mixed: row.count });
+        }
+        for (const tid of tournamentIds) {
+          const byDiv = waitlistCountByDivisionByTid.get(tid) ?? { men: 0, women: 0, mixed: 0 };
+          waitlistCountByTid.set(tid, byDiv.men + byDiv.women + byDiv.mixed);
         }
       }
 
@@ -206,6 +222,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             teamsCount: teamsCountByTid.get(tid) ?? teamsCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
             groupsWithTeamsCount: groupsSetByTid.get(tid)?.size ?? 0,
             waitlistCount: waitlistCountByTid.get(tid) ?? waitlistCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
+            waitlistCountByDivision:
+              waitlistCountByDivisionByTid.get(tid) ??
+              waitlistCountByDivisionByTid.get(String((d as { _id?: unknown })._id)) ??
+              { men: 0, women: 0, mixed: 0 },
           };
         }),
       );

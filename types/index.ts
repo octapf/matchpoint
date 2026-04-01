@@ -107,6 +107,11 @@ export interface Tournament {
   groupsWithTeamsCount?: number;
   /** Populated by GET /api/tournaments list (waitlist entries). */
   waitlistCount?: number;
+  /**
+   * Per-division waiting list counts (preferred over `waitlistCount` for UI).
+   * Populated by GET /api/tournaments list and GET /api/tournaments/:id.
+   */
+  waitlistCountByDivision?: Partial<Record<TournamentDivision, number>>;
   createdAt: string;
   updatedAt: string;
 }

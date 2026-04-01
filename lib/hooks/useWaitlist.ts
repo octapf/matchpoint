@@ -50,13 +50,23 @@ export function useJoinWaitlist() {
         users,
       };
       queryClient.setQueryData(['waitlist', tournamentId, division], next);
-      queryClient.setQueryData<Tournament>(['tournament', tournamentId], (old) =>
-        old ? { ...old, waitlistCount: users.length } : old
-      );
+      queryClient.setQueryData<Tournament>(['tournament', tournamentId], (old) => {
+        if (!old) return old;
+        const prevByDiv = old.waitlistCountByDivision ?? {};
+        const nextByDiv = { ...prevByDiv, [division]: users.length };
+        const nextTotal =
+          (nextByDiv.men ?? 0) + (nextByDiv.women ?? 0) + (nextByDiv.mixed ?? 0);
+        return { ...old, waitlistCountByDivision: nextByDiv, waitlistCount: nextTotal };
+      });
       queryClient.setQueryData<Tournament[]>(['tournaments'], (old) =>
-        old?.map((t) =>
-          t._id === tournamentId ? { ...t, waitlistCount: users.length } : t
-        )
+        old?.map((t) => {
+          if (t._id !== tournamentId) return t;
+          const prevByDiv = t.waitlistCountByDivision ?? {};
+          const nextByDiv = { ...prevByDiv, [division]: users.length };
+          const nextTotal =
+            (nextByDiv.men ?? 0) + (nextByDiv.women ?? 0) + (nextByDiv.mixed ?? 0);
+          return { ...t, waitlistCountByDivision: nextByDiv, waitlistCount: nextTotal };
+        })
       );
 
       return { previous, prevTournament, prevTournaments, tournamentId, division } as const;

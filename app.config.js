@@ -77,6 +77,7 @@ module.exports = {
         '@react-native-google-signin/google-signin',
         iosUrlScheme ? { iosUrlScheme } : {},
       ],
+      '@sentry/react-native',
     ],
     experiments: { typedRoutes: true },
     extra: { router: {}, eas: { projectId: '404d9b3b-f97e-4bb7-bfd9-401fe830a759' } },
