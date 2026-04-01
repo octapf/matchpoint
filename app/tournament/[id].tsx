@@ -279,7 +279,10 @@ export default function TournamentDetailScreen() {
   const startTournamentMutation = useStartTournament();
   const finalizeClassificationMutation = useFinalizeClassification();
 
-  const { data: allMatches = [] } = useMatches(id ? { tournamentId: id } : undefined);
+  const { data: allMatches = [] } = useMatches(
+    id ? { tournamentId: id } : undefined,
+    id ? { enabled: !!id, refetchIntervalMs: activeTab === 'fixture' ? 7_000 : undefined } : undefined
+  );
   const classificationMatches = useMemo(
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
     [allMatches]

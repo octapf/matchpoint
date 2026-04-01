@@ -26,6 +26,8 @@ const API_ERROR_I18N: Record<string, string> = {
   'Only organizers can delete this tournament': 'apiErrors.onlyOrganizersDelete',
   'Cannot delete tournament while players are registered. Remove all players from the roster first.':
     'apiErrors.cannotDeleteWithPlayers',
+  'Match is locked by another referee': 'apiErrors.matchLockedByOtherReferee',
+  'Referee changed': 'apiErrors.refereeChanged',
   'Both players must be on the waiting list': 'apiErrors.bothPlayersMustBeOnWaitlist',
   'One or more players are already in a team': 'apiErrors.playersAlreadyInTeam',
   'Internal server error': 'apiErrors.internal',

@@ -136,6 +136,13 @@ export interface Match {
   completedAt?: string;
   /** When set and status is in_progress, only this referee (or org/admin) can edit score. */
   refereeUserId?: string;
+  /**
+   * Referee lock expiry timestamp (ISO). Live-scoring mutations require:
+   * - `refereeUserId === actor`
+   * - `refereeLockExpiresAt` in the future
+   * Referee keeps it alive via a heartbeat.
+   */
+  refereeLockExpiresAt?: string;
   /** Suggested/claimed referee team (must not be playing). */
   refereeTeamId?: string;
   /** Global serve order (length 4): A1, B1, A2, B2 by default. */

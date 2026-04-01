@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useTranslation } from '@/lib/i18n';
 import { useTournament } from '@/lib/hooks/useTournaments';
-import { useClaimReferee, useMatches, useRefereePoint, useSetServeOrder, useStartMatch } from '@/lib/hooks/useMatches';
+import { useClaimReferee, useMatches, useRefereeHeartbeat, useRefereePoint, useSetServeOrder, useStartMatch } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
@@ -40,11 +40,12 @@ export default function EditMatchScreen() {
 
   const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined);
+  const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined, id ? { enabled: !!id, refetchIntervalMs: 7_000 } : undefined);
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
   const refereePoint = useRefereePoint();
   const setServeOrder = useSetServeOrder();
+  const refereeHeartbeat = useRefereeHeartbeat();
 
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
 
@@ -141,7 +142,7 @@ export default function EditMatchScreen() {
         );
       } else {
         claimReferee.mutate(
-          { id: matchId, tournamentId: id },
+          { id: matchId, tournamentId: id, mode: 'claim' },
           { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
         );
       }
@@ -165,6 +166,42 @@ export default function EditMatchScreen() {
     if (!userId || !match) return false;
     return String((match as { refereeUserId?: unknown }).refereeUserId ?? '') === userId;
   }, [match, userId]);
+
+  const currentRefereeUserId = useMemo(() => (match ? String((match as { refereeUserId?: unknown }).refereeUserId ?? '') : ''), [match]);
+  const myTeamId = useMemo(() => {
+    if (!userId) return '';
+    const myTeam = teams.find((tm) => (tm.playerIds ?? []).includes(userId));
+    return myTeam?._id ?? '';
+  }, [teams, userId]);
+  const refereeTeamId = useMemo(() => {
+    if (!currentRefereeUserId) return '';
+    const t = teams.find((tm) => (tm.playerIds ?? []).includes(currentRefereeUserId));
+    return t?._id ?? '';
+  }, [teams, currentRefereeUserId]);
+  const canTakeoverReferee = useMemo(() => {
+    if (!match || !userId) return false;
+    if (!currentRefereeUserId || currentRefereeUserId === userId) return false;
+    if (canManageTournament) return true;
+    return !!(myTeamId && refereeTeamId && myTeamId === refereeTeamId);
+  }, [match, userId, currentRefereeUserId, canManageTournament, myTeamId, refereeTeamId]);
+
+  useEffect(() => {
+    if (!id || !matchId) return;
+    if (!match) return;
+    if (!isReferee) return;
+    if ((match as { status?: string }).status !== 'in_progress') return;
+    const h = setInterval(() => {
+      refereeHeartbeat.mutate(
+        { id: matchId, tournamentId: id },
+        {
+          onError: () => {
+            // If lock was stolen/expired, polling will refresh match state and UI will disable controls.
+          },
+        }
+      );
+    }, 5_000);
+    return () => clearInterval(h);
+  }, [id, matchId, match, isReferee, refereeHeartbeat]);
 
   const eligibleRefTeam = useMemo(() => {
     if (!userId || !match) return null;
@@ -308,7 +345,7 @@ export default function EditMatchScreen() {
     return () => loop.stop();
   }, [showSwitchSidesReminder, switchSidesPulse]);
 
-  const canEditScore = canManageTournament || isReferee;
+  const canEditScore = isReferee;
 
   if (!id || !matchId || !tournament || !match) {
     return (
@@ -758,6 +795,24 @@ export default function EditMatchScreen() {
                       String((match as { refereeUserId?: unknown }).refereeUserId ?? ''),
               })}
             </Text>
+          ) : null}
+          {canTakeoverReferee ? (
+            <View style={{ marginTop: 8 }}>
+              <Button
+                title={t('tournamentDetail.takeControl')}
+                variant="outline"
+                size="sm"
+                fullWidth
+                disabled={claimReferee.isPending || isOffline}
+                onPress={() => {
+                  if (!id || !matchId) return;
+                  claimReferee.mutate(
+                    { id: matchId, tournamentId: id, mode: 'takeover' },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  );
+                }}
+              />
+            </View>
           ) : null}
           {showSwitchSidesReminder ? (
             <Animated.View

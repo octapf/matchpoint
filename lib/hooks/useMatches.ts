@@ -32,7 +32,10 @@ function computeOptimisticServeAfterRefereePoint(
   return { serveIndex, servingPlayerId };
 }
 
-export function useMatches(params: { tournamentId: string; stage?: string; division?: string; category?: string; groupIndex?: string } | undefined) {
+export function useMatches(
+  params: { tournamentId: string; stage?: string; division?: string; category?: string; groupIndex?: string } | undefined,
+  options?: { enabled?: boolean; refetchIntervalMs?: number }
+) {
   return useQuery({
     queryKey: ['matches', params],
     queryFn: () => {
@@ -51,8 +54,9 @@ export function useMatches(params: { tournamentId: string; stage?: string; divis
         });
       });
     },
-    enabled: !!params?.tournamentId,
+    enabled: options?.enabled ?? !!params?.tournamentId,
     staleTime: 15_000,
+    ...(options?.refetchIntervalMs ? { refetchInterval: options.refetchIntervalMs } : null),
   });
 }
 
@@ -70,8 +74,19 @@ export function useUpdateMatch() {
 export function useClaimReferee() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationFn: ({ id, tournamentId, mode }: { id: string; tournamentId: string; mode?: 'claim' | 'takeover' }) =>
+      tournamentsApi.action(tournamentId, { action: 'claimReferee', matchId: id, ...(mode ? { mode } : null) }) as Promise<Match>,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
+export function useRefereeHeartbeat() {
+  const queryClient = useQueryClient();
+  return useMutation({
     mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
-      tournamentsApi.action(tournamentId, { action: 'claimReferee', matchId: id }) as Promise<Match>,
+      tournamentsApi.action(tournamentId, { action: 'refereeHeartbeat', matchId: id }) as Promise<Match>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
     },

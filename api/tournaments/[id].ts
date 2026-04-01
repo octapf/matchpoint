@@ -27,6 +27,25 @@ function serializeDoc(doc: Record<string, unknown> | null) {
   return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
 }
 
+const REFEREE_LOCK_MS = 15_000;
+
+function lockExpiresAtIso(nowMs: number): string {
+  return new Date(nowMs + REFEREE_LOCK_MS).toISOString();
+}
+
+function lockExpiresAtMs(raw: unknown): number | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : null;
+}
+
+function isRefereeLockActive(match: Record<string, unknown>, nowMs: number): boolean {
+  const refereeUserId = typeof (match as any).refereeUserId === 'string' ? String((match as any).refereeUserId) : '';
+  const expMs = lockExpiresAtMs((match as any).refereeLockExpiresAt);
+  if (!refereeUserId || expMs == null) return false;
+  return expMs > nowMs;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(req, res).end();
 
@@ -423,6 +442,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!matchId || !ObjectId.isValid(matchId)) {
           return corsRes.status(400).json({ error: 'Invalid matchId' });
         }
+        const mode = body?.mode === 'takeover' ? 'takeover' : 'claim';
         const matchOid = new ObjectId(matchId);
         const match = await db.collection('matches').findOne({ _id: matchOid });
         if (!match) return corsRes.status(404).json({ error: 'Match not found' });
@@ -436,48 +456,103 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
         const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
 
-        const currentRef = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
-        if (currentRef && currentRef !== actingUserId && !actorIsAdmin && !isOrg) {
-          return corsRes.status(409).json({ error: 'Match already has a referee' });
-        }
+        const nowMs = Date.now();
+        const now = new Date(nowMs).toISOString();
 
-        // Find actor's team (must not be playing).
+        const currentRef = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
+        const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
+        const lockActive = isRefereeLockActive(match as any, nowMs);
+
+        // Determine actor's team (if any). Non-organizers must have a team to referee.
         const actorTeam = await db
           .collection('teams')
-          .findOne({ tournamentId: id, playerIds: actingUserId }, { projection: { _id: 1, division: 1, category: 1, groupIndex: 1 } });
-        if (!actorTeam) return corsRes.status(403).json({ error: 'Only registered teams can act as referees' });
-        const actorTeamId = (actorTeam as { _id: ObjectId })._id.toString();
-        if (actorTeamId === teamAId || actorTeamId === teamBId) {
+          .findOne(
+            { tournamentId: id, playerIds: actingUserId },
+            { projection: { _id: 1, division: 1, category: 1, groupIndex: 1, playerIds: 1 } }
+          );
+        const actorTeamId = actorTeam ? (actorTeam as { _id: ObjectId })._id.toString() : '';
+        if (actorTeamId && (actorTeamId === teamAId || actorTeamId === teamBId)) {
           return corsRes.status(400).json({ error: 'Playing teams cannot referee their own match' });
+        }
+
+        // Locked by someone else and still active: only organizer/admin OR referee's teammate can takeover.
+        if (currentRef && currentRef !== actingUserId && lockActive) {
+          if (mode !== 'takeover') {
+            return corsRes.status(409).json({
+              error: 'Match is locked by another referee',
+              refereeUserId: currentRef,
+              refereeLockExpiresAt: currentLockExp || null,
+            });
+          }
+          if (!actorIsAdmin && !isOrg) {
+            // Only the other player on the referee team can takeover (same team as current referee).
+            const refTeam = await db
+              .collection('teams')
+              .findOne({ tournamentId: id, playerIds: currentRef }, { projection: { _id: 1 } });
+            const refTeamId = refTeam ? (refTeam as { _id: ObjectId })._id.toString() : '';
+            if (!refTeamId || !actorTeamId || refTeamId !== actorTeamId) {
+              return corsRes.status(409).json({
+                error: 'Match is locked by another referee',
+                refereeUserId: currentRef,
+                refereeLockExpiresAt: currentLockExp || null,
+              });
+            }
+          }
+        }
+
+        // If not org/admin, must be a registered team to referee.
+        if (!actorIsAdmin && !isOrg) {
+          if (!actorTeam) return corsRes.status(403).json({ error: 'Only registered teams can act as referees' });
+        }
+
+        const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
+        if (mode === 'takeover' && matchStatus === 'in_progress') {
+          const update: Record<string, unknown> = {
+            updatedAt: now,
+            refereeUserId: actingUserId,
+            refereeLockExpiresAt: lockExpiresAtIso(nowMs),
+          };
+          const result = await db
+            .collection('matches')
+            .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
+          if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+          return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
         }
 
         if (stage === 'classification') {
           if (!(typeof groupIndex === 'number' && Number.isFinite(groupIndex) && groupIndex >= 0)) {
             return corsRes.status(400).json({ error: 'Classification matches must have a groupIndex' });
           }
-          if (Number((actorTeam as { groupIndex?: unknown }).groupIndex ?? -1) !== Number(groupIndex)) {
+          if (actorTeam && Number((actorTeam as { groupIndex?: unknown }).groupIndex ?? -1) !== Number(groupIndex)) {
             return corsRes.status(403).json({ error: 'Referee team must belong to the same group' });
           }
         } else if (stage === 'category') {
           if (!category) return corsRes.status(400).json({ error: 'Category matches must have a category' });
-          if (String((actorTeam as { category?: unknown }).category ?? '') !== category) {
+          if (actorTeam && String((actorTeam as { category?: unknown }).category ?? '') !== category) {
             return corsRes.status(403).json({ error: 'Referee team must belong to the same category' });
           }
         } else {
           return corsRes.status(400).json({ error: 'Invalid match stage' });
         }
 
-        if (division && String((actorTeam as { division?: unknown }).division ?? '') && String((actorTeam as { division?: unknown }).division ?? '') !== division) {
+        if (
+          actorTeam &&
+          division &&
+          String((actorTeam as { division?: unknown }).division ?? '') &&
+          String((actorTeam as { division?: unknown }).division ?? '') !== division
+        ) {
           return corsRes.status(403).json({ error: 'Referee team must belong to the same division' });
         }
 
         // Team must not be playing any in-progress match.
-        const inProgress = await db.collection('matches').countDocuments({
-          tournamentId: id,
-          status: 'in_progress',
-          $or: [{ teamAId: actorTeamId }, { teamBId: actorTeamId }],
-        });
-        if (inProgress > 0) return corsRes.status(400).json({ error: 'Referee team is currently playing a match' });
+        if (actorTeamId) {
+          const inProgress = await db.collection('matches').countDocuments({
+            tournamentId: id,
+            status: 'in_progress',
+            $or: [{ teamAId: actorTeamId }, { teamBId: actorTeamId }],
+          });
+          if (inProgress > 0) return corsRes.status(400).json({ error: 'Referee team is currently playing a match' });
+        }
 
         // Team must not be about to play in the next scheduled matches for this slice.
         const sliceFilter: Record<string, unknown> = {
@@ -509,11 +584,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (m.teamAId) nextTeamIds.add(String(m.teamAId));
           if (m.teamBId) nextTeamIds.add(String(m.teamBId));
         }
-        if (nextTeamIds.has(actorTeamId)) {
+        if (actorTeamId && nextTeamIds.has(actorTeamId)) {
           return corsRes.status(400).json({ error: 'Referee team is about to play a match' });
         }
 
-        const now = new Date().toISOString();
+        // From here, treat as "start as referee": initialize and set in_progress.
 
         // Initialize serve order on start: A1, B1, A2, B2.
         const [teamA, teamB] = await db
@@ -543,7 +618,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               status: 'in_progress',
               startedAt: (match as { startedAt?: unknown }).startedAt ?? now,
               refereeUserId: actingUserId,
-              refereeTeamId: actorTeamId,
+              refereeLockExpiresAt: lockExpiresAtIso(nowMs),
+              refereeTeamId: actorTeamId || null,
               serveOrder,
               serveIndex: idx,
               servingPlayerId,
@@ -552,6 +628,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           { returnDocument: 'after' }
         );
+        if (!result) return corsRes.status(404).json({ error: 'Match not found' });
+        return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+      }
+
+      if (action === 'refereeHeartbeat') {
+        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
+        if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
+        const matchOid = new ObjectId(matchId);
+        const match = await db.collection('matches').findOne({ _id: matchOid });
+        if (!match) return corsRes.status(404).json({ error: 'Match not found' });
+        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
+          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+        }
+
+        const currentRef = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
+        const nowMs = Date.now();
+        const lockActive = isRefereeLockActive(match as any, nowMs);
+        const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
+
+        if (!currentRef || currentRef !== actingUserId || !lockActive) {
+          return corsRes.status(409).json({
+            error: 'Referee changed',
+            refereeUserId: currentRef || null,
+            refereeLockExpiresAt: currentLockExp || null,
+          });
+        }
+
+        const now = new Date(nowMs).toISOString();
+        const update: Record<string, unknown> = {
+          updatedAt: now,
+          refereeLockExpiresAt: lockExpiresAtIso(nowMs),
+        };
+        const result = await db
+          .collection('matches')
+          .findOneAndUpdate({ _id: matchOid }, { $set: update }, { returnDocument: 'after' });
         if (!result) return corsRes.status(404).json({ error: 'Match not found' });
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
@@ -595,14 +706,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const idx = Number.isFinite(existingIndex) ? (Math.floor(existingIndex) % 4) : 0;
         const servingPlayerId = String((match as { servingPlayerId?: unknown }).servingPlayerId ?? '') || String(serveOrder[idx] ?? serveOrder[0] ?? '');
 
-        const now = new Date().toISOString();
+        const nowMs = Date.now();
+        const now = new Date(nowMs).toISOString();
         const result = await db.collection('matches').findOneAndUpdate(
           { _id: matchOid, status: { $ne: 'completed' } },
           {
             $set: {
               status: 'in_progress',
               startedAt: (match as { startedAt?: unknown }).startedAt ?? now,
-              refereeUserId: String((match as { refereeUserId?: unknown }).refereeUserId ?? '') || actingUserId,
+              refereeUserId: actingUserId,
+              refereeLockExpiresAt: lockExpiresAtIso(nowMs),
               serveOrder,
               serveIndex: idx,
               servingPlayerId,
@@ -641,10 +754,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
-        if (!actorIsAdmin && !isOrg) {
-          if (!refereeUserId || refereeUserId !== actingUserId) {
-            return corsRes.status(403).json({ error: 'Only the referee can update the score while the match is on' });
-          }
+        const nowMs = Date.now();
+        const lockActive = isRefereeLockActive(match as any, nowMs);
+        const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
+        if (!refereeUserId || refereeUserId !== actingUserId || !lockActive) {
+          return corsRes.status(409).json({
+            error: 'Referee changed',
+            refereeUserId: refereeUserId || null,
+            refereeLockExpiresAt: currentLockExp || null,
+          });
         }
 
         // Basic rate limit (tap spam protection).
@@ -791,13 +909,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
-        if (!actorIsAdmin && !isOrg) {
-          if (!refereeUserId || refereeUserId !== actingUserId) {
-            return corsRes.status(403).json({ error: 'Only the referee can update the score while the match is on' });
-          }
+        const nowMs = Date.now();
+        const lockActive = isRefereeLockActive(match as any, nowMs);
+        const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
+        if (!refereeUserId || refereeUserId !== actingUserId || !lockActive) {
+          return corsRes.status(409).json({
+            error: 'Referee changed',
+            refereeUserId: refereeUserId || null,
+            refereeLockExpiresAt: currentLockExp || null,
+          });
         }
-        // Allow organizer/admin to set serve order before start; referee can set once match is in progress.
-        if (matchStatus !== 'in_progress' && !actorIsAdmin && !isOrg) {
+        if (matchStatus !== 'in_progress') {
           return corsRes.status(400).json({ error: 'Match is not in progress' });
         }
 

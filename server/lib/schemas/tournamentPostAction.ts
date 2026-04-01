@@ -11,6 +11,7 @@ export const tournamentPostActionSchema = z
       'finalizeClassification',
       'updateMatch',
       'claimReferee',
+      'refereeHeartbeat',
       'startMatch',
       'refereePoint',
       'setServeOrder',

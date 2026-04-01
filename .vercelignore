@@ -1,0 +1,35 @@
+# Shrink `npx vercel` uploads — same idea as .gitignore, applied to CLI deploys.
+# Git-based Vercel builds clone the repo and run `npm install` on Vercel; they do not use this file the same way.
+
+node_modules
+node_modules_backup
+
+# Expo / web export (regenerated on Vercel)
+.expo
+dist
+web-build
+
+# Native (regenerated locally; should not ship to serverless)
+android
+ios
+.kotlin
+
+# Tooling caches
+.turbo
+.cache
+coverage
+
+# Env & secrets (never upload)
+.env
+.env.local
+.env.*.local
+credentials
+
+# Vercel link metadata (optional)
+.vercel
+
+# OS / misc
+.DS_Store
+*.log
+npm-debug.*
+yarn-error.*
