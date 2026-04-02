@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ImageBackground } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
@@ -14,6 +14,11 @@ import {
 import type { Tournament, TournamentDivision } from '@/types';
 
 const BRONZE = '#cd7f32';
+
+/** Matches `cardConfigText` so row icons align with label color on the card image. */
+const CARD_CONFIG_ICON_COLOR = 'rgba(255, 255, 255, 0.92)';
+
+const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg.png');
 
 export type TournamentListRowProps = {
   tournament: Tournament;
@@ -46,27 +51,15 @@ function TournamentListRowInner({
   const waitlistCount = tournament.waitlistCount ?? 0;
   const waitlistByDivision = tournament.waitlistCountByDivision;
 
-  const categoryLine = useMemo(() => {
-    if (!tournament.categories?.length) return t('tournaments.categoryNone');
-    if (
-      tournament.categories.length === 2 &&
-      tournament.categories.includes('Gold') &&
-      tournament.categories.includes('Silver')
-    ) {
-      return t('tournaments.categoryGoldSilver');
-    }
-    if (
-      tournament.categories.length === 3 &&
-      tournament.categories.includes('Gold') &&
-      tournament.categories.includes('Silver') &&
-      tournament.categories.includes('Bronze')
-    ) {
-      return t('tournaments.categoryGoldSilverBronze');
-    }
-    return tournament.categories.join(' · ');
-  }, [t, tournament.categories]);
+  const formattedDate = formatTournamentDate(dateLabel) || '—';
+  const pointsConfigText = `${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21}`;
+  const setsConfigText = `${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`;
 
-  const pointsLine = `${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21} · ${t('tournaments.setsPerMatch')}: ${tournament.setsPerMatch ?? 1}`;
+  const cardImageSource = useMemo(() => {
+    const url = tournament.coverImageUrl?.trim();
+    if (url) return { uri: url };
+    return DEFAULT_TOURNAMENT_CARD_BG;
+  }, [tournament.coverImageUrl]);
 
   const accessibilityLabel =
     variant === 'home'
@@ -75,7 +68,12 @@ function TournamentListRowInner({
 
   const body = (
     <>
-      <View style={variant === 'home' ? styles.homeTitleRow : styles.feedTitleRow}>
+      <View
+        style={[
+          variant === 'home' ? styles.homeTitleRow : styles.feedTitleRow,
+          variant === 'home' && hasInvite && onSharePress ? styles.homeTitleRowWithShare : undefined,
+        ]}
+      >
         <Text style={variant === 'home' ? styles.homeTitle : styles.feedTitle}>{tournament.name}</Text>
         {(tournament.visibility ?? 'public') === 'private' ? (
           <View style={styles.privateBadge}>
@@ -89,17 +87,33 @@ function TournamentListRowInner({
           <Text style={styles.cancelledBadge}>{t('tournaments.cancelledBadge')}</Text>
         </View>
       ) : null}
-      {variant === 'home' ? (
-        <>
-          <Text style={styles.homeDate}>{formatTournamentDate(dateLabel) || '—'}</Text>
-          <Text style={styles.homeLocation}>{tournament.location?.trim() || '—'}</Text>
-        </>
-      ) : (
-        <Text style={styles.feedMeta}>
-          {formatTournamentDate(dateLabel) || '—'} · {tournament.location?.trim() || '—'}
-        </Text>
-      )}
-      <View style={styles.categoryRow}>
+      <View style={styles.cardConfigBlock}>
+        <View style={styles.cardConfigRow}>
+          <Ionicons name="location-outline" size={18} color={CARD_CONFIG_ICON_COLOR} />
+          <Text style={styles.cardConfigText} numberOfLines={2}>
+            {tournament.location?.trim() || '—'}
+          </Text>
+        </View>
+        <View style={styles.cardConfigRow}>
+          <Ionicons name="calendar-outline" size={18} color={CARD_CONFIG_ICON_COLOR} />
+          <Text style={styles.cardConfigText} numberOfLines={1}>
+            {formattedDate}
+          </Text>
+        </View>
+        <View style={styles.cardConfigRow}>
+          <Ionicons name="trophy-outline" size={18} color={CARD_CONFIG_ICON_COLOR} />
+          <Text style={styles.cardConfigText} numberOfLines={1}>
+            {pointsConfigText}
+          </Text>
+        </View>
+        <View style={styles.cardConfigRow}>
+          <Ionicons name="layers-outline" size={18} color={CARD_CONFIG_ICON_COLOR} />
+          <Text style={styles.cardConfigText} numberOfLines={1}>
+            {setsConfigText}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.categoryMedalsRow}>
         <View style={styles.categoryMedals}>
           {tournament.categories?.includes('Gold') ? (
             <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
@@ -114,45 +128,41 @@ function TournamentListRowInner({
             <MaterialCommunityIcons name="medal-outline" size={16} color={Colors.yellow} />
           ) : null}
         </View>
-        <Text style={styles.metaSecondary} numberOfLines={1}>
-          {categoryLine}
-        </Text>
       </View>
-      <Text style={styles.metaSecondary} numberOfLines={1}>
-        {pointsLine}
-      </Text>
-      <View style={variant === 'home' ? styles.homeStats : styles.feedStats}>
-        {divisions.map((division, idx) => {
-          const divisionLabel =
-            division === 'men'
-              ? t('tournaments.divisionMen')
-              : division === 'women'
-                ? t('tournaments.divisionWomen')
-                : t('tournaments.divisionMixed');
-          return (
-            <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
-              <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
-                {divisionLabel}
-              </Text>
-              <TournamentStatsBlock
-                compact
-                horizontal
-                muted={isCancelled}
-                currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
-                totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
-                currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
-                totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
-                currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
-                totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
-                waitlistCount={
-                  waitlistByDivision?.[division] ??
-                  // Back-compat for older cached tournaments; avoid showing nonsense splits once server provides per-division counts.
-                  splitAcrossDivisions(waitlistCount, divisionCount, idx)
-                }
-              />
-            </View>
-          );
-        })}
+      <View style={styles.divisionStatsContainer}>
+        <View style={variant === 'home' ? styles.homeStats : styles.feedStats}>
+          {divisions.map((division, idx) => {
+            const divisionLabel =
+              division === 'men'
+                ? t('tournaments.divisionMen')
+                : division === 'women'
+                  ? t('tournaments.divisionWomen')
+                  : t('tournaments.divisionMixed');
+            return (
+              <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
+                <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
+                  {divisionLabel}
+                </Text>
+                <TournamentStatsBlock
+                  compact
+                  horizontal
+                  muted={isCancelled}
+                  currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
+                  totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
+                  currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
+                  totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
+                  currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
+                  totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
+                  waitlistCount={
+                    waitlistByDivision?.[division] ??
+                    // Back-compat for older cached tournaments; avoid showing nonsense splits once server provides per-division counts.
+                    splitAcrossDivisions(waitlistCount, divisionCount, idx)
+                  }
+                />
+              </View>
+            );
+          })}
+        </View>
       </View>
       {isCancelled ? (
         <Text style={styles.cancelledHint}>{t('tournaments.cancelledListHint')}</Text>
@@ -163,15 +173,23 @@ function TournamentListRowInner({
   if (variant === 'home') {
     return (
       <View style={[styles.homeOuter, isCancelled && styles.homeOuterCancelled]}>
-        <Pressable
-          style={[styles.homePressable, hasInvite ? styles.homePressableWithShare : undefined]}
-          onPressIn={onPressIn}
-          onPress={onPress}
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
+        <ImageBackground
+          source={cardImageSource}
+          style={styles.homeImageBg}
+          imageStyle={styles.homeImage}
+          resizeMode="cover"
         >
-          {body}
-        </Pressable>
+          <View style={styles.cardBgScrim} pointerEvents="none" />
+          <Pressable
+            style={styles.homePressable}
+            onPressIn={onPressIn}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+          >
+            {body}
+          </Pressable>
+        </ImageBackground>
         {hasInvite && onSharePress ? (
           <View style={styles.shareCorner} pointerEvents="box-none">
             <IconButton
@@ -189,15 +207,23 @@ function TournamentListRowInner({
 
   return (
     <View style={styles.feedRow}>
-      <Pressable
-        style={[styles.feedCard, isCancelled && styles.feedCardCancelled]}
-        onPressIn={onPressIn}
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
+      <ImageBackground
+        source={cardImageSource}
+        style={styles.feedImageBg}
+        imageStyle={styles.feedImage}
+        resizeMode="cover"
       >
-        {body}
-      </Pressable>
+        <View style={styles.cardBgScrim} pointerEvents="none" />
+        <Pressable
+          style={[styles.feedPressable, isCancelled && styles.feedCardCancelled]}
+          onPressIn={onPressIn}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+        >
+          {body}
+        </Pressable>
+      </ImageBackground>
     </View>
   );
 }
@@ -209,8 +235,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 12,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
     overflow: 'hidden',
+  },
+  homeImageBg: {
+    width: '100%',
+  },
+  homeImage: {
+    borderRadius: 12,
+  },
+  cardBgScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.52)',
   },
   homeOuterCancelled: {
     borderLeftWidth: 3,
@@ -218,9 +253,12 @@ const styles = StyleSheet.create({
   },
   homePressable: {
     padding: 16,
+    position: 'relative',
+    zIndex: 1,
   },
-  homePressableWithShare: {
-    paddingRight: 44,
+  /** Clears the top-right share control only; keeps horizontal padding symmetric for the rest of the card */
+  homeTitleRowWithShare: {
+    paddingRight: 28,
   },
   shareCorner: {
     position: 'absolute',
@@ -231,12 +269,19 @@ const styles = StyleSheet.create({
   feedRow: {
     marginBottom: 10,
   },
-  feedCard: {
-    backgroundColor: Colors.surface,
+  feedImageBg: {
     borderRadius: 14,
-    padding: 16,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    overflow: 'hidden',
+  },
+  feedImage: {
+    borderRadius: 14,
+  },
+  feedPressable: {
+    padding: 16,
+    position: 'relative',
+    zIndex: 1,
   },
   feedCardCancelled: {
     borderLeftWidth: 3,
@@ -262,6 +307,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
     flex: 1,
     minWidth: 0,
+    textTransform: 'uppercase',
+    fontStyle: 'italic',
   },
   feedTitle: {
     fontSize: 17,
@@ -269,6 +316,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
     flex: 1,
     minWidth: 0,
+    textTransform: 'uppercase',
+    fontStyle: 'italic',
   },
   privateBadge: {
     paddingHorizontal: 8,
@@ -297,44 +346,47 @@ const styles = StyleSheet.create({
     color: Colors.error,
     letterSpacing: 0.3,
   },
-  homeDate: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 2,
-  },
-  homeLocation: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+  cardConfigBlock: {
     marginBottom: 8,
+    gap: 2,
   },
-  feedMeta: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
-  metaSecondary: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginBottom: 8,
-  },
-  categoryRow: {
+  cardConfigRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingVertical: 3,
+  },
+  cardConfigText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    lineHeight: 18,
+    color: CARD_CONFIG_ICON_COLOR,
+    fontStyle: 'italic',
+    fontWeight: '600',
+  },
+  categoryMedalsRow: {
     marginBottom: 8,
   },
   categoryMedals: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minWidth: 18,
+  },
+  /** Same hue as `Colors.surface` (#2d2d2d) at 40% opacity; full width to match title / config rows */
+  divisionStatsContainer: {
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(45, 45, 45, 0.4)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 4,
+    overflow: 'hidden',
   },
   homeStats: {
-    marginBottom: 4,
     gap: 8,
   },
   feedStats: {
-    marginBottom: 4,
     gap: 8,
   },
   divisionStatsSection: {

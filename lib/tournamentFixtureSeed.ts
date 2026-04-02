@@ -1,6 +1,6 @@
 import type { Team } from '@/types';
 
-import { assignCategories } from '@/lib/tournamentStandings';
+import { assignCategories, tieBreakOrdinal } from '@/lib/tournamentStandings';
 
 export type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
 export type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
@@ -12,6 +12,7 @@ export function buildSeededClassificationData(params: {
   setsPerMatch: number;
   categoryFractions?: Partial<Record<MatchCategoryTab, number>> | null;
   singleCategoryAdvanceFraction?: number | null;
+  tieBreakSeed?: string;
 }) {
   const { divisionTeamsByGroup, matchCategoryTabs } = params;
   const pointsToWin = Math.max(1, Math.min(99, Math.floor(params.pointsToWin) || 21));
@@ -88,22 +89,26 @@ export function buildSeededClassificationData(params: {
       }
     }
 
-    const standings = Object.values(stats).sort(
-      (a, b) =>
-        b.wins - a.wins ||
-        b.points - a.points ||
-        a.team.name.localeCompare(b.team.name)
-    );
+    const tbSeed = params.tieBreakSeed ?? 'dev-seeded-classification';
+    const standings = Object.values(stats).sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.points !== a.points) return b.points - a.points;
+      const oa = tieBreakOrdinal(tbSeed, a.team._id);
+      const ob = tieBreakOrdinal(tbSeed, b.team._id);
+      if (oa !== ob) return oa < ob ? -1 : 1;
+      return a.team.name.localeCompare(b.team.name);
+    });
 
     return { matches, standings };
   });
 
   const standingsByGroup = perGroup.map((p) => p.standings);
-  const { teamCategory, eliminated } = assignCategories({
+  const { teamCategory, eliminated, globalOrder } = assignCategories({
     standingsByGroup,
     categories: orderedCats,
     categoryFractions: params.categoryFractions ?? null,
     singleCategoryAdvanceFraction: params.singleCategoryAdvanceFraction ?? 0.5,
+    tieBreakSeed: params.tieBreakSeed ?? 'dev-seeded-classification',
   });
 
   const perGroupWithCategories = perGroup.map(({ matches, standings }) => {
@@ -118,6 +123,7 @@ export function buildSeededClassificationData(params: {
     perGroup: perGroupWithCategories,
     teamCategory,
     eliminated,
+    globalOrder,
   };
 }
 

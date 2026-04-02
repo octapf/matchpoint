@@ -1,11 +1,50 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Pressable, Animated, Easing } from 'react-native';
+import React, { useEffect, useId, useRef } from 'react';
+import { View, Text, Pressable, Animated, Easing, StyleSheet, type ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import type { Team } from '@/types';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
+import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
+import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
+import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
+import { estimateCategoryBracketTeamCount, resolveKnockoutRoundHeading } from '@/lib/knockoutRoundLabel';
+
+type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
+type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
 const BRONZE = '#cd7f32';
+
+/** Full-bleed horizontal wash (left → transparent) behind Gold / Silver / Bronze fixture content. */
+function CategoryTabContentGradient({ category }: { category: MatchCategoryTab }) {
+  const uid = useId().replace(/:/g, '');
+  const gradId = `fxCatBg${category}${uid}`;
+  return (
+    <Svg style={StyleSheet.absoluteFillObject} viewBox="0 0 1 1" preserveAspectRatio="none" pointerEvents="none">
+      <Defs>
+        <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+          {category === 'Gold'
+            ? [
+                <Stop key="g0" offset="0" stopColor={Colors.yellow} stopOpacity={0.14} />,
+                <Stop key="g1" offset="0.45" stopColor="#f59e0b" stopOpacity={0.06} />,
+                <Stop key="g2" offset="1" stopColor={Colors.yellow} stopOpacity={0} />,
+              ]
+            : category === 'Silver'
+              ? [
+                  <Stop key="s0" offset="0" stopColor="#94a3b8" stopOpacity={0.12} />,
+                  <Stop key="s1" offset="0.5" stopColor="#cbd5e1" stopOpacity={0.05} />,
+                  <Stop key="s2" offset="1" stopColor="#94a3b8" stopOpacity={0} />,
+                ]
+              : [
+                  <Stop key="b0" offset="0" stopColor={BRONZE} stopOpacity={0.13} />,
+                  <Stop key="b1" offset="0.45" stopColor="#b45309" stopOpacity={0.05} />,
+                  <Stop key="b2" offset="1" stopColor={BRONZE} stopOpacity={0} />,
+                ]}
+        </SvgLinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={1} height={1} fill={`url(#${gradId})`} />
+    </Svg>
+  );
+}
 
 /** Subtle breathe on the “live” match icon so it feels in progress */
 function LiveMatchStatusIcon({ color, size }: { color: string; size: number }) {
@@ -43,8 +82,17 @@ function LiveMatchStatusIcon({ color, size }: { color: string; size: number }) {
   );
 }
 
-type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
-type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
+/** Gold/Silver/Bronze labels live under `tournaments`, not `tournamentDetail`. */
+function tournamentCategoryI18nKey(cat: MatchCategoryTab): 'tournaments.categoryGold' | 'tournaments.categorySilver' | 'tournaments.categoryBronze' {
+  switch (cat) {
+    case 'Gold':
+      return 'tournaments.categoryGold';
+    case 'Silver':
+      return 'tournaments.categorySilver';
+    case 'Bronze':
+      return 'tournaments.categoryBronze';
+  }
+}
 
 type MatchRow = {
   id: string;
@@ -60,6 +108,16 @@ type MatchRow = {
   orderIndex?: number;
   scheduledAt?: string;
   createdAt?: string;
+  /** Category knockout: server round index (larger = closer to final). */
+  bracketRound?: number;
+  isBronzeMatch?: boolean;
+  advanceTeamAFromMatchId?: string;
+  advanceTeamBFromMatchId?: string;
+  advanceTeamALoserFromMatchId?: string;
+  advanceTeamBLoserFromMatchId?: string;
+  /** Live tab only: classification vs category (icon only, no round text) */
+  liveStage?: 'classification' | 'category';
+  liveCategory?: MatchCategoryTab;
 };
 
 export function FixtureTab({
@@ -91,6 +149,11 @@ export function FixtureTab({
   matchStandingRankStyle,
   matchStandingTeamStyle,
   matchStandingMetaStyle,
+  teamById,
+  userMap,
+  tournamentId,
+  opponentTbdLabel,
+  categoryTeamIdsByCategory,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   matchCategoryTabs: MatchSubTab[];
@@ -125,7 +188,71 @@ export function FixtureTab({
   matchStandingRankStyle: unknown;
   matchStandingTeamStyle: unknown;
   matchStandingMetaStyle: unknown;
+  teamById: Record<string, Team>;
+  /** For bracket avatars: profile photos above team names. */
+  userMap: Record<string, User>;
+  tournamentId: string;
+  opponentTbdLabel: string;
+  categoryTeamIdsByCategory: Partial<Record<MatchCategoryTab, string[]>>;
 }) {
+  const safeOpenMatch =
+    onOpenMatch &&
+    ((mid: string) => {
+      if (isSyntheticBracketMatchId(mid)) return;
+      onOpenMatch(mid);
+    });
+
+  /** When category matches carry bracket metadata, show round headings (still a list — not a drawn tree). */
+  const groupCategoryByBracketRound = (rows: MatchRow[], teamCountInCategory: number) => {
+    const has = rows.some((r) => typeof r.bracketRound === 'number');
+    if (!has || rows.length === 0) return null;
+    const mainRows = rows.filter((r) => !r.isBronzeMatch);
+    const distinctMainBracketRounds = [
+      ...new Set(
+        mainRows
+          .map((r) => (typeof r.bracketRound === 'number' ? r.bracketRound : 0))
+          .filter((br) => br > 0)
+      ),
+    ].sort((a, b) => a - b);
+
+    const byRound = new Map<number, MatchRow[]>();
+    for (const r of rows) {
+      const br = typeof r.bracketRound === 'number' ? r.bracketRound : 0;
+      const list = byRound.get(br) ?? [];
+      list.push(r);
+      byRound.set(br, list);
+    }
+    const ordered = [...byRound.entries()].sort((a, b) => a[0] - b[0]);
+    return ordered.map(([round, matchRows]) => {
+      const isBronzeGroup = matchRows.some((m) => m.isBronzeMatch);
+      if (isBronzeGroup) {
+        return {
+          round,
+          matches: sortMatches(matchRows),
+          heading: t('tournamentDetail.bracketBronzeHeading'),
+        };
+      }
+      const idx = distinctMainBracketRounds.indexOf(round);
+      const roundIndexFromEnd =
+        idx >= 0 ? distinctMainBracketRounds.length - 1 - idx : 0;
+      const heading =
+        idx < 0
+          ? t('tournamentDetail.bracketRoundHeading', { n: round })
+          : resolveKnockoutRoundHeading(
+              roundIndexFromEnd,
+              round,
+              teamCountInCategory,
+              distinctMainBracketRounds.length,
+              t
+            );
+      return {
+        round,
+        matches: sortMatches(matchRows),
+        heading,
+      };
+    });
+  };
+
   const sortMatches = (rows: MatchRow[]) => {
     return [...rows].sort((a, b) => {
       const ao = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY;
@@ -141,12 +268,15 @@ export function FixtureTab({
   };
 
   const renderMatchRow = (m: MatchRow) => {
-    const statusLabel =
-      m.status === 'completed'
-        ? t('tournamentDetail.statusCompleted')
-        : m.status === 'in_progress'
-          ? t('tournamentDetail.statusInProgress')
-          : t('tournamentDetail.statusScheduled');
+    const liveMedalColor =
+      m.liveCategory === 'Gold'
+        ? Colors.yellow
+        : m.liveCategory === 'Silver'
+          ? Colors.textSecondary
+          : m.liveCategory === 'Bronze'
+            ? BRONZE
+            : Colors.textMuted;
+
     const statusBg =
       m.status === 'completed'
         ? 'rgba(34,197,94,0.15)'
@@ -162,9 +292,35 @@ export function FixtureTab({
     const statusColor =
       m.status === 'completed' ? '#22c55e' : m.status === 'in_progress' ? Colors.yellow : Colors.textMuted;
 
+    const liveIcon =
+      m.liveStage === 'category' && m.liveCategory ? (
+        <MaterialCommunityIcons
+          name="medal-outline"
+          size={16}
+          color={liveMedalColor}
+          accessibilityLabel={t(tournamentCategoryI18nKey(m.liveCategory))}
+        />
+      ) : m.liveStage === 'classification' ? (
+        <Ionicons
+          name="layers-outline"
+          size={15}
+          color={Colors.textMuted}
+          accessibilityLabel={t('tournamentDetail.matchesClassification')}
+        />
+      ) : null;
+
     const content = (
       <View style={matchRowStyle as never}>
-        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
           <Text style={[matchTeamNameStyle as never, m.winnerId === m.teamA._id ? (matchWinnerStyle as never) : null]}>
             {m.teamA.name}
           </Text>
@@ -176,7 +332,10 @@ export function FixtureTab({
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {liveIcon ? (
+            <View style={{ width: 22, alignItems: 'center', justifyContent: 'center' }}>{liveIcon}</View>
+          ) : null}
           <View
             style={{
               paddingVertical: 3,
@@ -195,19 +354,24 @@ export function FixtureTab({
               <Ionicons name="time-outline" size={14} color={statusColor} />
             )}
           </View>
-
-          {/* Row is already clickable; no redundant edit icon */}
         </View>
       </View>
     );
 
-    if (!onOpenMatch) return <View key={m.id}>{content}</View>;
+    if (!safeOpenMatch) return <View key={m.id}>{content}</View>;
     return (
-      <Pressable key={m.id} onPress={() => onOpenMatch(m.id)} accessibilityRole="button">
+      <Pressable key={m.id} onPress={() => safeOpenMatch(m.id)} accessibilityRole="button">
         {content}
       </Pressable>
     );
   };
+
+  const counts = classificationCounts;
+  const showClassificationProgress =
+    counts != null &&
+    selectedMatchesSubtab !== 'Gold' &&
+    selectedMatchesSubtab !== 'Silver' &&
+    selectedMatchesSubtab !== 'Bronze';
 
   return (
     <View>
@@ -236,7 +400,28 @@ export function FixtureTab({
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              {tab === 'live' || tab === 'classification' ? (
+              {tab === 'live' ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 1,
+                    gap: 4,
+                  }}
+                >
+                  <Text
+                    style={[matchesSubtabLabelStyle as never, selected ? (matchesSubtabLabelSelectedStyle as never) : null]}
+                    numberOfLines={1}
+                    ellipsizeMode="clip"
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    {label}
+                  </Text>
+                  <LiveMatchStatusIcon color={Colors.yellow} size={12} />
+                </View>
+              ) : tab === 'classification' ? (
                 <Text
                   style={[matchesSubtabLabelStyle as never, selected ? (matchesSubtabLabelSelectedStyle as never) : null]}
                   numberOfLines={1}
@@ -254,10 +439,10 @@ export function FixtureTab({
         })}
       </View>
 
-      {classificationCounts ? (
+      {showClassificationProgress && counts ? (
         <View style={{ paddingTop: 10, paddingBottom: 6 }}>
           <Text style={classificationCountsTextStyle as never}>
-            {classificationCounts.completed}/{classificationCounts.total} {t('tournamentDetail.matchesCompleted')}
+            {counts.completed}/{counts.total} {t('tournamentDetail.matchesCompleted')}
           </Text>
         </View>
       ) : null}
@@ -303,15 +488,66 @@ export function FixtureTab({
           </>
         )
       ) : (
-        <>
+        <View style={fixtureCategoryContentShell}>
+          <CategoryTabContentGradient category={selectedMatchesSubtab as MatchCategoryTab} />
+          <View style={fixtureCategoryContentInner}>
           {(categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []).length > 0 ? (
-            <View style={groupBlockStyle as never}>
-              <FlashList
-                data={sortMatches((categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []) as MatchRow[])}
-                keyExtractor={(m) => m.id}
-                renderItem={({ item }) => renderMatchRow(item) as never}
-              />
-            </View>
+            (() => {
+              const tab = selectedMatchesSubtab as MatchCategoryTab;
+              const catRows = sortMatches(
+                (categoryMatchesByCategory[tab] ?? []) as MatchRow[]
+              );
+              const mergedRows = buildBracketRowsForCategory(
+                catRows,
+                categoryTeamIdsByCategory[tab],
+                teamById,
+                tournamentId,
+                opponentTbdLabel
+              );
+              const idsLen = categoryTeamIdsByCategory[tab]?.filter(Boolean).length ?? 0;
+              const teamCountForLabels =
+                idsLen >= 2 ? idsLen : estimateCategoryBracketTeamCount(mergedRows as MatchRow[]);
+              const bracketGroups = groupCategoryByBracketRound(mergedRows as MatchRow[], teamCountForLabels);
+              if (bracketGroups && mergedRows.length > 0) {
+                return (
+                  <View style={groupBlockStyle as never}>
+                    <CategoryBracketDiagram
+                      t={t}
+                      category={tab}
+                      matches={mergedRows as BracketMatchRow[]}
+                      userMap={userMap}
+                      onOpenMatch={safeOpenMatch ?? undefined}
+                    />
+                    <View
+                      style={{
+                        alignSelf: 'stretch',
+                        borderTopWidth: 1,
+                        borderTopColor: Colors.surfaceLight,
+                        marginTop: 4,
+                        marginBottom: 12,
+                      }}
+                    />
+                    {bracketGroups.map((g) => (
+                      <View key={`br-${g.round}-${g.heading}`} style={{ marginBottom: 14 }}>
+                        <Text style={groupHeadingStyle as never}>{g.heading}</Text>
+                        {sortMatches(g.matches).map((m) => (
+                          <View key={m.id}>{renderMatchRow(m)}</View>
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                );
+              }
+              return (
+                <View style={groupBlockStyle as never}>
+                  <FlashList
+                    data={catRows}
+                    keyExtractor={(m) => m.id}
+                    renderItem={({ item }) => renderMatchRow(item) as never}
+                  />
+                </View>
+              );
+            })()
           ) : (
             <FlashList
               data={classificationData}
@@ -343,9 +579,29 @@ export function FixtureTab({
               }}
             />
           )}
-        </>
+          </View>
+        </View>
       )}
     </View>
   );
 }
+
+/** Must match `styles.content` horizontal padding on `app/tournament/[id].tsx` FlashList. */
+const TOURNAMENT_CONTENT_PAD = 20;
+
+const fixtureCategoryContentShell: ViewStyle = {
+  position: 'relative',
+  alignSelf: 'stretch',
+  overflow: 'hidden',
+  borderRadius: 12,
+  marginTop: 2,
+  /** Bleed gradient to the full screen width (edge to edge of the scroll). */
+  marginHorizontal: -TOURNAMENT_CONTENT_PAD,
+};
+
+const fixtureCategoryContentInner: ViewStyle = {
+  position: 'relative',
+  zIndex: 1,
+  paddingHorizontal: TOURNAMENT_CONTENT_PAD,
+};
 

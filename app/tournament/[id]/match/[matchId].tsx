@@ -24,6 +24,7 @@ import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
+import { isMongoObjectId, teamDisplayName } from '@/lib/tournamentMatchDisplay';
 import { getPlayerListName } from '@/lib/utils/userDisplay';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
 
@@ -367,6 +368,11 @@ export default function EditMatchScreen() {
 
   const teamA = teamById[match.teamAId];
   const teamB = teamById[match.teamBId];
+  const tbdLabel = t('tournamentDetail.matchOpponentTbd');
+  const teamAName = teamDisplayName(match.teamAId, teamA, tbdLabel);
+  const teamBName = teamDisplayName(match.teamBId, teamB, tbdLabel);
+  const matchTeamsReady =
+    isMongoObjectId(match.teamAId) && isMongoObjectId(match.teamBId) && !!teamA && !!teamB;
 
   const livePointsA = Number(match.pointsA ?? 0) || 0;
   const livePointsB = Number(match.pointsB ?? 0) || 0;
@@ -637,9 +643,9 @@ export default function EditMatchScreen() {
         </View>
       ) : null}
       <Text style={styles.vsHeadline} accessibilityRole="header">
-        <Text style={styles.vsTeamA}>{teamA?.name ?? match.teamAId}</Text>
+        <Text style={styles.vsTeamA}>{teamAName}</Text>
         <Text style={styles.vsSep}> VS </Text>
-        <Text style={styles.vsTeamB}>{teamB?.name ?? match.teamBId}</Text>
+        <Text style={styles.vsTeamB}>{teamBName}</Text>
       </Text>
       <Text style={styles.setsIndicator}>SET {currentSet}/{totalSets}</Text>
       {isCompleted ? (
@@ -754,11 +760,14 @@ export default function EditMatchScreen() {
             </View>
           </View>
 
-          {renderServeLine(teamA?.name ?? 'Team A', teamB?.name ?? 'Team B', order)}
+          {renderServeLine(teamAName, teamBName, order)}
         </>
 
       {(match as { status?: string }).status !== 'completed' && (match as { status?: string }).status !== 'in_progress' ? (
         <View style={{ gap: 8 }}>
+          {!matchTeamsReady ? (
+            <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>{t('tournamentDetail.matchWaitingForOpponents')}</Text>
+          ) : null}
           {suggestedRefTeam ? (
             <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
               {t('tournamentDetail.refereeSuggested', { name: suggestedRefTeam.name })}
@@ -768,7 +777,7 @@ export default function EditMatchScreen() {
             <Button
               title={startMatch.isPending ? t('common.loading') : String(t('tournamentDetail.startMatch') ?? '').toUpperCase()}
               onPress={() => setStartCountdown({ seconds: 5, action: 'startMatch' })}
-              disabled={startMatch.isPending || !!startCountdown || isOffline}
+              disabled={startMatch.isPending || !!startCountdown || isOffline || !matchTeamsReady}
               variant="secondary"
               size="sm"
               fullWidth
@@ -778,7 +787,7 @@ export default function EditMatchScreen() {
             <Button
               title={claimReferee.isPending ? t('common.loading') : t('tournamentDetail.startAsReferee')}
               onPress={() => setStartCountdown({ seconds: 5, action: 'claimReferee' })}
-              disabled={claimReferee.isPending || !!startCountdown || isOffline}
+              disabled={claimReferee.isPending || !!startCountdown || isOffline || !matchTeamsReady}
               fullWidth
             />
           ) : null}

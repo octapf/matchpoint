@@ -2,7 +2,22 @@ import type { Match, Team, TournamentCategory } from '@/types';
 
 export type StandingRow = { team: Team; wins: number; points: number };
 
-export function computeStandingsForGroup(params: { teams: Team[]; matches: Match[] }): StandingRow[] {
+export function tieBreakOrdinal(seed: string, teamId: string): number {
+  const s = `${seed}\0${teamId}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  }
+  return h >>> 0;
+}
+
+export function computeStandingsForGroup(params: {
+  teams: Team[];
+  matches: Match[];
+  /** Tournament id — deterministic draw when wins/points tie (matches server). */
+  tieBreakSeed?: string;
+}): StandingRow[] {
+  const seed = String(params.tieBreakSeed ?? '');
   const stats: Record<string, StandingRow> = {};
   for (const tm of params.teams) stats[tm._id] = { team: tm, wins: 0, points: 0 };
 
@@ -15,9 +30,16 @@ export function computeStandingsForGroup(params: { teams: Team[]; matches: Match
     if (m.winnerId && stats[m.winnerId]) stats[m.winnerId]!.wins += 1;
   }
 
-  return Object.values(stats).sort(
-    (a, b) => b.wins - a.wins || b.points - a.points || a.team.name.localeCompare(b.team.name)
-  );
+  return Object.values(stats).sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (b.points !== a.points) return b.points - a.points;
+    if (seed) {
+      const oa = tieBreakOrdinal(seed, a.team._id);
+      const ob = tieBreakOrdinal(seed, b.team._id);
+      if (oa !== ob) return oa < ob ? -1 : 1;
+    }
+    return a.team.name.localeCompare(b.team.name);
+  });
 }
 
 export function assignCategories(params: {
@@ -25,7 +47,14 @@ export function assignCategories(params: {
   categories: TournamentCategory[];
   categoryFractions: Partial<Record<TournamentCategory, number>> | null | undefined;
   singleCategoryAdvanceFraction: number | null | undefined;
-}): { teamCategory: Map<string, TournamentCategory>; eliminated: Set<string> } {
+  tieBreakSeed?: string;
+}): {
+  teamCategory: Map<string, TournamentCategory>;
+  eliminated: Set<string>;
+  /** Cross-group snake order (same assignment order as server `assignCategoriesForDivision`). */
+  globalOrder: string[];
+} {
+  const seed = String(params.tieBreakSeed ?? '');
   const groupMax = Math.max(0, ...params.standingsByGroup.map((g) => g.length));
 
   const global: StandingRow[] = [];
@@ -35,13 +64,24 @@ export function assignCategories(params: {
       const row = g[rank];
       if (row) bucket.push(row);
     }
-    bucket.sort((a, b) => b.wins - a.wins || b.points - a.points || a.team.name.localeCompare(b.team.name));
+    bucket.sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.points !== a.points) return b.points - a.points;
+      if (seed) {
+        const oa = tieBreakOrdinal(seed, a.team._id);
+        const ob = tieBreakOrdinal(seed, b.team._id);
+        if (oa !== ob) return oa < ob ? -1 : 1;
+      }
+      return a.team.name.localeCompare(b.team.name);
+    });
     global.push(...bucket);
   }
 
   const cats = params.categories ?? [];
   const teamCategory = new Map<string, TournamentCategory>();
   const eliminated = new Set<string>();
+
+  const globalOrder = global.map((r) => r.team._id);
 
   if (cats.length === 0) {
     const fRaw = Number(params.singleCategoryAdvanceFraction ?? 0.5);
@@ -52,7 +92,7 @@ export function assignCategories(params: {
       if (i < adv) teamCategory.set(tid, 'Gold');
       else eliminated.add(tid);
     }
-    return { teamCategory, eliminated };
+    return { teamCategory, eliminated, globalOrder };
   }
 
   const keys: TournamentCategory[] = ['Gold', 'Silver', 'Bronze'];
@@ -95,6 +135,6 @@ export function assignCategories(params: {
     cursor++;
   }
 
-  return { teamCategory, eliminated };
+  return { teamCategory, eliminated, globalOrder };
 }
 

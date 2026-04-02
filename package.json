@@ -30,9 +30,9 @@
     "export:web": "npx expo export -p web && node scripts/verify-web-og.js",
     "eas:build:android": "eas build --profile production --platform android",
     "eas:submit:android": "eas submit --profile production --platform android --latest",
-    "eas:env:sentry": "npx eas-cli env:create production --name EXPO_PUBLIC_SENTRY_DSN --visibility secret --scope project",
-    "eas:env:sentry:preview": "npx eas-cli env:create preview --name EXPO_PUBLIC_SENTRY_DSN --visibility secret --scope project",
-    "eas:env:sentry:development": "npx eas-cli env:create development --name EXPO_PUBLIC_SENTRY_DSN --visibility secret --scope project",
+    "eas:env:sentry": "npx eas-cli env:create production --name EXPO_PUBLIC_SENTRY_DSN --visibility sensitive --scope project",
+    "eas:env:sentry:preview": "npx eas-cli env:create preview --name EXPO_PUBLIC_SENTRY_DSN --visibility sensitive --scope project",
+    "eas:env:sentry:development": "npx eas-cli env:create development --name EXPO_PUBLIC_SENTRY_DSN --visibility sensitive --scope project",
     "postinstall": "node scripts/ensure-esbuild-optional-dirs.js"
   },
   "dependencies": {

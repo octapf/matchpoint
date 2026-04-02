@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform, RefreshControl } from 'react-native';
+import { WeatherPanelGradientLayer } from '@/components/weather/WeatherPanelGradientLayer';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,6 +18,12 @@ import { useWeather } from '@/lib/hooks/useWeather';
 import { useTournaments } from '@/lib/hooks/useTournaments';
 import type { Tournament } from '@/types';
 import { weatherCodeToSkyKey, type WeatherPayload } from '@/lib/weather/openMeteo';
+import {
+  getWeatherPanelGradient,
+  getWeatherPanelIconColors,
+  getWeatherPanelScrimColor,
+  type WeatherPanelIconColors,
+} from '@/lib/weather/weatherPanelGradient';
 import { prefetchTournament } from '@/lib/prefetchTournament';
 
 function formatHourLabel(iso: string, locale: string): string {
@@ -41,15 +48,45 @@ function WeatherGlyph({
   skyKey,
   isDay,
   size,
+  iconColors,
 }: {
   skyKey: string;
   isDay: boolean;
   size: number;
+  iconColors: WeatherPanelIconColors;
 }) {
-  const color = Colors.yellow;
+  const { glyph, sun, cloud } = iconColors;
+
   if (skyKey === 'clear') {
-    return <Ionicons name={isDay ? 'sunny' : 'moon'} size={size} color={color} />;
+    return <Ionicons name={isDay ? 'sunny' : 'moon'} size={size} color={glyph} />;
   }
+
+  const useSunCloud =
+    (skyKey === 'mainlyClear' || skyKey === 'partlyCloudy') && sun != null && cloud != null;
+
+  if (useSunCloud) {
+    const sunIcon = isDay ? 'sunny' : 'moon';
+    const cloudIcon = skyKey === 'mainlyClear' ? 'cloud-outline' : 'cloud';
+    const sunSize = size * 0.78;
+    const cloudSize = size * 0.7;
+    return (
+      <View style={{ width: size, height: size, position: 'relative' }}>
+        <Ionicons
+          name={sunIcon}
+          size={sunSize}
+          color={sun}
+          style={{ position: 'absolute', left: 0, top: size * 0.04 }}
+        />
+        <Ionicons
+          name={cloudIcon}
+          size={cloudSize}
+          color={cloud}
+          style={{ position: 'absolute', right: -size * 0.06, bottom: -size * 0.02 }}
+        />
+      </View>
+    );
+  }
+
   const map: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
     mainlyClear: 'partly-sunny-outline',
     partlyCloudy: 'partly-sunny',
@@ -64,7 +101,7 @@ function WeatherGlyph({
     unknown: 'cloud-outline',
   };
   const name = map[skyKey] ?? 'cloud-outline';
-  return <Ionicons name={name} size={size} color={color} />;
+  return <Ionicons name={name} size={size} color={glyph} />;
 }
 
 export default function FeedScreen() {
@@ -112,6 +149,8 @@ export default function FeedScreen() {
   const skyKey = current != null ? weatherCodeToSkyKey(current.weatherCode) : 'unknown';
   const skyLabel = t(`feed.sky.${skyKey}`);
   const weatherReady = current != null;
+  const panelIconColors =
+    weatherReady && current && !isError ? getWeatherPanelIconColors(skyKey, current.isDay) : null;
 
   const topPad = Math.max(insets.top, 12) + 8;
   const scrollContentStyle = useMemo(
@@ -125,82 +164,97 @@ export default function FeedScreen() {
         <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
 
         <View style={styles.weatherCard}>
-          {isLoading && !weatherReady ? (
-            <View style={styles.weatherBody}>
-              <Skeleton height={44} width="45%" style={{ marginBottom: 8 }} />
-              <Skeleton height={16} width="70%" style={{ marginBottom: 12 }} />
-              <Skeleton height={14} width="90%" />
-            </View>
-          ) : isError || !weatherReady ? (
-            <View style={styles.weatherBody}>
-              <Text style={styles.errorText}>{error instanceof Error ? error.message : t('feed.error')}</Text>
-              <Button title={t('feed.retry')} onPress={() => void refetch()} variant="secondary" />
-            </View>
-          ) : (
-            <View style={styles.weatherBody}>
-              <View style={styles.weatherTopRow}>
-                <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={30} />
-                <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+          {weatherReady && !isError && current ? (
+            <>
+              <View style={styles.weatherGradientLayer} pointerEvents="none">
+                <WeatherPanelGradientLayer colors={getWeatherPanelGradient(skyKey, current.isDay)} />
               </View>
-              <Text style={styles.skyText}>{skyLabel}</Text>
+              <View
+                style={[styles.weatherScrim, { backgroundColor: getWeatherPanelScrimColor(current.isDay) }]}
+                pointerEvents="none"
+              />
+            </>
+          ) : null}
+          <View style={styles.weatherCardForeground}>
+            {isLoading && !weatherReady ? (
+              <View style={styles.weatherBody}>
+                <Skeleton height={44} width="45%" style={{ marginBottom: 8 }} />
+                <Skeleton height={16} width="70%" style={{ marginBottom: 12 }} />
+                <Skeleton height={14} width="90%" />
+              </View>
+            ) : isError || !weatherReady ? (
+              <View style={styles.weatherBody}>
+                <Text style={styles.errorText}>{error instanceof Error ? error.message : t('feed.error')}</Text>
+                <Button title={t('feed.retry')} onPress={() => void refetch()} variant="secondary" />
+              </View>
+            ) : (
+              <View style={styles.weatherBody}>
+                <View style={styles.weatherTopRow}>
+                  <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={30} iconColors={panelIconColors!} />
+                  <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+                </View>
+                <Text style={styles.skyText}>{skyLabel}</Text>
 
-              <View style={styles.weatherMetaBlock}>
-                <Text style={styles.weatherDateLine}>
-                  {t('feed.today')} · {dateLabel}
-                </Text>
-                {usedDeviceLocation ? (
-                  <Text style={styles.locationHint}>{locationAreaName ?? t('feed.locationNearby')}</Text>
-                ) : Platform.OS !== 'web' ? (
-                  <Pressable
-                    onPress={() => void Linking.openSettings()}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('feed.locationEnableHint')}
+                <View style={styles.weatherMetaBlock}>
+                  <Text style={styles.weatherDateLine}>
+                    {t('feed.today')} · {dateLabel}
+                  </Text>
+                  {usedDeviceLocation ? (
+                    <Text style={styles.locationHint}>{locationAreaName ?? t('feed.locationNearby')}</Text>
+                  ) : Platform.OS !== 'web' ? (
+                    <Pressable
+                      onPress={() => void Linking.openSettings()}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('feed.locationEnableHint')}
+                    >
+                      <Text style={[styles.locationHint, styles.locationHintLink]}>{t('feed.locationEnableHint')}</Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={styles.locationHint}>{t('feed.locationFallback')}</Text>
+                  )}
+                  {isFetching && !isLoading && weatherReady ? (
+                    <Text style={styles.updating}>{t('feed.loading')}</Text>
+                  ) : null}
+                </View>
+
+                {hourly.length > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    nestedScrollEnabled
+                    contentContainerStyle={styles.hourlyScrollContent}
+                    style={styles.hourlyScroll}
                   >
-                    <Text style={[styles.locationHint, styles.locationHintLink]}>{t('feed.locationEnableHint')}</Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.locationHint}>{t('feed.locationFallback')}</Text>
-                )}
-                {isFetching && !isLoading && weatherReady ? (
-                  <Text style={styles.updating}>{t('feed.loading')}</Text>
-                ) : null}
-              </View>
-
-              {hourly.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator
-                  nestedScrollEnabled
-                  contentContainerStyle={styles.hourlyScrollContent}
-                  style={styles.hourlyScroll}
-                >
-                  {hourly.map((h, i) => {
-                    const hk = weatherCodeToSkyKey(h.weatherCode);
-                    return (
-                      <View key={`h-${h.timeIso}-${i}`} style={styles.hourSlot}>
-                        <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
-                        <View style={styles.hourlyTempRow}>
-                          <WeatherGlyph skyKey={hk} isDay={isDayHour(h.timeIso)} size={16} />
-                          <Text style={styles.hourlyTemp}>{Math.round(h.temperatureC)}°</Text>
-                        </View>
-                        <View style={styles.hourlyWindBlock}>
-                          <View style={styles.hourlyWindSpeedRow}>
-                            <MaterialCommunityIcons
-                              name="weather-windy"
-                              size={14}
-                              color={Colors.violet}
-                              style={styles.hourlyWindIcon}
-                            />
-                            <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
+                    {hourly.map((h, i) => {
+                      const hk = weatherCodeToSkyKey(h.weatherCode);
+                      const hourDay = isDayHour(h.timeIso);
+                      const hourColors = getWeatherPanelIconColors(hk, hourDay);
+                      return (
+                        <View key={`h-${h.timeIso}-${i}`} style={styles.hourSlot}>
+                          <Text style={styles.hourlyTime}>{formatHourLabel(h.timeIso, localeTag)}</Text>
+                          <View style={styles.hourlyTempRow}>
+                            <WeatherGlyph skyKey={hk} isDay={hourDay} size={16} iconColors={hourColors} />
+                            <Text style={styles.hourlyTemp}>{Math.round(h.temperatureC)}°</Text>
+                          </View>
+                          <View style={styles.hourlyWindBlock}>
+                            <View style={styles.hourlyWindSpeedRow}>
+                              <MaterialCommunityIcons
+                                name="weather-windy"
+                                size={14}
+                                color={hourColors.wind}
+                                style={styles.hourlyWindIcon}
+                              />
+                              <Text style={styles.hourlyWindValue}>{formatWindSpeedValue(h.windSpeedKmh)}</Text>
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-              ) : null}
-            </View>
-          )}
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={styles.tournamentsSection}>
@@ -224,6 +278,7 @@ export default function FeedScreen() {
       locationAreaName,
       isFetching,
       localeTag,
+      panelIconColors,
     ],
   );
 
@@ -317,17 +372,29 @@ const styles = StyleSheet.create({
   },
   weatherDateLine: {
     fontSize: 13,
-    color: Colors.textMuted,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.92)',
     marginBottom: 4,
     textTransform: 'capitalize',
   },
   weatherCard: {
+    position: 'relative',
     backgroundColor: Colors.surface,
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  weatherGradientLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  weatherScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  weatherCardForeground: {
+    position: 'relative',
+    zIndex: 1,
   },
   weatherBody: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
   weatherTopRow: {
@@ -347,13 +414,13 @@ const styles = StyleSheet.create({
   skyText: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.94)',
     marginBottom: 4,
   },
   hourlyScroll: {
     marginBottom: 0,
     marginHorizontal: -4,
-    maxHeight: 118,
+    maxHeight: 132,
   },
   hourlyScrollContent: {
     paddingVertical: 0,
@@ -362,11 +429,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   hourSlot: {
-    width: 54,
-    alignItems: 'center',
-    paddingVertical: 2,
-    paddingHorizontal: 2,
-    marginRight: 4,
+    width: 58,
+    alignItems: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginRight: 8,
+    gap: 6,
     backgroundColor: 'transparent',
     borderRadius: 8,
     borderWidth: 0,
@@ -375,23 +443,27 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 2,
+    marginBottom: 0,
+    textAlign: 'right',
+    alignSelf: 'stretch',
   },
   hourlyTemp: {
     fontSize: 13,
     fontWeight: '700',
     color: Colors.text,
-    marginTop: 1,
-    marginBottom: 2,
+    marginTop: 0,
+    marginBottom: 0,
   },
   hourlyTempRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    justifyContent: 'flex-end',
+    alignSelf: 'stretch',
+    gap: 5,
   },
   hourlyWindBlock: {
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    alignSelf: 'stretch',
     marginTop: 0,
   },
   hourlyWindIcon: {
@@ -400,7 +472,7 @@ const styles = StyleSheet.create({
   hourlyWindSpeedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     flexWrap: 'nowrap',
   },
   hourlyWindValue: {
@@ -410,7 +482,8 @@ const styles = StyleSheet.create({
   },
   locationHint: {
     fontSize: 12,
-    color: Colors.textMuted,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.88)',
     fontStyle: 'italic',
   },
   locationHintLink: {

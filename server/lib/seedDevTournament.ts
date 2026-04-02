@@ -308,6 +308,8 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     classificationMatchesPerOpponent: 1,
     categoryFractions: null,
     singleCategoryAdvanceFraction: 0.5,
+    /** UI / settings; category matches are always generated as single-elim bracket (see `generateCategoryMatches`). */
+    categoryPhaseFormat: 'single_elim' as const,
     organizerIds: [organizerId],
     createdAt: now,
     updatedAt: now,

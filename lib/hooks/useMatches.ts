@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tournamentsApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
+import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES } from '@/lib/mocks/devTournamentMocks';
 import type { Match } from '@/types';
 
 /**
@@ -40,7 +41,10 @@ export function useMatches(
     queryKey: ['matches', params],
     queryFn: () => {
       if (!params?.tournamentId) return Promise.resolve([] as Match[]);
-      if (shouldUseDevMocks()) return Promise.resolve([] as Match[]);
+      if (shouldUseDevMocks()) {
+        if (params.tournamentId !== DEV_TOURNAMENT_ID) return Promise.resolve([] as Match[]);
+        return Promise.resolve(MOCK_DEV_CATEGORY_MATCHES);
+      }
       return tournamentsApi.findOneWithMatches(params.tournamentId).then((t) => {
         const raw = t as { matches?: unknown[] } | null;
         const all = Array.isArray(raw?.matches) ? (raw!.matches as Match[]) : ([] as Match[]);

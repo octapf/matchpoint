@@ -59,40 +59,48 @@
     "inbox": "Inbox",
     "empty": "No notifications yet.",
     "markAllRead": "Mark all read",
-    "tournament": "Tournament",
-    "match": "Match",
-    "team": "Team",
-    "tournament.waitlistJoined": {
-      "title": "You're on the waiting list",
-      "body": "You entered %{tournament}."
+    "labels": {
+      "tournament": "Tournament",
+      "match": "Match",
+      "team": "Team"
     },
-    "team.created": {
-      "title": "Team created",
-      "body": "You joined %{team} in %{tournament}."
+    "tournament": {
+      "waitlistJoined": {
+        "title": "You're on the waiting list",
+        "body": "You entered %{tournament}."
+      },
+      "classified": {
+        "title": "Classified",
+        "body": "You qualified for %{category} in %{tournament}."
+      }
     },
-    "team.dissolved": {
-      "title": "Team dissolved",
-      "body": "Your team was dissolved. You're back on the waiting list for %{tournament}."
+    "team": {
+      "created": {
+        "title": "Team created",
+        "body": "You joined %{team} in %{tournament}."
+      },
+      "dissolved": {
+        "title": "Team dissolved",
+        "body": "Your team was dissolved. You're back on the waiting list for %{tournament}."
+      }
     },
-    "match.scheduled": {
-      "title": "Next match scheduled",
-      "body": "Next game vs %{opponent}."
-    },
-    "match.started": {
-      "title": "Match started",
-      "body": "Your match vs %{opponent} is live."
-    },
-    "match.ended": {
-      "title": "Match finished",
-      "body": "Result vs %{opponent}: %{result}."
-    },
-    "match.refereeAssigned": {
-      "title": "You are referee",
-      "body": "You have control of a match in %{tournament}."
-    },
-    "tournament.classified": {
-      "title": "Classified",
-      "body": "You qualified for %{category} in %{tournament}."
+    "match": {
+      "scheduled": {
+        "title": "Next match scheduled",
+        "body": "Next game vs %{opponent}."
+      },
+      "started": {
+        "title": "Match started",
+        "body": "Your match vs %{opponent} is live."
+      },
+      "ended": {
+        "title": "Match finished",
+        "body": "Result vs %{opponent}: %{result}."
+      },
+      "refereeAssigned": {
+        "title": "You are referee",
+        "body": "You have control of a match in %{tournament}."
+      }
     }
   },
   "feed": {
@@ -349,6 +357,11 @@
     "categories": "Categories",
     "categoriesPlaceholder": "e.g. Gold, Silver",
     "categoriesHint": "Choose one category preset.",
+    "categoryPhaseFormatLabel": "Category stage format",
+    "categoryPhaseFormatHint": "Categories use a knockout bracket only.",
+    "categoryPhaseFormatBracketOnly": "Gold, Silver, and Bronze are knockout brackets: you play the pairings in the tree (not round-robin).",
+    "categoryPhaseFormatRoundRobin": "Round robin",
+    "categoryPhaseFormatSingleElim": "Single elimination",
     "categoryDefault": "None",
     "categoryNone": "None",
     "categoryGold": "Gold",
@@ -421,6 +434,25 @@
     "categoryFractionsLabel": "Category distribution",
     "categoryFractionsHint": "Enter any non-negative numbers (they’ll be normalized). Leave empty to use the default equal split.",
     "categoryFractionsInvalid": "Enter valid non-negative numbers for category distribution.",
+    "categoryPhaseFormatLabel": "Category stage format",
+    "categoryPhaseFormatHint": "Category matches are always a knockout bracket.",
+    "categoryPhaseFormatBracketOnly": "Gold, Silver, and Bronze are knockout brackets: each match follows the bracket (not everyone vs everyone).",
+    "categoryPhaseFormatRoundRobin": "Round robin",
+    "categoryPhaseFormatSingleElim": "Single elimination",
+    "matchOpponentTbd": "TBD",
+    "matchWaitingForOpponents": "Waiting for both opponents to be set before this match can start.",
+    "bracketRoundHeading": "Round %{n}",
+    "bracketPhaseFinal": "Final",
+    "bracketPhaseSemi": "Semifinals",
+    "bracketPhaseQuarter": "Quarterfinals",
+    "bracketPhaseOctavos": "Round of 16",
+    "bracketPhaseRoundOf32": "Round of 32",
+    "bracketBronzeHeading": "3rd place",
+    "bracketDiagramTitle": "Bracket",
+    "bracketMatchVs": "vs",
+    "bracketViewBoth": "Both",
+    "bracketViewDiagram": "Bracket",
+    "bracketViewList": "List",
     "equalDistribution": "Equal split",
     "advanceFractionLabel": "Advance fraction",
     "advanceFractionHint": "When there’s only one category, this fraction of teams advance and the rest are eliminated. Default: 0.5",

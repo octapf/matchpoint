@@ -59,40 +59,48 @@
     "inbox": "Inbox",
     "empty": "Nessuna notifica per ora.",
     "markAllRead": "Segna tutto come letto",
-    "tournament": "Torneo",
-    "match": "Partita",
-    "team": "Squadra",
-    "tournament.waitlistJoined": {
-      "title": "Sei in lista d'attesa",
-      "body": "Sei entrato in %{tournament}."
+    "labels": {
+      "tournament": "Torneo",
+      "match": "Partita",
+      "team": "Squadra"
     },
-    "team.created": {
-      "title": "Squadra creata",
-      "body": "Sei entrato in %{team} in %{tournament}."
+    "tournament": {
+      "waitlistJoined": {
+        "title": "Sei in lista d'attesa",
+        "body": "Sei entrato in %{tournament}."
+      },
+      "classified": {
+        "title": "Qualificato",
+        "body": "Ti sei qualificato per %{category} in %{tournament}."
+      }
     },
-    "team.dissolved": {
-      "title": "Squadra sciolta",
-      "body": "La tua squadra è stata sciolta. Sei tornato in lista d'attesa per %{tournament}."
+    "team": {
+      "created": {
+        "title": "Squadra creata",
+        "body": "Sei entrato in %{team} in %{tournament}."
+      },
+      "dissolved": {
+        "title": "Squadra sciolta",
+        "body": "La tua squadra è stata sciolta. Sei tornato in lista d'attesa per %{tournament}."
+      }
     },
-    "match.scheduled": {
-      "title": "Prossima partita",
-      "body": "Prossima partita vs %{opponent}."
-    },
-    "match.started": {
-      "title": "Partita iniziata",
-      "body": "La tua partita vs %{opponent} è live."
-    },
-    "match.ended": {
-      "title": "Partita conclusa",
-      "body": "Risultato vs %{opponent}: %{result}."
-    },
-    "match.refereeAssigned": {
-      "title": "Sei arbitro",
-      "body": "Hai il controllo di una partita in %{tournament}."
-    },
-    "tournament.classified": {
-      "title": "Qualificato",
-      "body": "Ti sei qualificato per %{category} in %{tournament}."
+    "match": {
+      "scheduled": {
+        "title": "Prossima partita",
+        "body": "Prossima partita vs %{opponent}."
+      },
+      "started": {
+        "title": "Partita iniziata",
+        "body": "La tua partita vs %{opponent} è live."
+      },
+      "ended": {
+        "title": "Partita conclusa",
+        "body": "Risultato vs %{opponent}: %{result}."
+      },
+      "refereeAssigned": {
+        "title": "Sei arbitro",
+        "body": "Hai il controllo di una partita in %{tournament}."
+      }
     }
   },
   "feed": {
@@ -349,6 +357,11 @@
     "categories": "Categorie",
     "categoriesPlaceholder": "es. Oro, Argento",
     "categoriesHint": "Scegli un preset di categorie.",
+    "categoryPhaseFormatLabel": "Formato fase categorie",
+    "categoryPhaseFormatHint": "Le categorie sono solo tabellone eliminatorio.",
+    "categoryPhaseFormatBracketOnly": "Oro, argento e bronzo sono tabelloni: ogni partita è l’incrocio previsto, non tutti contro tutti.",
+    "categoryPhaseFormatRoundRobin": "Round robin",
+    "categoryPhaseFormatSingleElim": "Eliminazione diretta",
     "categoryDefault": "Nessuna",
     "categoryNone": "Nessuna",
     "categoryGold": "Oro",
@@ -475,6 +488,25 @@
     "categoryFractionsLabel": "Distribuzione categorie",
     "categoryFractionsHint": "Inserisci numeri (verranno normalizzati). Lascia vuoto per la divisione equa.",
     "categoryFractionsInvalid": "Inserisci numeri validi (≥ 0) per la distribuzione.",
+    "categoryPhaseFormatLabel": "Formato fase categorie",
+    "categoryPhaseFormatHint": "Le partite di categoria sono sempre tabellone eliminatorio.",
+    "categoryPhaseFormatBracketOnly": "Oro, argento e bronzo sono a tabellone: si giocano gli accoppiamenti previsti, non gironi.",
+    "categoryPhaseFormatRoundRobin": "Round robin",
+    "categoryPhaseFormatSingleElim": "Eliminazione diretta",
+    "matchOpponentTbd": "TBD",
+    "matchWaitingForOpponents": "In attesa che siano definiti entrambi gli avversari prima dell’inizio.",
+    "bracketRoundHeading": "Turno %{n}",
+    "bracketPhaseFinal": "Finale",
+    "bracketPhaseSemi": "Semifinali",
+    "bracketPhaseQuarter": "Quarti di finale",
+    "bracketPhaseOctavos": "Ottavi di finale",
+    "bracketPhaseRoundOf32": "Sedicesimi di finale",
+    "bracketBronzeHeading": "3° posto",
+    "bracketDiagramTitle": "Tabellone",
+    "bracketMatchVs": "vs",
+    "bracketViewBoth": "Entrambi",
+    "bracketViewDiagram": "Tabellone",
+    "bracketViewList": "Elenco",
     "equalDistribution": "Divisione equa",
     "advanceFractionLabel": "Frazione che avanza",
     "advanceFractionHint": "Se c’è una sola categoria, questa frazione avanza e il resto viene eliminato. Default: 0.5",

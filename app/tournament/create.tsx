@@ -154,6 +154,7 @@ export default function CreateTournamentScreen() {
         organizerIds: [userId],
         groupCount: vg.groupCount,
         visibility: visibilityPrivate ? 'private' : 'public',
+        ...(categories.length > 0 ? { categoryPhaseFormat: 'single_elim' as const } : {}),
       },
       {
         onSuccess: (data) => {
@@ -296,6 +297,13 @@ export default function CreateTournamentScreen() {
         </View>
         <Text style={styles.hintInline}>{t('tournaments.categoriesHint')}</Text>
       </View>
+
+      {presetToCategories(categoryPreset).length > 0 ? (
+        <View style={styles.field}>
+          <Text style={styles.label}>{t('tournaments.categoryPhaseFormatLabel')}</Text>
+          <Text style={styles.hintInline}>{t('tournaments.categoryPhaseFormatBracketOnly')}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.dateRow}>
         <DatePickerField

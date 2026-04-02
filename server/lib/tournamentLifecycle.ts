@@ -69,12 +69,12 @@ export async function actionStartTournament(
   return { startedAt: now, matches: gen };
 }
 
-export async function actionPublishCategoryMatches(db: Db, tournamentId: string) {
+export async function actionPublishCategoryMatches(db: Db, tournamentId: string, opts?: { actorId?: string }) {
   // generateCategoryMatches already validates phase and completion; keep wrapper for consistency.
-  return generateCategoryMatches(db, tournamentId);
+  return generateCategoryMatches(db, tournamentId, opts);
 }
 
-export async function actionFinalizeClassification(db: Db, tournamentId: string) {
+export async function actionFinalizeClassification(db: Db, tournamentId: string, opts?: { actorId?: string }) {
   const tournaments = db.collection('tournaments');
   const oid = new ObjectId(tournamentId);
   const current = await tournaments.findOne({ _id: oid });
@@ -129,10 +129,14 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string)
       const gi = base + i;
       const groupTeams = byGroup.get(gi) ?? [];
       const groupMatches = matches.filter((m) => Number((m as { groupIndex?: unknown }).groupIndex ?? -1) === gi);
-      return {
-        groupIndex: gi,
-        standings: computeStandingsForGroup({ teams: groupTeams, matches: groupMatches as any }),
-      };
+        return {
+          groupIndex: gi,
+          standings: computeStandingsForGroup({
+            teams: groupTeams,
+            matches: groupMatches as any,
+            tieBreakSeed: tournamentId,
+          }),
+        };
     });
     return { division, groups };
   });
@@ -157,6 +161,7 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string)
       categories: categories as any,
       categoryFractions: categoryFractions as any,
       singleCategoryAdvanceFraction,
+      tieBreakSeed: tournamentId,
     });
     for (const [tid, cat] of assigned.teamCategory.entries()) {
       teamCategory[tid] = cat;
@@ -180,7 +185,7 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string)
     }
   );
 
-  const result = await generateCategoryMatches(db, tournamentId);
+  const result = await generateCategoryMatches(db, tournamentId, { actorId: opts?.actorId });
   return { ok: true, ...result };
 }
 

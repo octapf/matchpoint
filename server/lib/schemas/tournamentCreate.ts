@@ -18,6 +18,7 @@ export const tournamentCreateSchema = z.object({
   pointsToWin: z.coerce.number().int().min(1).max(99).optional(),
   setsPerMatch: z.coerce.number().int().min(1).max(7).optional(),
   groupCount: z.coerce.number().optional(),
+  categoryPhaseFormat: z.enum(['round_robin', 'single_elim']).optional(),
   inviteLink: z.string().min(1).max(512),
   organizerIds: z.array(z.string().min(1)).min(1),
   visibility: z.enum(['public', 'private']).optional(),

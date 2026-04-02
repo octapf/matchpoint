@@ -2,7 +2,7 @@
  * Dev-only mock data when EXPO_PUBLIC_API_URL is unset.
  * 16 users, one tournament, teams mix (full, partial roster, players looking for partner).
  */
-import type { User, Tournament, Team, Entry } from '@/types';
+import type { User, Tournament, Team, Entry, Match } from '@/types';
 
 export const DEV_TOURNAMENT_ID = '1';
 
@@ -18,7 +18,30 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   description: 'Mock tournament for local development.',
   // Keep mock data consistent with mock teams (mostly mixed pairs).
   divisions: ['mixed'],
-  categories: ['Gold', 'Silver'],
+  categories: ['Gold', 'Silver', 'Bronze'],
+  phase: 'categories',
+  startedAt: TS,
+  categoryPhaseFormat: 'single_elim',
+  categoriesSnapshot: {
+    computedAt: TS,
+    divisions: [
+      {
+        division: 'mixed',
+        categories: [
+          {
+            category: 'Gold',
+            teamIds: ['mock-team-1', 'mock-team-2', 'mock-team-3', 'mock-team-4'],
+            matchIds: [
+              'dev-cat-gold-sf1',
+              'dev-cat-gold-sf2',
+              'dev-cat-gold-fin',
+              'dev-cat-gold-bronze',
+            ],
+          },
+        ],
+      },
+    ],
+  },
   maxTeams: 16,
   pointsToWin: 21,
   setsPerMatch: 1,
@@ -151,3 +174,89 @@ export function getMockDevUsersByIds(ids: string[]): User[] {
 export function getMockDevUserById(id: string): User | null {
   return userById.get(id) ?? null;
 }
+
+const DEV_CAT_GOLD_SF1 = 'dev-cat-gold-sf1';
+const DEV_CAT_GOLD_SF2 = 'dev-cat-gold-sf2';
+const DEV_CAT_GOLD_FIN = 'dev-cat-gold-fin';
+const DEV_CAT_GOLD_BRONZE = 'dev-cat-gold-bronze';
+
+/** Gold single-elim (4 teams): semis → final + bronze; for offline bracket UI. */
+export const MOCK_DEV_CATEGORY_MATCHES: Match[] = [
+  {
+    _id: DEV_CAT_GOLD_SF1,
+    tournamentId: DEV_TOURNAMENT_ID,
+    stage: 'category',
+    division: 'mixed',
+    category: 'Gold',
+    teamAId: 'mock-team-1',
+    teamBId: 'mock-team-2',
+    setsPerMatch: 1,
+    pointsToWin: 21,
+    status: 'scheduled',
+    bracketRound: 1,
+    orderIndex: 0,
+    pointsA: 0,
+    pointsB: 0,
+    createdAt: TS,
+    updatedAt: TS,
+  },
+  {
+    _id: DEV_CAT_GOLD_SF2,
+    tournamentId: DEV_TOURNAMENT_ID,
+    stage: 'category',
+    division: 'mixed',
+    category: 'Gold',
+    teamAId: 'mock-team-3',
+    teamBId: 'mock-team-4',
+    setsPerMatch: 1,
+    pointsToWin: 21,
+    status: 'scheduled',
+    bracketRound: 1,
+    orderIndex: 1,
+    pointsA: 0,
+    pointsB: 0,
+    createdAt: TS,
+    updatedAt: TS,
+  },
+  {
+    _id: DEV_CAT_GOLD_FIN,
+    tournamentId: DEV_TOURNAMENT_ID,
+    stage: 'category',
+    division: 'mixed',
+    category: 'Gold',
+    teamAId: '',
+    teamBId: '',
+    advanceTeamAFromMatchId: DEV_CAT_GOLD_SF1,
+    advanceTeamBFromMatchId: DEV_CAT_GOLD_SF2,
+    setsPerMatch: 1,
+    pointsToWin: 21,
+    status: 'scheduled',
+    bracketRound: 2,
+    orderIndex: 0,
+    pointsA: 0,
+    pointsB: 0,
+    createdAt: TS,
+    updatedAt: TS,
+  },
+  {
+    _id: DEV_CAT_GOLD_BRONZE,
+    tournamentId: DEV_TOURNAMENT_ID,
+    stage: 'category',
+    division: 'mixed',
+    category: 'Gold',
+    teamAId: '',
+    teamBId: '',
+    advanceTeamALoserFromMatchId: DEV_CAT_GOLD_SF1,
+    advanceTeamBLoserFromMatchId: DEV_CAT_GOLD_SF2,
+    isBronzeMatch: true,
+    setsPerMatch: 1,
+    pointsToWin: 21,
+    status: 'scheduled',
+    bracketRound: 3,
+    orderIndex: 2,
+    pointsA: 0,
+    pointsB: 0,
+    createdAt: TS,
+    updatedAt: TS,
+  },
+];

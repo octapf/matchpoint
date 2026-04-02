@@ -4,18 +4,13 @@ import type { Match, TournamentCategory, TournamentDivision } from '../../types'
 import { teamGroupIndex } from '../../lib/tournamentGroups';
 import { computeStandingsForGroup, assignCategoriesForDivision } from './tournamentStandings';
 import { deriveTournamentGroupConfig } from './tournamentConfig';
-
-function buildPairs(teamIds: string[]): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  for (let i = 0; i < teamIds.length; i++) {
-    for (let j = i + 1; j < teamIds.length; j++) out.push([teamIds[i]!, teamIds[j]!]);
-  }
-  return out;
-}
+import { planCategorySingleElimination } from './singleElimBracket';
+import { insertAuditLogSafe } from './auditLog';
 
 export async function generateCategoryMatches(
   db: Db,
-  tournamentId: string
+  tournamentId: string,
+  opts?: { actorId?: string }
 ): Promise<{ created: number; total: number; categories: TournamentCategory[] }> {
   const tournamentsCol = db.collection('tournaments');
   const teamsCol = db.collection('teams');
@@ -39,7 +34,6 @@ export async function generateCategoryMatches(
       : null;
   const singleCategoryAdvanceFractionRaw = Number((t as { singleCategoryAdvanceFraction?: unknown }).singleCategoryAdvanceFraction ?? 0.5);
   const singleCategoryAdvanceFraction = Number.isFinite(singleCategoryAdvanceFractionRaw) ? singleCategoryAdvanceFractionRaw : 0.5;
-
   const divisionsRaw = Array.isArray((t as { divisions?: unknown }).divisions)
     ? ((t as { divisions?: unknown }).divisions as unknown[])
     : [];
@@ -54,6 +48,17 @@ export async function generateCategoryMatches(
   if (classificationMatches.length === 0) throw new Error('No classification matches found');
   if (classificationMatches.some((m) => (m as { status?: unknown }).status !== 'completed')) {
     throw new Error('Classification is not completed');
+  }
+
+  const categoryBracketLocked = await matchesCol.countDocuments({
+    tournamentId,
+    stage: 'category',
+    status: { $in: ['in_progress', 'completed'] },
+  });
+  if (categoryBracketLocked > 0) {
+    throw new Error(
+      'Category bracket is locked: at least one category match is in progress or completed; cannot regenerate.'
+    );
   }
 
   // Remove existing category matches before regenerating.
@@ -89,15 +94,23 @@ export async function generateCategoryMatches(
       const groupMatches = classificationMatches.filter(
         (m) => Number((m as { groupIndex?: unknown }).groupIndex ?? -1) === gi
       );
-      return computeStandingsForGroup({ teams: groupTeams, matches: groupMatches as any });
+      return computeStandingsForGroup({
+        teams: groupTeams,
+        matches: groupMatches as any,
+        tieBreakSeed: tournamentId,
+      });
     });
 
-    const { teamCategory } = assignCategoriesForDivision({
+    const { teamCategory, globalOrder } = assignCategoriesForDivision({
       standingsByGroup,
       categories,
       categoryFractions,
       singleCategoryAdvanceFraction,
+      tieBreakSeed: tournamentId,
     });
+    const orderRank = new Map(globalOrder.map((tid, i) => [tid, i]));
+    const sortTeamIdsByGlobal = (ids: string[]) =>
+      [...ids].sort((a, b) => (orderRank.get(a) ?? 1e9) - (orderRank.get(b) ?? 1e9));
 
     // Persist derived category/division on teams for stability and easier UI.
     const teamsOps: { updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }[] = [];
@@ -114,7 +127,7 @@ export async function generateCategoryMatches(
       await teamsCol.bulkWrite(teamsOps, { ordered: false });
     }
 
-    // Generate round-robin matches within each category across the whole division.
+    // Generate single-elimination bracket matches within each category (always bracket).
     const teamsByCategory = new Map<TournamentCategory, string[]>();
     for (const [tid, cat] of teamCategory.entries()) {
       const list = teamsByCategory.get(cat) ?? [];
@@ -130,33 +143,57 @@ export async function generateCategoryMatches(
       categories: [] as Array<{ category: TournamentCategory; teamIds: string[]; matchIds: string[] }>,
     };
 
-    for (const [cat, teamIds] of teamsByCategory.entries()) {
+    let scheduleSlot = 0;
+    for (const [cat, teamIdsRaw] of teamsByCategory.entries()) {
+      const teamIds = sortTeamIdsByGlobal(teamIdsRaw);
       if (teamIds.length < 2) continue;
-      const pairs = buildPairs(teamIds);
-      total += pairs.length;
       const matchIds: string[] = [];
-      for (let i = 0; i < pairs.length; i++) {
-        const [a, b] = pairs[i]!;
-        const doc: Omit<Match, '_id'> = {
-          tournamentId,
-          stage: 'category',
-          division: divisions[di] ?? undefined,
-          groupIndex: undefined,
-          category: cat,
-          teamAId: a,
-          teamBId: b,
-          setsPerMatch,
-          pointsToWin,
-          status: 'scheduled',
-          orderIndex: i,
-          scheduledAt: Number.isFinite(baseMs) ? new Date(baseMs + i * 60_000).toISOString() : now,
-          createdAt: now,
-          updatedAt: now,
-        };
-        const ins = await matchesCol.insertOne(doc as unknown as Record<string, unknown>);
-        matchIds.push(ins.insertedId.toString());
-        created++;
+      let seq = 0;
+
+      {
+        const plans = planCategorySingleElimination(teamIds);
+        total += plans.length;
+        const idByPlan = new Map<number, string>();
+        for (let pi = 0; pi < plans.length; pi++) {
+          const plan = plans[pi]!;
+          const advA =
+            plan.advanceTeamAFromPlanIndex != null ? idByPlan.get(plan.advanceTeamAFromPlanIndex) : undefined;
+          const advB =
+            plan.advanceTeamBFromPlanIndex != null ? idByPlan.get(plan.advanceTeamBFromPlanIndex) : undefined;
+          const advAL =
+            plan.advanceTeamALoserFromPlanIndex != null ? idByPlan.get(plan.advanceTeamALoserFromPlanIndex) : undefined;
+          const advBL =
+            plan.advanceTeamBLoserFromPlanIndex != null ? idByPlan.get(plan.advanceTeamBLoserFromPlanIndex) : undefined;
+          const doc: Omit<Match, '_id'> = {
+            tournamentId,
+            stage: 'category',
+            division: divisions[di] ?? undefined,
+            groupIndex: undefined,
+            category: cat,
+            teamAId: plan.teamAId ?? '',
+            teamBId: plan.teamBId ?? '',
+            setsPerMatch,
+            pointsToWin,
+            status: 'scheduled',
+            orderIndex: seq++,
+            scheduledAt: Number.isFinite(baseMs) ? new Date(baseMs + scheduleSlot++ * 60_000).toISOString() : now,
+            createdAt: now,
+            updatedAt: now,
+            bracketRound: plan.bracketRound,
+            ...(plan.isBronze ? { isBronzeMatch: true } : {}),
+            ...(advA ? { advanceTeamAFromMatchId: advA } : {}),
+            ...(advB ? { advanceTeamBFromMatchId: advB } : {}),
+            ...(advAL ? { advanceTeamALoserFromMatchId: advAL } : {}),
+            ...(advBL ? { advanceTeamBLoserFromMatchId: advBL } : {}),
+          };
+          const ins = await matchesCol.insertOne(doc as unknown as Record<string, unknown>);
+          const mid = ins.insertedId.toString();
+          idByPlan.set(pi, mid);
+          matchIds.push(mid);
+          created++;
+        }
       }
+
       divisionSnapshot.categories.push({ category: cat, teamIds, matchIds });
     }
 
@@ -176,6 +213,16 @@ export async function generateCategoryMatches(
       },
     }
   );
+
+  if (opts?.actorId) {
+    await insertAuditLogSafe(db, {
+      actorId: opts.actorId,
+      action: 'tournament.categoryMatches.generated',
+      resource: 'tournament',
+      resourceId: tournamentId,
+      meta: { created, total, categoryPhaseFormat: 'single_elim' as const },
+    });
+  }
 
   return { created, total, categories };
 }

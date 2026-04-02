@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, Share, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Share, Alert, Pressable, ImageBackground } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import type { OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
 import { TournamentOrganizerMenu } from '@/components/tournament/TournamentOrganizerMenu';
 import { config, shouldUseDevMocks } from '@/lib/config';
+import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES, MOCK_DEV_TOURNAMENT } from '@/lib/mocks/devTournamentMocks';
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { GroupsTab } from '@/components/tournament/detail/GroupsTab';
@@ -41,7 +42,8 @@ import { useLanguageStore } from '@/store/useLanguageStore';
 import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
-import { assignCategories, computeStandingsForGroup } from '@/lib/tournamentStandings';
+import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
+import { resolveTeamForFixture } from '@/lib/tournamentMatchDisplay';
 import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
 import {
   maxPlayerSlotsForTournament,
@@ -57,8 +59,22 @@ import {
   tournamentDivisionsNormalized,
 } from '@/lib/tournamentOrganizerCoverage';
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
-
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
+
+/** Same default asset as `TournamentListRow` / tournament cards in the list. */
+const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg.png');
+/** Icon + text on card image (matches `TournamentListRow` `CARD_CONFIG_ICON_COLOR`). */
+const TOURNAMENT_CONFIG_ON_CARD = 'rgba(255, 255, 255, 0.92)';
+
+/** "BARCELONETA" / "summer beach" → "Barceloneta" / "Summer Beach" for the info card (no CSS all-caps). */
+function formatTournamentLocationDisplay(raw: string | undefined | null): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '—';
+  return s
+    .split(/\s+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
 
 function TeamCard({
   team,
@@ -254,6 +270,7 @@ export default function TournamentDetailScreen() {
   } | null>(null);
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
+  const opponentTbdLabel = t('tournamentDetail.matchOpponentTbd');
   const storedLanguage = useLanguageStore((s) => s.language);
   const canEnroll = hasValidGender(user?.gender);
   const netInfo = useNetInfo();
@@ -290,10 +307,17 @@ export default function TournamentDetailScreen() {
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
     [allMatches]
   );
-  const categoryMatches = useMemo(
-    () => allMatches.filter((m) => (m as { stage?: string }).stage === 'category'),
-    [allMatches]
-  );
+  /** Category matches from API; when empty, fall back to embedded dev bracket so Gold/Oro shows with API URL + OAuth on. */
+  const categoryMatches = useMemo(() => {
+    const fromApi = allMatches.filter((m) => (m as { stage?: string }).stage === 'category');
+    if (fromApi.length > 0) return fromApi;
+    const devFixture =
+      shouldUseDevMocks() ||
+      String((tournament as { _id?: unknown } | undefined)?._id ?? '') === DEV_TOURNAMENT_ID ||
+      String((tournament as { inviteLink?: string } | undefined)?.inviteLink ?? '') === 'dev-invite';
+    if (devFixture) return MOCK_DEV_CATEGORY_MATCHES;
+    return fromApi;
+  }, [allMatches, tournament]);
 
   const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
 
@@ -543,6 +567,11 @@ export default function TournamentDetailScreen() {
     return (tournament.organizerIds ?? []).filter((uid) => only.has(uid));
   }, [tournament]);
   const dateLabel = tournament?.date || tournament?.startDate;
+  const tournamentConfigCardImageSource = useMemo(() => {
+    const url = tournament?.coverImageUrl?.trim();
+    if (url) return { uri: url };
+    return DEFAULT_TOURNAMENT_CARD_BG;
+  }, [tournament?.coverImageUrl]);
   const isCancelled = tournament?.status === 'cancelled';
   const isOrganizeOnlyOrganizer = !!(userId && (tournament?.organizerOnlyIds ?? []).includes(userId));
 
@@ -664,6 +693,7 @@ export default function TournamentDetailScreen() {
         singleCategoryAdvanceFraction: Number(
           (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
         ),
+        tieBreakSeed: id,
       });
     }
 
@@ -678,7 +708,11 @@ export default function TournamentDetailScreen() {
     }
 
     const standingsByGroup = divisionTeamsByGroup.map((teamsInGroup, localGi) =>
-      computeStandingsForGroup({ teams: teamsInGroup, matches: groupMatchesByLocal.get(localGi) ?? [] })
+      computeStandingsForGroup({
+        teams: teamsInGroup,
+        matches: groupMatchesByLocal.get(localGi) ?? [],
+        tieBreakSeed: id,
+      })
     );
 
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
@@ -692,21 +726,18 @@ export default function TournamentDetailScreen() {
       (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
     );
 
-    const { teamCategory, eliminated } = assignCategories({
+    const { teamCategory, eliminated, globalOrder } = assignCategories({
       standingsByGroup,
       categories: cats,
       categoryFractions: categoryFractions ?? null,
       singleCategoryAdvanceFraction,
+      tieBreakSeed: id,
     });
 
     const perGroup = standingsByGroup.map((standings, localGi) => {
       const matches = (groupMatchesByLocal.get(localGi) ?? []).map((m) => {
-        const teamA =
-          teamById[m.teamAId] ??
-          ({ _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
-        const teamB =
-          teamById[m.teamBId] ??
-          ({ _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
+        const teamA = resolveTeamForFixture(m.teamAId, teamById, id ?? '', opponentTbdLabel);
+        const teamB = resolveTeamForFixture(m.teamBId, teamById, id ?? '', opponentTbdLabel);
         return {
           id: m._id,
           teamA,
@@ -730,7 +761,7 @@ export default function TournamentDetailScreen() {
       return { matches, standings, categories: categoriesMap };
     });
 
-    return { perGroup, teamCategory, eliminated };
+    return { perGroup, teamCategory, eliminated, globalOrder };
   }, [
     classificationMatches,
     divisionTeamsByGroup,
@@ -739,6 +770,7 @@ export default function TournamentDetailScreen() {
     matchCategoryTabs,
     tournament,
     id,
+    opponentTbdLabel,
     teamById,
   ]);
 
@@ -765,16 +797,23 @@ export default function TournamentDetailScreen() {
       const pa = sa?.points ?? 0;
       const pb = sb?.points ?? 0;
       if (pb !== pa) return pb - pa;
+      const oa = tieBreakOrdinal(id, a._id);
+      const ob = tieBreakOrdinal(id, b._id);
+      if (oa !== ob) return oa < ob ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [filteredTeams, teamClassificationLookup]);
+  }, [filteredTeams, teamClassificationLookup, id]);
 
   const categoryMatchesByCategory = useMemo(() => {
     const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', any[]>> = {};
     const cats: ('Gold' | 'Silver' | 'Bronze')[] = ['Gold', 'Silver', 'Bronze'];
     for (const c of cats) out[c] = [];
 
-    const snapshot = (tournament as { categoriesSnapshot?: unknown } | undefined)?.categoriesSnapshot as
+    const devFixtureSnap =
+      shouldUseDevMocks() ||
+      String((tournament as { _id?: unknown } | undefined)?._id ?? '') === DEV_TOURNAMENT_ID ||
+      String((tournament as { inviteLink?: string } | undefined)?.inviteLink ?? '') === 'dev-invite';
+    const rawSnap = (tournament as { categoriesSnapshot?: unknown } | undefined)?.categoriesSnapshot as
       | {
           divisions?: {
             division: string;
@@ -782,16 +821,18 @@ export default function TournamentDetailScreen() {
           }[];
         }
       | undefined;
+    const snapshot =
+      rawSnap?.divisions?.length && rawSnap
+        ? rawSnap
+        : devFixtureSnap
+          ? (MOCK_DEV_TOURNAMENT.categoriesSnapshot as typeof rawSnap)
+          : undefined;
 
     // Build lookup for match rows from live data (no filtering).
     const rowByMatchId = new Map<string, any>();
     for (const m of categoryMatches) {
-      const teamA =
-        teamById[m.teamAId] ??
-        ({ _id: m.teamAId, name: m.teamAId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
-      const teamB =
-        teamById[m.teamBId] ??
-        ({ _id: m.teamBId, name: m.teamBId, tournamentId: id ?? '', playerIds: [], createdBy: '', createdAt: '', updatedAt: '' } as Team);
+      const teamA = resolveTeamForFixture(m.teamAId, teamById, id ?? '', opponentTbdLabel);
+      const teamB = resolveTeamForFixture(m.teamBId, teamById, id ?? '', opponentTbdLabel);
       rowByMatchId.set(m._id, {
         id: m._id,
         teamA,
@@ -805,6 +846,24 @@ export default function TournamentDetailScreen() {
         orderIndex: typeof (m as { orderIndex?: unknown }).orderIndex === 'number' ? (m as { orderIndex: number }).orderIndex : undefined,
         scheduledAt: typeof (m as { scheduledAt?: unknown }).scheduledAt === 'string' ? (m as { scheduledAt: string }).scheduledAt : undefined,
         createdAt: (m as { createdAt?: string }).createdAt,
+        bracketRound: typeof (m as { bracketRound?: unknown }).bracketRound === 'number' ? (m as { bracketRound: number }).bracketRound : undefined,
+        isBronzeMatch: !!(m as { isBronzeMatch?: unknown }).isBronzeMatch,
+        advanceTeamAFromMatchId:
+          typeof (m as { advanceTeamAFromMatchId?: unknown }).advanceTeamAFromMatchId === 'string'
+            ? (m as { advanceTeamAFromMatchId: string }).advanceTeamAFromMatchId
+            : undefined,
+        advanceTeamBFromMatchId:
+          typeof (m as { advanceTeamBFromMatchId?: unknown }).advanceTeamBFromMatchId === 'string'
+            ? (m as { advanceTeamBFromMatchId: string }).advanceTeamBFromMatchId
+            : undefined,
+        advanceTeamALoserFromMatchId:
+          typeof (m as { advanceTeamALoserFromMatchId?: unknown }).advanceTeamALoserFromMatchId === 'string'
+            ? (m as { advanceTeamALoserFromMatchId: string }).advanceTeamALoserFromMatchId
+            : undefined,
+        advanceTeamBLoserFromMatchId:
+          typeof (m as { advanceTeamBLoserFromMatchId?: unknown }).advanceTeamBLoserFromMatchId === 'string'
+            ? (m as { advanceTeamBLoserFromMatchId: string }).advanceTeamBLoserFromMatchId
+            : undefined,
       });
     }
 
@@ -821,6 +880,23 @@ export default function TournamentDetailScreen() {
         }
         out[c] = ordered;
       }
+      // Snapshot often lists only one category's matchIds (e.g. Gold); Silver/Bronze still exist on matches.
+      for (const c of cats) {
+        if ((out[c]?.length ?? 0) > 0) continue;
+        for (const m of categoryMatches) {
+          const cat = (m as { category?: unknown }).category;
+          if (cat !== c) continue;
+          const div = (m as { division?: unknown }).division;
+          if (div && div !== currentDivision) continue;
+          const row = rowByMatchId.get(m._id);
+          if (row) out[c]!.push(row);
+        }
+      }
+      for (const c of cats) {
+        const rows = out[c];
+        if (!rows?.length) continue;
+        out[c] = [...rows].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+      }
       return out;
     }
 
@@ -835,7 +911,47 @@ export default function TournamentDetailScreen() {
     }
 
     return out;
-  }, [categoryMatches, currentDivision, id, teamById, tournament]);
+  }, [categoryMatches, currentDivision, id, opponentTbdLabel, teamById, tournament]);
+
+  /** Snapshot team order from server (fallback). */
+  const categoryTeamIdsFromSnapshot = useMemo(() => {
+    const snap = (tournament as { categoriesSnapshot?: { divisions?: { division: string; categories: { category: string; teamIds: string[] }[] }[] } } | undefined)
+      ?.categoriesSnapshot;
+    const div = snap?.divisions?.find((d) => d.division === currentDivision);
+    const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', string[]>> = {};
+    if (!div?.categories) return out;
+    for (const c of ['Gold', 'Silver', 'Bronze'] as const) {
+      const cat = div.categories.find((x) => x.category === c);
+      if (cat?.teamIds?.length) out[c] = cat.teamIds.map(String);
+    }
+    return out;
+  }, [tournament, currentDivision]);
+
+  /**
+   * Same teams and order as the classification category lists (`assignCategories` + `globalOrder`).
+   * Prefer this for the bracket so counts match the list; snapshot can be stale or from a different split.
+   */
+  const categoryTeamIdsFromClassification = useMemo(() => {
+    const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
+      (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
+    );
+    const go = classificationBundle.globalOrder;
+    const tc = classificationBundle.teamCategory;
+    if (!go?.length) return {};
+    const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', string[]>> = {};
+    for (const c of cats) {
+      const ids = go.filter((tid) => tc.get(tid) === c);
+      if (ids.length) out[c] = ids;
+    }
+    return out;
+  }, [classificationBundle, tournament]);
+
+  const categoryTeamIdsByCategory = useMemo(() => {
+    const fromClass = categoryTeamIdsFromClassification;
+    const hasClass = (['Gold', 'Silver', 'Bronze'] as const).some((k) => (fromClass[k]?.length ?? 0) > 0);
+    if (hasClass) return fromClass;
+    return categoryTeamIdsFromSnapshot;
+  }, [categoryTeamIdsFromClassification, categoryTeamIdsFromSnapshot]);
 
   const myTeamIdForDivision = useMemo(() => {
     if (!userId) return null;
@@ -871,7 +987,7 @@ export default function TournamentDetailScreen() {
 
   /** Ongoing matches in the current division (classification + category stages). */
   const liveMatchesRows = useMemo(() => {
-    const out: {
+    type LiveRow = {
       id: string;
       teamA: Team;
       teamB: Team;
@@ -884,11 +1000,20 @@ export default function TournamentDetailScreen() {
       orderIndex?: number;
       scheduledAt?: string;
       createdAt?: string;
-    }[] = [];
+      bracketRound?: number;
+      isBronzeMatch?: boolean;
+      liveStage?: 'classification' | 'category';
+      liveCategory?: 'Gold' | 'Silver' | 'Bronze';
+    };
+    const out: LiveRow[] = [];
 
     for (const g of classificationData) {
       for (const m of g.matches ?? []) {
-        if (m.status === 'in_progress') out.push(m);
+        if (m.status !== 'in_progress') continue;
+        out.push({
+          ...m,
+          liveStage: 'classification',
+        });
       }
     }
 
@@ -896,28 +1021,11 @@ export default function TournamentDetailScreen() {
       if ((m as { status?: string }).status !== 'in_progress') continue;
       const div = (m as { division?: unknown }).division;
       if (div && div !== currentDivision) continue;
-      const teamA =
-        teamById[m.teamAId] ??
-        ({
-          _id: m.teamAId,
-          name: m.teamAId,
-          tournamentId: id ?? '',
-          playerIds: [],
-          createdBy: '',
-          createdAt: '',
-          updatedAt: '',
-        } as Team);
-      const teamB =
-        teamById[m.teamBId] ??
-        ({
-          _id: m.teamBId,
-          name: m.teamBId,
-          tournamentId: id ?? '',
-          playerIds: [],
-          createdBy: '',
-          createdAt: '',
-          updatedAt: '',
-        } as Team);
+      const cat = (m as { category?: TournamentCategory }).category;
+      if (cat !== 'Gold' && cat !== 'Silver' && cat !== 'Bronze') continue;
+
+      const teamA = resolveTeamForFixture(m.teamAId, teamById, id ?? '', opponentTbdLabel);
+      const teamB = resolveTeamForFixture(m.teamBId, teamById, id ?? '', opponentTbdLabel);
       out.push({
         id: m._id,
         teamA,
@@ -937,6 +1045,10 @@ export default function TournamentDetailScreen() {
             ? (m as { scheduledAt: string }).scheduledAt
             : undefined,
         createdAt: (m as { createdAt?: string }).createdAt,
+        bracketRound: typeof (m as { bracketRound?: unknown }).bracketRound === 'number' ? (m as { bracketRound: number }).bracketRound : undefined,
+        isBronzeMatch: !!(m as { isBronzeMatch?: unknown }).isBronzeMatch,
+        liveStage: 'category',
+        liveCategory: cat,
       });
     }
 
@@ -951,7 +1063,7 @@ export default function TournamentDetailScreen() {
       const bc = b.createdAt ? Date.parse(b.createdAt) : 0;
       return ac - bc;
     });
-  }, [classificationData, categoryMatches, currentDivision, id, teamById]);
+  }, [classificationData, categoryMatches, currentDivision, id, opponentTbdLabel, teamById]);
 
   const tournamentStarted =
     !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
@@ -1495,36 +1607,46 @@ export default function TournamentDetailScreen() {
 
           {/* Tournament configuration */}
           {tournament ? (
-            <View style={styles.tournamentConfigCard}>
-              {canManageTournament ? (
-                <View style={styles.tournamentConfigMenuAbs}>
-                  <TournamentOrganizerMenu
-                    menuLabel={t('tournamentDetail.actionsMenu')}
-                    items={organizerMenuItems}
-                  />
+            <ImageBackground
+              source={tournamentConfigCardImageSource}
+              style={styles.tournamentConfigCard}
+              imageStyle={styles.tournamentConfigCardImage}
+              resizeMode="cover"
+            >
+              <View style={styles.tournamentConfigScrim} pointerEvents="none" />
+              <View style={styles.tournamentConfigContent}>
+                {canManageTournament ? (
+                  <View style={styles.tournamentConfigMenuAbs}>
+                    <TournamentOrganizerMenu
+                      menuLabel={t('tournamentDetail.actionsMenu')}
+                      items={organizerMenuItems}
+                    />
+                  </View>
+                ) : null}
+                <View style={styles.tournamentConfigRow}>
+                  <Ionicons name="location-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
+                  <Text style={styles.tournamentConfigText}>
+                    {formatTournamentLocationDisplay(tournament.location)}
+                  </Text>
                 </View>
-              ) : null}
-              <View style={styles.tournamentConfigRow}>
-                <Ionicons name="location-outline" size={18} color={Colors.violet} />
-                <Text style={styles.tournamentConfigText}>{tournament.location?.trim() || '—'}</Text>
+                <View style={styles.tournamentConfigRow}>
+                  <Ionicons name="calendar-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
+                  <Text style={styles.tournamentConfigText}>{dateLabel || '—'}</Text>
+                </View>
+                <View style={styles.tournamentConfigRow}>
+                  <Ionicons name="trophy-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
+                  <Text style={styles.tournamentConfigText}>
+                    {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21}
+                  </Text>
+                </View>
+                <View style={styles.tournamentConfigRow}>
+                  <Ionicons name="layers-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
+                  <Text style={styles.tournamentConfigText}>
+                    {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.tournamentConfigRow}>
-                <Ionicons name="calendar-outline" size={18} color={Colors.violet} />
-                <Text style={styles.tournamentConfigText}>{dateLabel || '—'}</Text>
-              </View>
-              <View style={styles.tournamentConfigRow}>
-                <Ionicons name="trophy-outline" size={18} color={Colors.violet} />
-                <Text style={styles.tournamentConfigText}>
-                  {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21}
-                </Text>
-              </View>
-              <View style={styles.tournamentConfigRow}>
-                <Ionicons name="layers-outline" size={18} color={Colors.violet} />
-                <Text style={styles.tournamentConfigText}>
-                  {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
-                </Text>
-              </View>
-            </View>
+            </ImageBackground>
           ) : null}
 
           {/* Single CTA below the panel: Join or Leave for the selected division */}
@@ -1793,6 +1915,11 @@ export default function TournamentDetailScreen() {
               liveMatches={liveMatchesRows}
               classificationData={filteredClassificationData}
               categoryMatchesByCategory={categoryMatchesByCategory}
+              teamById={teamById}
+              userMap={userMap}
+              tournamentId={id ?? ''}
+              opponentTbdLabel={opponentTbdLabel}
+              categoryTeamIdsByCategory={categoryTeamIdsByCategory}
               onOpenMatch={(matchId) => {
                 if (!id) return;
                 router.push(`/tournament/${id}/match/${matchId}` as never);
@@ -1984,14 +2111,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 6,
   },
-  date: { fontSize: 16, color: Colors.textSecondary, flexShrink: 0 },
-  dateLocationSep: { fontSize: 16, color: Colors.textSecondary, lineHeight: 22 },
-  location: { fontSize: 16, color: Colors.textSecondary, flex: 1, minWidth: 0 },
+  date: { fontSize: 16, color: Colors.textSecondary, flexShrink: 0, textTransform: 'none' },
+  dateLocationSep: { fontSize: 16, color: Colors.textSecondary, lineHeight: 22, textTransform: 'none' },
+  location: { fontSize: 16, color: Colors.textSecondary, flex: 1, minWidth: 0, textTransform: 'none' },
   matchRulesText: {
     marginTop: 6,
     fontSize: 12,
     color: Colors.textMuted,
     fontStyle: 'italic',
+    textTransform: 'none',
   },
   statsBlock: { marginTop: 4 },
   tabBar: {
@@ -2305,13 +2433,25 @@ const styles = StyleSheet.create({
   waitlistPositionText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   tournamentConfigCard: {
     position: 'relative',
-    backgroundColor: Colors.surface,
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    overflow: 'hidden',
+  },
+  tournamentConfigCardImage: {
+    borderRadius: 12,
+  },
+  /** Same scrim as `TournamentListRow` `cardBgScrim`. */
+  tournamentConfigScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.52)',
+  },
+  tournamentConfigContent: {
+    position: 'relative',
+    zIndex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   tournamentConfigMenuAbs: {
     position: 'absolute',
@@ -2327,12 +2467,12 @@ const styles = StyleSheet.create({
     paddingRight: 34,
   },
   tournamentConfigText: {
-    fontSize: 13,
-    color: Colors.text,
-    lineHeight: 18,
+    fontSize: 14,
+    color: TOURNAMENT_CONFIG_ON_CARD,
+    lineHeight: 20,
     fontStyle: 'italic',
-    textTransform: 'uppercase',
     fontWeight: '700',
+    textTransform: 'none',
   },
   playerRow: {
     backgroundColor: Colors.surface,

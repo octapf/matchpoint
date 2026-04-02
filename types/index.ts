@@ -46,6 +46,8 @@ export interface Tournament {
   startDate: string;
   endDate: string;
   location: string;
+  /** Optional hero image for list/detail cards; omit to use the default beach artwork. */
+  coverImageUrl?: string;
   description?: string;
   /** Enabled divisions for registration/competition. Must include at least one. */
   divisions?: TournamentDivision[];
@@ -78,6 +80,11 @@ export interface Tournament {
   categoryFractions?: Partial<Record<TournamentCategory, number>>;
   /** When only one (or no) category is configured, fraction of teams that advance (default 0.5). */
   singleCategoryAdvanceFraction?: number;
+  /**
+   * Legacy field; category matches are always generated as single-elimination brackets.
+   * New tournaments should store `single_elim`.
+   */
+  categoryPhaseFormat?: 'round_robin' | 'single_elim';
   /** Frozen category bracket (generated server-side on finalize classification). */
   categoriesSnapshot?: {
     computedAt: string;
@@ -129,6 +136,15 @@ export interface Match {
   category?: TournamentCategory;
   teamAId: string;
   teamBId: string;
+  /** Category knockout: filled when feeder match completes (winner → this slot). */
+  advanceTeamAFromMatchId?: string;
+  advanceTeamBFromMatchId?: string;
+  /** Category knockout bronze: loser of feeder match fills this slot. */
+  advanceTeamALoserFromMatchId?: string;
+  advanceTeamBLoserFromMatchId?: string;
+  /** 1-based logical round within the category bracket (larger = closer to final). */
+  bracketRound?: number;
+  isBronzeMatch?: boolean;
   /** 1 = single set, 3 = best-of-3, etc. */
   setsPerMatch: number;
   pointsToWin: number;

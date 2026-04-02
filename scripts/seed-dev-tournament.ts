@@ -2,7 +2,7 @@
  * CLI: same data as Admin → Dev seed and POST /api/admin (action devSeed).
  * Seeded tournament defaults:
  * - divisions: men/women/mixed
- * - categories: Gold/Silver/Bronze
+ * - categories: Gold/Silver/Bronze (category phase = single-elim bracket from `generateCategoryMatches`)
  * - pointsToWin: 21
  * - setsPerMatch: 1
  * Requires MONGODB_URI in .env

@@ -91,6 +91,7 @@ export default function ClassificationSettingsScreen() {
     const update: { id: string } & Record<string, unknown> = {
       id,
       classificationMatchesPerOpponent: m,
+      categoryPhaseFormat: 'single_elim',
     };
 
     if (!hasCategories) {
@@ -147,6 +148,11 @@ export default function ClassificationSettingsScreen() {
           placeholderTextColor={Colors.textMuted}
         />
         <Text style={styles.hintInline}>{t('tournamentDetail.matchesPerOpponentHint')}</Text>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>{t('tournamentDetail.categoryPhaseFormatLabel')}</Text>
+        <Text style={styles.hintInline}>{t('tournamentDetail.categoryPhaseFormatBracketOnly')}</Text>
       </View>
 
       {hasCategories ? (

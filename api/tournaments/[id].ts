@@ -21,6 +21,8 @@ import { assertOrganizersCoverAllDivisions } from '../../server/lib/tournamentOr
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
 import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentPostAction';
 import { notifyMany, notifyOne } from '../../server/lib/notify';
+import { applyCategoryKnockoutAdvances } from '../../server/lib/knockoutAdvance';
+import { insertAuditLogSafe } from '../../server/lib/auditLog';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -165,7 +167,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             );
             return {
               groupIndex: gi,
-              standings: computeStandingsForGroup({ teams: groupTeams, matches: groupMatches as any }),
+              standings: computeStandingsForGroup({
+                teams: groupTeams,
+                matches: groupMatches as any,
+                tieBreakSeed: id,
+              }),
             };
           });
           return { division, groups };
@@ -282,7 +288,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (action === 'generateCategoryMatches') {
         try {
-          const result = await actionPublishCategoryMatches(db, id);
+          const result = await actionPublishCategoryMatches(db, id, { actorId: actingUserId });
           return corsRes.status(200).json(result);
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : 'Could not generate category matches';
@@ -298,7 +304,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (remaining > 0) {
             return corsRes.status(400).json({ error: 'Classification is not completed', remaining });
           }
-          const result = await actionFinalizeClassification(db, id);
+          const result = await actionFinalizeClassification(db, id, { actorId: actingUserId });
+
+          await insertAuditLogSafe(db, {
+            actorId: actingUserId,
+            action: 'tournament.classification.finalized',
+            resource: 'tournament',
+            resourceId: id,
+            meta: {
+              categoryMatchesCreated: 'created' in result ? result.created : 0,
+              alreadyFinalized: 'alreadyFinalized' in result ? result.alreadyFinalized : false,
+            },
+          });
 
           // Notify players about classification category (best-effort, de-duped).
           const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1, classificationSnapshot: 1 } });
@@ -418,6 +435,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
         const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
+        const hasTeamA = ObjectId.isValid(teamAId);
+        const hasTeamB = ObjectId.isValid(teamBId);
 
         if (stage === 'category') {
           const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { categoriesSnapshot: 1 } });
@@ -432,28 +451,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return corsRes.status(400).json({ error: 'Category match not in published bracket snapshot' });
           }
 
-          if (!ObjectId.isValid(teamAId) || !ObjectId.isValid(teamBId)) {
-            return corsRes.status(400).json({ error: 'Invalid team id(s) in match' });
+          const advAW = String((match as { advanceTeamAFromMatchId?: unknown }).advanceTeamAFromMatchId ?? '');
+          const advBW = String((match as { advanceTeamBFromMatchId?: unknown }).advanceTeamBFromMatchId ?? '');
+          const advAL = String((match as { advanceTeamALoserFromMatchId?: unknown }).advanceTeamALoserFromMatchId ?? '');
+          const advBL = String((match as { advanceTeamBLoserFromMatchId?: unknown }).advanceTeamBLoserFromMatchId ?? '');
+          const sideAOk = hasTeamA || !!advAW || !!advAL;
+          const sideBOk = hasTeamB || !!advBW || !!advBL;
+          if (!sideAOk || !sideBOk) {
+            return corsRes.status(400).json({ error: 'Invalid category match slots' });
           }
-          const teams = await db
-            .collection('teams')
-            .find({ tournamentId: id, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
-            .project({ _id: 1, division: 1, category: 1 })
-            .toArray();
-          const map = new Map<string, { division?: unknown; category?: unknown }>();
-          for (const t of teams as unknown as Array<{ _id: ObjectId; division?: unknown; category?: unknown }>) {
-            map.set(t._id.toString(), { division: t.division, category: t.category });
+
+          const verifyTeam = async (tid: string) => {
+            const row = await db
+              .collection('teams')
+              .findOne({ tournamentId: id, _id: new ObjectId(tid) }, { projection: { _id: 1, division: 1, category: 1 } });
+            if (!row) return 'Category match team not found' as const;
+            if (String((row as { division?: unknown }).division ?? '') !== division) return 'Category match division mismatch' as const;
+            if (String((row as { category?: unknown }).category ?? '') !== category) return 'Category match category mismatch' as const;
+            return null;
+          };
+          if (hasTeamA) {
+            const err = await verifyTeam(teamAId);
+            if (err) return corsRes.status(400).json({ error: err });
           }
-          const ta = map.get(teamAId);
-          const tb = map.get(teamBId);
-          if (!ta || !tb) {
-            return corsRes.status(400).json({ error: 'Category match teams not found' });
-          }
-          if (String(ta.division ?? '') !== division || String(tb.division ?? '') !== division) {
-            return corsRes.status(400).json({ error: 'Category match division mismatch' });
-          }
-          if (String(ta.category ?? '') !== category || String(tb.category ?? '') !== category) {
-            return corsRes.status(400).json({ error: 'Category match category mismatch' });
+          if (hasTeamB) {
+            const err = await verifyTeam(teamBId);
+            if (err) return corsRes.status(400).json({ error: err });
           }
         }
 
@@ -471,6 +494,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         if (finalize) {
+          if (!hasTeamA || !hasTeamB) {
+            return corsRes.status(400).json({ error: 'Both teams must be assigned before completing this match' });
+          }
           if (!Number.isFinite(setsWonA) || !Number.isFinite(setsWonB) || setsWonA! < 0 || setsWonB! < 0) {
             return corsRes.status(400).json({ error: 'Invalid setsWonA/setsWonB' });
           }
@@ -496,12 +522,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Notifications: schedule changes + match completion.
         const updated = result as any;
         const tournamentName = String((await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } }))?.name ?? '');
-        const teamA = await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } });
-        const teamB = await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } });
+        const teamA = hasTeamA
+          ? await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } })
+          : null;
+        const teamB = hasTeamB
+          ? await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } })
+          : null;
         const aPlayers: string[] = Array.isArray((teamA as any)?.playerIds) ? (teamA as any).playerIds.map(String).filter(Boolean) : [];
         const bPlayers: string[] = Array.isArray((teamB as any)?.playerIds) ? (teamB as any).playerIds.map(String).filter(Boolean) : [];
-        const aName = String((teamA as any)?.name ?? 'Team A');
-        const bName = String((teamB as any)?.name ?? 'Team B');
+        const aName = String((teamA as any)?.name ?? 'TBD');
+        const bName = String((teamB as any)?.name ?? 'TBD');
 
         const nextScheduledAt = String((updated as any).scheduledAt ?? '');
         if (nextScheduledAt && nextScheduledAt !== prevScheduledAt) {
@@ -537,6 +567,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             data: { tournamentId: id, matchId },
             dedupeKey: `match.ended:${matchId}:b`,
           });
+          if (stage === 'category' && winnerId && hasTeamA && hasTeamB) {
+            const loserId = winnerId === teamAId ? teamBId : teamAId;
+            await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
+          }
         }
 
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
@@ -1237,6 +1271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'classificationMatchesPerOpponent',
         'categoryFractions',
         'singleCategoryAdvanceFraction',
+        'categoryPhaseFormat',
         'status',
         'organizerIds',
         'visibility',
@@ -1357,6 +1392,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Advance fraction must be between 0 and 1' });
         }
         update.singleCategoryAdvanceFraction = Math.round(f * 1000) / 1000;
+      }
+
+      if (update.categoryPhaseFormat !== undefined) {
+        const v = String(update.categoryPhaseFormat ?? '').trim();
+        if (v !== 'round_robin' && v !== 'single_elim') {
+          return corsRes.status(400).json({ error: 'Invalid category phase format' });
+        }
+        update.categoryPhaseFormat = v;
       }
 
       if (update.categoryFractions !== undefined) {

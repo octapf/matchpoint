@@ -55,7 +55,6 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
           style={[
             styles.text,
             isSmall && styles.textSm,
-            styles.textItalic,
             isPrimary && styles.primaryText,
             isSecondary && styles.secondaryText,
             variant === 'outline' && styles.outlineText,
@@ -127,9 +126,6 @@ const styles = StyleSheet.create({
   textSm: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  textItalic: {
-    fontStyle: 'italic',
   },
   primaryText: {
     color: '#1a1a1a',
