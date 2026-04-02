@@ -416,11 +416,13 @@ export default function EditMatchScreen() {
 
   const renderServeLine = (teamAName: string, teamBName: string, order: string[]) => {
     const status = (match as { status?: string }).status;
-    const canChangeOrder =
+    /** Rotation + initial server are fixed once the match is in progress (only editable while scheduled / pre-start). */
+    const canEditServeSetup =
       status !== 'completed' &&
-      (canManageTournament || isReferee || (canEditScore && status === 'in_progress'));
+      status !== 'in_progress' &&
+      (canManageTournament || isReferee);
     const bumpOrderNumber = (pid: string) => {
-      if (!canChangeOrder || order.length !== 4) return;
+      if (!canEditServeSetup || order.length !== 4) return;
       const idx = order.findIndex((p) => p === pid);
       if (idx < 0) return;
       const nextIdx = (idx + 1) % 4;
@@ -460,7 +462,7 @@ export default function EditMatchScreen() {
                       {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
                       onPress={() => bumpOrderNumber(pid)}
-                      disabled={!canChangeOrder}
+                      disabled={!canEditServeSetup}
                       accessibilityRole="button"
                       style={styles.serveSlotNumPill}
                     >
@@ -471,12 +473,13 @@ export default function EditMatchScreen() {
                   <Pressable
                     style={styles.serveSlotNameWrap}
                     onPress={() => {
-                      if (!canChangeOrder) return;
+                      if (!canEditServeSetup) return;
                       setServeOrder.mutate(
                         { id: matchId, tournamentId: id, order, servingPlayerId: pid },
                         { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
                       );
                     }}
+                    disabled={!canEditServeSetup}
                     accessibilityRole="button"
                   >
                     <Text style={[styles.serveSlotName, styles.serveSlotNameA]} numberOfLines={3}>
@@ -510,7 +513,7 @@ export default function EditMatchScreen() {
                       {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
                       onPress={() => bumpOrderNumber(pid)}
-                      disabled={!canChangeOrder}
+                      disabled={!canEditServeSetup}
                       accessibilityRole="button"
                       style={styles.serveSlotNumPill}
                     >
@@ -521,12 +524,13 @@ export default function EditMatchScreen() {
                   <Pressable
                     style={styles.serveSlotNameWrap}
                     onPress={() => {
-                      if (!canChangeOrder) return;
+                      if (!canEditServeSetup) return;
                       setServeOrder.mutate(
                         { id: matchId, tournamentId: id, order, servingPlayerId: pid },
                         { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
                       );
                     }}
+                    disabled={!canEditServeSetup}
                     accessibilityRole="button"
                   >
                     <Text style={[styles.serveSlotName, styles.serveSlotNameB]} numberOfLines={3}>

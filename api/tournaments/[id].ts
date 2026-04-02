@@ -260,7 +260,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const action = typeof body?.action === 'string' ? body.action.trim() : '';
 
       // Most actions are organizer/admin only, but match refereeing is allowed for players.
-      if (action !== 'updateMatch' && action !== 'claimReferee') {
+      if (
+        action !== 'updateMatch' &&
+        action !== 'claimReferee' &&
+        action !== 'refereeHeartbeat' &&
+        action !== 'refereePoint' &&
+        action !== 'setServeOrder'
+      ) {
         if (!isOrg && !actorIsAdmin) {
           return corsRes.status(403).json({ error: 'Only organizers can manage this tournament' });
         }
@@ -1133,8 +1139,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             refereeLockExpiresAt: currentLockExp || null,
           });
         }
-        if (matchStatus !== 'in_progress') {
-          return corsRes.status(400).json({ error: 'Match is not in progress' });
+        // Pre-start setup only: rotation / initial server are locked once play begins.
+        if (matchStatus === 'completed') {
+          return corsRes.status(400).json({ error: 'Match is completed' });
+        }
+        if (matchStatus === 'in_progress') {
+          return corsRes.status(400).json({ error: 'Serve order is locked during play' });
         }
 
         const order = Array.isArray(body?.order) ? (body.order as unknown[]).map(String).filter(Boolean) : [];
