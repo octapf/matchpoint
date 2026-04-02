@@ -68,8 +68,10 @@ export default function ProfileScreen() {
   if (!hasHydrated) {
     return (
       <View style={styles.container}>
-        <View style={[styles.content, { paddingTop: topPad }]}>
+        <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        </View>
+        <View style={[styles.content, styles.contentBelowSticky]}>
           <View style={styles.hydrateSkeleton}>
             <Skeleton height={80} width={80} borderRadius={40} style={{ marginBottom: 16 }} />
             <Skeleton height={22} width="55%" style={{ marginBottom: 8 }} />
@@ -85,8 +87,10 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={styles.container}>
-        <View style={[styles.noUserOuter, { paddingTop: topPad }]}>
+        <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        </View>
+        <View style={[styles.noUserOuter, styles.noUserBody]}>
           <View style={styles.centered}>
             <Text style={styles.errorText}>{t('profile.noUserData')}</Text>
             <Button title={t('auth.signIn')} onPress={() => router.replace('/(auth)/sign-in')} size="sm" fullWidth />
@@ -98,14 +102,16 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingTop: topPad }]}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={false}
-      >
-        <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
+          <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.content, styles.contentBelowSticky]}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+        >
         <Pressable
           style={styles.avatarSection}
           onPress={() => router.push(`/profile/${user._id}` as never)}
@@ -178,7 +184,7 @@ export default function ProfileScreen() {
 
         <Text style={styles.footer}>{t('profile.matchpointBy')}</Text>
         <Text style={styles.copyright}>{t('footer.copyright')}</Text>
-      </ScrollView>
+        </ScrollView>
     </View>
   );
 }
@@ -187,6 +193,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  stickyScreenHeader: {
+    paddingHorizontal: 16,
+    backgroundColor: Colors.background,
+    zIndex: 2,
+  },
+  contentBelowSticky: {
+    paddingTop: 0,
   },
   scrollView: {
     flex: 1,
@@ -197,8 +211,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   noUserOuter: {
-    flex: 1,
     paddingHorizontal: 16,
+  },
+  noUserBody: {
+    flex: 1,
   },
   centered: {
     flex: 1,

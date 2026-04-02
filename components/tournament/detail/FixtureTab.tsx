@@ -7,38 +7,52 @@ import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
 import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
-import { estimateCategoryBracketTeamCount, resolveKnockoutRoundHeading } from '@/lib/knockoutRoundLabel';
+import {
+  bracketRoundTitleDisplay,
+  estimateCategoryBracketTeamCount,
+  resolveKnockoutRoundHeading,
+} from '@/lib/knockoutRoundLabel';
 
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
 type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
 const BRONZE = '#cd7f32';
 
-/** Full-bleed horizontal wash (left → transparent) behind Gold / Silver / Bronze fixture content. */
+const WASH_PEAK: Record<MatchCategoryTab, number> = {
+  Gold: 0.28,
+  Silver: 0.24,
+  Bronze: 0.27,
+};
+
+/** Many opacity stops + smooth curve → less banding than few flat steps (esp. Android). */
+function washStops(peak: number, stopColor: string, keyPrefix: string) {
+  const n = 56;
+  const gamma = 2.12;
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = i / n;
+    const op = peak * (1 - t) ** gamma;
+    return (
+      <Stop
+        key={`${keyPrefix}${i}`}
+        offset={`${(t * 100).toFixed(4)}%`}
+        stopColor={stopColor}
+        stopOpacity={op}
+      />
+    );
+  });
+}
+
 function CategoryTabContentGradient({ category }: { category: MatchCategoryTab }) {
   const uid = useId().replace(/:/g, '');
   const gradId = `fxCatBg${category}${uid}`;
+  const peak = WASH_PEAK[category];
+  const color = category === 'Gold' ? Colors.yellow : category === 'Silver' ? '#94a3b8' : BRONZE;
+  const prefix = category === 'Gold' ? 'g' : category === 'Silver' ? 's' : 'b';
   return (
     <Svg style={StyleSheet.absoluteFillObject} viewBox="0 0 1 1" preserveAspectRatio="none" pointerEvents="none">
       <Defs>
-        <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-          {category === 'Gold'
-            ? [
-                <Stop key="g0" offset="0" stopColor={Colors.yellow} stopOpacity={0.14} />,
-                <Stop key="g1" offset="0.45" stopColor="#f59e0b" stopOpacity={0.06} />,
-                <Stop key="g2" offset="1" stopColor={Colors.yellow} stopOpacity={0} />,
-              ]
-            : category === 'Silver'
-              ? [
-                  <Stop key="s0" offset="0" stopColor="#94a3b8" stopOpacity={0.12} />,
-                  <Stop key="s1" offset="0.5" stopColor="#cbd5e1" stopOpacity={0.05} />,
-                  <Stop key="s2" offset="1" stopColor="#94a3b8" stopOpacity={0} />,
-                ]
-              : [
-                  <Stop key="b0" offset="0" stopColor={BRONZE} stopOpacity={0.13} />,
-                  <Stop key="b1" offset="0.45" stopColor="#b45309" stopOpacity={0.05} />,
-                  <Stop key="b2" offset="1" stopColor={BRONZE} stopOpacity={0} />,
-                ]}
+        <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+          {washStops(peak, color, prefix)}
         </SvgLinearGradient>
       </Defs>
       <Rect x={0} y={0} width={1} height={1} fill={`url(#${gradId})`} />
@@ -140,6 +154,7 @@ export function FixtureTab({
   matchesSubtabLabelSelectedStyle,
   groupBlockStyle,
   groupHeadingStyle,
+  bracketRoundHeadingStyle,
   emptyGroupStyle,
   matchRowStyle,
   matchTeamNameStyle,
@@ -179,6 +194,7 @@ export function FixtureTab({
   matchesSubtabLabelSelectedStyle: unknown;
   groupBlockStyle: unknown;
   groupHeadingStyle: unknown;
+  bracketRoundHeadingStyle: unknown;
   emptyGroupStyle: unknown;
   matchRowStyle: unknown;
   matchTeamNameStyle: unknown;
@@ -529,7 +545,7 @@ export function FixtureTab({
                     />
                     {bracketGroups.map((g) => (
                       <View key={`br-${g.round}-${g.heading}`} style={{ marginBottom: 14 }}>
-                        <Text style={groupHeadingStyle as never}>{g.heading}</Text>
+                        <Text style={bracketRoundHeadingStyle as never}>{bracketRoundTitleDisplay(g.heading)}</Text>
                         {sortMatches(g.matches).map((m) => (
                           <View key={m.id}>{renderMatchRow(m)}</View>
                         ))}

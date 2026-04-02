@@ -391,6 +391,7 @@
     "waitlistYouAre": "Sei il n. %{n} in lista d’attesa"
   },
   "tournamentDetail": {
+    "tournamentDetails": "Dettagli del torneo",
     "bracketGeneratedAt": "Tabellone generato il",
     "classificationRemaining": "Restano %{n} partite nella fase di qualificazione.",
     "searchTeams": "Cerca squadre…",

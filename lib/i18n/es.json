@@ -391,6 +391,7 @@
     "waitlistYouAre": "Nº %{n}"
   },
   "tournamentDetail": {
+    "tournamentDetails": "Detalles del torneo",
     "bracketGeneratedAt": "Cuadro generado el",
     "classificationRemaining": "Quedan %{n} partidos en la clasificación.",
     "searchTeams": "Buscar equipos…",
@@ -501,7 +502,7 @@
     "bracketPhaseQuarter": "Cuartos de final",
     "bracketPhaseOctavos": "Octavos de final",
     "bracketPhaseRoundOf32": "Dieciseisavos de final",
-    "bracketBronzeHeading": "3.er lugar",
+    "bracketBronzeHeading": "3er y 4to puesto",
     "bracketDiagramTitle": "Cuadro",
     "bracketMatchVs": "vs",
     "bracketViewBoth": "Ambos",

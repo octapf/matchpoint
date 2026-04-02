@@ -81,6 +81,11 @@ export function resolveKnockoutRoundHeading(
   return t('tournamentDetail.bracketRoundHeading', { n: roundNumberForFallback });
 }
 
+/** Bracket round title for UI — same in diagram column headers and fixture list (no decoration). */
+export function bracketRoundTitleDisplay(raw: string): string {
+  return raw.trim();
+}
+
 /**
  * One heading per main-bracket column, same rules as the fixture list (distance from final + K / byes).
  * Order matches `buildMainLayers` / CategoryBracketDiagram columns (sorted bracketRound).

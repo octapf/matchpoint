@@ -391,6 +391,7 @@
     "waitlistYouAre": "You are #%{n} on the waiting list"
   },
   "tournamentDetail": {
+    "tournamentDetails": "Tournament details",
     "bracketGeneratedAt": "Bracket generated at",
     "classificationRemaining": "%{n} matches remaining in classification.",
     "searchTeams": "Search teams…",

@@ -59,6 +59,7 @@ import {
   tournamentDivisionsNormalized,
 } from '@/lib/tournamentOrganizerCoverage';
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
+import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 
 /** Same default asset as `TournamentListRow` / tournament cards in the list. */
@@ -218,13 +219,25 @@ function hasValidGender(g?: Gender | string): g is Gender {
   return g === 'male' || g === 'female';
 }
 
-function TournamentHeaderTitle({ id }: { id: string | undefined }) {
+/** Tournament name in the info card (same look as the former nav title). */
+const tournamentNameInCardStyle = {
+  color: '#e5e5e5',
+  fontSize: 17,
+  fontWeight: '600',
+  fontStyle: 'italic',
+  textTransform: 'uppercase',
+} as const;
+
+function TournamentDetailsNavTitle() {
   const { t } = useTranslation();
-  const { data: tournament } = useTournament(id);
-  return <Text style={headerTitleStyle}>{tournament?.name ?? t('common.tournament')}</Text>;
+  return (
+    <Text style={tournamentDetailsNavTitleStyle} numberOfLines={1}>
+      {t('tournamentDetail.tournamentDetails')}
+    </Text>
+  );
 }
 
-const headerTitleStyle = {
+const tournamentDetailsNavTitleStyle = {
   color: '#e5e5e5',
   fontSize: 17,
   fontWeight: '600',
@@ -323,8 +336,11 @@ export default function TournamentDetailScreen() {
 
   const navigation = useNavigation();
   useLayoutEffect(() => {
-    navigation.setOptions({ headerTitle: () => <TournamentHeaderTitle id={id ?? undefined} /> });
-  }, [navigation, id]);
+    navigation.setOptions({
+      headerTitle: () => <TournamentDetailsNavTitle />,
+      headerRight: () => <NotificationsInboxButton />,
+    });
+  }, [navigation, t]);
 
   const groupMeta = useMemo(() => {
     if (!tournament) return { groupCount: 4, teamsPerGroup: 4 };
@@ -1623,6 +1639,9 @@ export default function TournamentDetailScreen() {
                     />
                   </View>
                 ) : null}
+                <Text style={[tournamentNameInCardStyle, styles.tournamentConfigName]} numberOfLines={3}>
+                  {tournament.name?.trim() || t('common.tournament')}
+                </Text>
                 <View style={styles.tournamentConfigRow}>
                   <Ionicons name="location-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
                   <Text style={styles.tournamentConfigText}>
@@ -1934,6 +1953,7 @@ export default function TournamentDetailScreen() {
               matchesSubtabLabelSelectedStyle={styles.matchesSubtabLabelSelected}
               groupBlockStyle={styles.groupBlock}
               groupHeadingStyle={styles.groupHeading}
+              bracketRoundHeadingStyle={styles.bracketRoundHeading}
               emptyGroupStyle={styles.emptyGroup}
               matchRowStyle={styles.matchRow}
               matchTeamNameStyle={styles.matchTeamName}
@@ -2312,6 +2332,17 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textTransform: 'uppercase',
   },
+  /** Knockout round titles in fixture list — same size as bracket diagram column labels (smaller than group). */
+  bracketRoundHeading: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.yellow,
+    marginBottom: 8,
+    marginTop: 4,
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    letterSpacing: 0.45,
+  },
   emptyGroup: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', marginBottom: 8 },
   teamCard: {
     position: 'relative',
@@ -2452,6 +2483,10 @@ const styles = StyleSheet.create({
     zIndex: 1,
     paddingVertical: 10,
     paddingHorizontal: 12,
+  },
+  tournamentConfigName: {
+    paddingRight: 34,
+    marginBottom: 8,
   },
   tournamentConfigMenuAbs: {
     position: 'absolute',

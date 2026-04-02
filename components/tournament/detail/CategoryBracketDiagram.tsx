@@ -19,7 +19,11 @@ import Svg, { Circle, Defs, Ellipse, G, Line, LinearGradient, Path, RadialGradie
 import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { Avatar } from '@/components/ui/Avatar';
-import { bracketMatchShouldShowVsPlaceholder, mainBracketColumnHeadings } from '@/lib/knockoutRoundLabel';
+import {
+  bracketMatchShouldShowVsPlaceholder,
+  bracketRoundTitleDisplay,
+  mainBracketColumnHeadings,
+} from '@/lib/knockoutRoundLabel';
 
 // ─── Base dimensions at scale = 1 (compact match cards) ──────────────────────
 const B_MATCH_H  = 54;
@@ -29,9 +33,9 @@ const B_COL_GAP  = 16;
 const B_ROW_GAP  = 96;
 const B_EDGE_PAD = 8;
 /** Height reserved above each column for the round name (matches `B_BRACKET_ROUND_LABEL_FS`, up to 2 lines). */
-const B_COL_LABEL_H = 34;
-/** Same font size as `styles.title` (“Cuadro” / Bracket). */
-const B_BRACKET_ROUND_LABEL_FS = 14;
+const B_COL_LABEL_H = 32;
+/** Round column titles — slightly smaller than section “Cuadro” title; matches list headings. */
+const B_BRACKET_ROUND_LABEL_FS = 12;
 const B_BRZ_GAP  = 40;
 const B_BRZ_BLW  = 72;
 /** Team names in bracket cards (aligned with fixture list ~13). */
@@ -286,11 +290,21 @@ function connPath(
   ].join(' ');
 }
 
-function brzPath(xS: number, yS: number, xB: number, yB: number, colW: number, colGap: number, mH: number): string {
-  const ysc  = yS + mH / 2;
-  const ybc  = yB + mH / 2;
+/** Losers of the two semifinals → 3rd-place match: same elbow pattern as the rest of the bracket (no extra segments). */
+function brzPath(
+  xS: number,
+  yS: number,
+  xB: number,
+  yB: number,
+  colW: number,
+  colGap: number,
+  mH: number
+): string {
+  const ysc = yS + mH / 2;
+  const ybc = yB + mH / 2;
+  const xOut = xS + colW;
   const midX = xS + colW + colGap / 2;
-  return `M${xS + colW} ${ysc} L${midX} ${ysc} L${midX} ${ybc} L${xB} ${ybc}`;
+  return `M${xOut} ${ysc} L${midX} ${ysc} L${midX} ${ybc} L${xB} ${ybc}`;
 }
 
 // ─── Layout computation ───────────────────────────────────────────────────────
@@ -369,11 +383,7 @@ function computeLayout(
     const la = b0.advanceTeamALoserFromMatchId ? byId.get(b0.advanceTeamALoserFromMatchId) : undefined;
     const lb = b0.advanceTeamBLoserFromMatchId ? byId.get(b0.advanceTeamBLoserFromMatchId) : undefined;
     const sIdx = Math.max(0, layers.length - 2);
-    if (la && lb && layers[sIdx]) {
-      const ia = layers[sIdx]!.findIndex((x) => x.id === la.id);
-      const ib = layers[sIdx]!.findIndex((x) => x.id === lb.id);
-      bronzeY = ((ysRaw[sIdx]?.[ia] ?? 0) + (ysRaw[sIdx]?.[ib] ?? 0)) / 2;
-    } else {
+    if (!la || !lb || !layers[sIdx]) {
       bronzeY = Math.max(0, ...ysRaw.flat()) + matchH + brzBelow;
     }
   }
@@ -384,16 +394,30 @@ function computeLayout(
   const medalAboveTitleExtra = finaleIconLayoutH + B_GAP_MEDAL_TO_FINAL_TITLE * s;
   const trophyBandTight = B_TRP_AFTER_LABEL * s + B_TRP_UNDER_TROPHY * s;
   const finalColIdx = layers.length - 1;
+  /**
+   * Final column: reserve space for the medal + “FINAL” band with at least `medalAboveTitleExtra`, but do **not**
+   * add that full band on top of `ysRaw` when geometry already places the match lower — otherwise the final card
+   * sits too low vs the merge point of the semifinals and vs the rest of the bracket. Bronze column reuses final Y.
+   */
   const ys = ysRaw.map((row, r) =>
-    row.map((y) => y + (r === finalColIdx ? medalAboveTitleExtra : 0) + colLabelH + trophyBandTight)
+    row.map((y) =>
+      r === finalColIdx
+        ? Math.max(y, medalAboveTitleExtra) + colLabelH + trophyBandTight
+        : y + colLabelH + trophyBandTight
+    )
   );
   bronzeY += colLabelH + trophyBandTight;
+
+  // Same top Y as the final match so the two cards sit on one visual row (medal/title offset is only on the final column).
+  if (bronzeRows.length > 0 && ys[finalColIdx]?.length) {
+    bronzeY = ys[finalColIdx]![0]!;
+  }
 
   const mainCols = layers.length;
   const hasBronze = bronzeRows.length > 0;
   const width  = cx(mainCols + (hasBronze ? 1 : 0), colW, colGap) + colW + edgePad;
   const maxMainY = Math.max(0, ...ys.flat()) + matchH;
-  const height = Math.max(maxMainY, bronzeY + matchH + brzBelow);
+  let height = Math.max(maxMainY, bronzeY + matchH + brzBelow);
 
   const paths: string[] = [];
   for (let r = 0; r < layers.length - 1; r++) {
@@ -449,8 +473,9 @@ function computeLayout(
       const ya = ys[sIdx]?.[ia] ?? 0;
       const yb = ys[sIdx]?.[ib] ?? 0;
       const xBrz = cx(mainCols, colW, colGap);
-      paths.push(brzPath(cx(sIdx, colW, colGap), ya, xBrz, bronzeY, colW, colGap, matchH));
-      paths.push(brzPath(cx(sIdx, colW, colGap), yb, xBrz, bronzeY, colW, colGap, matchH));
+      const xSemi = cx(sIdx, colW, colGap);
+      paths.push(brzPath(xSemi, ya, xBrz, bronzeY, colW, colGap, matchH));
+      paths.push(brzPath(xSemi, yb, xBrz, bronzeY, colW, colGap, matchH));
     }
   }
 
@@ -697,7 +722,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               adjustsFontSizeToFit
               minimumFontScale={0.75}
             >
-              {(columnHeadings[r] ?? '').toUpperCase()}
+              {bracketRoundTitleDisplay((columnHeadings[r] ?? '').toUpperCase())}
             </Text>
           </View>
         ))}
@@ -708,7 +733,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               styles.colRoundLabelWrap,
               {
                 left: cx(layers.length, colW, colGap),
-                top: 0,
+                top: medalAboveTitleExtra,
                 width: colW,
                 height: colLabelH,
               },
@@ -720,7 +745,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               adjustsFontSizeToFit
               minimumFontScale={0.75}
             >
-              {t('tournamentDetail.bracketBronzeHeading').toUpperCase()}
+              {bracketRoundTitleDisplay(t('tournamentDetail.bracketBronzeHeading').toUpperCase())}
             </Text>
           </View>
         ) : null}
@@ -915,6 +940,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontStyle: 'italic',
     textAlign: 'center',
-    letterSpacing: 0.6,
+    letterSpacing: 0.45,
   },
 });

@@ -85,13 +85,6 @@ export default function TournamentsScreen() {
     [queryClient, router, shareTournament],
   );
 
-  const listHeader = useCallback(
-    () => (
-      <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
-    ),
-    [t],
-  );
-
   const listEmpty = useCallback(
     () => (
       <View style={styles.emptyState}>
@@ -109,13 +102,15 @@ export default function TournamentsScreen() {
   );
 
   const topPad = Math.max(insets.top, 12) + 8;
-  const scrollContentStyle = [styles.scrollContent, { paddingTop: topPad }];
+  const scrollContentStyle = [styles.scrollContent, { paddingTop: 0 }];
 
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <ScrollView style={styles.scroll} contentContainerStyle={scrollContentStyle}>
+        <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        </View>
+        <ScrollView style={styles.scroll} contentContainerStyle={scrollContentStyle}>
           {[1, 2, 3].map((i) => (
             <View key={i} style={styles.cardOuter}>
               <View style={styles.cardPressable}>
@@ -134,8 +129,10 @@ export default function TournamentsScreen() {
   if (isError) {
     return (
       <View style={[styles.container, styles.errorOuter]}>
-        <View style={[styles.errorInner, { paddingTop: topPad }]}>
+        <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+        </View>
+        <View style={styles.errorInner}>
           <Text style={styles.errorText}>{error?.message || t('tournaments.failedToLoad')}</Text>
         </View>
       </View>
@@ -144,10 +141,12 @@ export default function TournamentsScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
+        <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
+      </View>
       <FlashList
         data={tournaments as Tournament[]}
         keyExtractor={(item) => item._id}
-        ListHeaderComponent={listHeader}
         ListEmptyComponent={listEmpty}
         renderItem={renderTournamentItem}
         refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={Colors.yellow} />}
@@ -195,11 +194,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  /** Logo + title + notifications — fixed above scroll so they stay visible. */
+  stickyScreenHeader: {
+    paddingHorizontal: 16,
+    backgroundColor: Colors.background,
+    zIndex: 2,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 0,
     paddingBottom: 80,
   },
   cardOuter: {
@@ -249,7 +255,9 @@ const styles = StyleSheet.create({
   errorInner: {
     flex: 1,
     paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 24,
+    justifyContent: 'center',
   },
   errorText: {
     fontSize: 16,

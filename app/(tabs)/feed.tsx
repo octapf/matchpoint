@@ -153,16 +153,11 @@ export default function FeedScreen() {
     weatherReady && current && !isError ? getWeatherPanelIconColors(skyKey, current.isDay) : null;
 
   const topPad = Math.max(insets.top, 12) + 8;
-  const scrollContentStyle = useMemo(
-    () => [styles.content, { paddingTop: topPad }],
-    [topPad],
-  );
+  const scrollContentStyle = useMemo(() => [styles.content, { paddingTop: 0 }], []);
 
   const listHeader = useMemo(
     () => (
       <>
-        <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
-
         <View style={styles.weatherCard}>
           {weatherReady && !isError && current ? (
             <>
@@ -343,29 +338,40 @@ export default function FeedScreen() {
   );
 
   return (
-    <FlashList
-      data={tournaments as Tournament[]}
-      keyExtractor={(item) => item._id}
-      renderItem={renderTournamentItem}
-      ListHeaderComponent={listHeader}
-      ListFooterComponent={listFooter}
-      ListEmptyComponent={listEmpty}
-      style={styles.container}
-      contentContainerStyle={scrollContentStyle}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        <RefreshControl
-          refreshing={isFetchingTournaments}
-          onRefresh={() => void refetchTournaments()}
-          tintColor={Colors.yellow}
-        />
-      }
-    />
+    <View style={styles.screenRoot}>
+      <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
+        <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
+      </View>
+      <FlashList
+        data={tournaments as Tournament[]}
+        keyExtractor={(item) => item._id}
+        renderItem={renderTournamentItem}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        ListEmptyComponent={listEmpty}
+        style={styles.flashFill}
+        contentContainerStyle={scrollContentStyle}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isFetchingTournaments}
+            onRefresh={() => void refetchTournaments()}
+            tintColor={Colors.yellow}
+          />
+        }
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  screenRoot: { flex: 1, backgroundColor: Colors.background },
+  flashFill: { flex: 1 },
+  stickyScreenHeader: {
+    paddingHorizontal: 16,
+    backgroundColor: Colors.background,
+    zIndex: 2,
+  },
   content: { paddingHorizontal: 16, paddingBottom: 40 },
   weatherMetaBlock: {
     marginBottom: 6,
