@@ -192,6 +192,8 @@
     "rosterNoTeams": "Nessuna squadra.",
     "rosterCreateTeam": "Crea squadra",
     "rosterGroup": "Girone",
+    "rosterNoGroupYet": "Girone non ancora assegnato",
+    "rosterGroupsAfterCreateGroups": "L’assegnazione al girone è disponibile dopo che l’organizzatore usa Crea gruppi nella scheda Gruppi del torneo.",
     "rosterPickPlayers": "Seleziona giocatori (max 2)",
     "rosterPickPlayersFree": "Giocatori senza squadra (tocca per selezionare, max 2)",
     "rosterDeleteTeam": "Elimina squadra",

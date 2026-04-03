@@ -139,14 +139,12 @@ export function FixtureTab({
   matchCategoryTabs,
   selectedMatchesSubtab,
   onSelectSubtab,
-  classificationCounts,
   liveMatches,
   classificationData,
   categoryMatchesByCategory,
   onOpenMatch,
   canQuickEditMatches,
   emptyTextStyle,
-  classificationCountsTextStyle,
   matchesSubtabBarStyle,
   matchesSubtabItemStyle,
   matchesSubtabItemSelectedStyle,
@@ -174,7 +172,6 @@ export function FixtureTab({
   matchCategoryTabs: MatchSubTab[];
   selectedMatchesSubtab: MatchSubTab;
   onSelectSubtab: (tab: MatchSubTab) => void;
-  classificationCounts: { total: number; completed: number } | null;
   /** Matches with status `in_progress` for the current division (classification + category). */
   liveMatches: MatchRow[];
   classificationData: {
@@ -186,7 +183,6 @@ export function FixtureTab({
   onOpenMatch?: (matchId: string) => void;
   canQuickEditMatches?: boolean;
   emptyTextStyle: unknown;
-  classificationCountsTextStyle: unknown;
   matchesSubtabBarStyle: unknown;
   matchesSubtabItemStyle: unknown;
   matchesSubtabItemSelectedStyle: unknown;
@@ -382,13 +378,6 @@ export function FixtureTab({
     );
   };
 
-  const counts = classificationCounts;
-  const showClassificationProgress =
-    counts != null &&
-    selectedMatchesSubtab !== 'Gold' &&
-    selectedMatchesSubtab !== 'Silver' &&
-    selectedMatchesSubtab !== 'Bronze';
-
   return (
     <View>
       <View style={matchesSubtabBarStyle as never}>
@@ -455,33 +444,18 @@ export function FixtureTab({
         })}
       </View>
 
-      {showClassificationProgress && counts ? (
-        <View style={{ paddingTop: 10, paddingBottom: 6 }}>
-          <Text style={classificationCountsTextStyle as never}>
-            {counts.completed}/{counts.total} {t('tournamentDetail.matchesCompleted')}
-          </Text>
-        </View>
-      ) : null}
-
       {selectedMatchesSubtab === 'live' ? (
-        <>
-          <View style={{ paddingTop: 10, paddingBottom: 6 }}>
-            <Text style={classificationCountsTextStyle as never}>
-              {t('tournamentDetail.matchesLiveCount', { n: liveMatches.length })}
-            </Text>
+        liveMatches.length === 0 ? (
+          <Text style={emptyTextStyle as never}>{t('tournamentDetail.noLiveMatches')}</Text>
+        ) : (
+          <View style={groupBlockStyle as never}>
+            <FlashList
+              data={sortMatches(liveMatches)}
+              keyExtractor={(m) => m.id}
+              renderItem={({ item }) => renderMatchRow(item) as never}
+            />
           </View>
-          {liveMatches.length === 0 ? (
-            <Text style={emptyTextStyle as never}>{t('tournamentDetail.noLiveMatches')}</Text>
-          ) : (
-            <View style={groupBlockStyle as never}>
-              <FlashList
-                data={sortMatches(liveMatches)}
-                keyExtractor={(m) => m.id}
-                renderItem={({ item }) => renderMatchRow(item) as never}
-              />
-            </View>
-          )}
-        </>
+        )
       ) : selectedMatchesSubtab === 'classification' ? (
         classificationData.length === 0 ? (
           <Text style={emptyTextStyle as never}>{t('tournamentDetail.fixturePlaceholder')}</Text>
@@ -543,11 +517,11 @@ export function FixtureTab({
                         marginBottom: 12,
                       }}
                     />
-                    {bracketGroups.map((g) => (
-                      <View key={`br-${g.round}-${g.heading}`} style={{ marginBottom: 14 }}>
+                    {bracketGroups.map((g, gi) => (
+                      <View key={`br-${g.round}-${g.heading}-${gi}`} style={{ marginBottom: 14 }}>
                         <Text style={bracketRoundHeadingStyle as never}>{bracketRoundTitleDisplay(g.heading)}</Text>
-                        {sortMatches(g.matches).map((m) => (
-                          <View key={m.id}>{renderMatchRow(m)}</View>
+                        {sortMatches(g.matches).map((m, mi) => (
+                          <View key={`${g.round}-${g.heading}-${m.id}-${mi}`}>{renderMatchRow(m)}</View>
                         ))}
                       </View>
                     ))}

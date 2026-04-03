@@ -5,7 +5,12 @@ import { teamPatchSchema } from '../../server/lib/schemas/teamPatch';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
-import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
+import {
+  normalizeGroupCount,
+  tournamentAllowsManualGroupAssignment,
+  validateTournamentGroups,
+  teamGroupIndex,
+} from '../../lib/tournamentGroups';
 import { countTeamsInGroup } from '../../server/lib/tournamentGroupDb';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import { notifyMany } from '../../server/lib/notify';
@@ -96,6 +101,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (update.groupIndex !== undefined) {
+        if (!tournamentAllowsManualGroupAssignment(tournament as { groupsDistributedAt?: string | null })) {
+          return corsRes.status(400).json({ error: 'Groups are not created yet. Use Create groups in the tournament first.' });
+        }
         const maxT = Number((tournament as { maxTeams?: number }).maxTeams);
         const gc = normalizeGroupCount((tournament as { groupCount?: number }).groupCount);
         const vg = validateTournamentGroups(maxT, gc);

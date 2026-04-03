@@ -754,7 +754,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
         {layers.map((layer, r) =>
           layer.map((m, i) => (
             <View
-              key={m.id}
+              key={`bracket-${r}-${i}-${m.id}`}
               collapsable={false}
               style={[styles.matchCell, {
                 left: cx(r, colW, colGap),
@@ -771,7 +771,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
         {/* 3. Bronze match cards */}
         {bronzeRows.map((m, bi) => (
           <View
-            key={m.id}
+            key={`bracket-bronze-${bi}-${m.id}`}
             collapsable={false}
             style={[styles.matchCell, {
               left: cx(layers.length, colW, colGap),

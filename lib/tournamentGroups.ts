@@ -88,6 +88,33 @@ export function validateTournamentGroups(
   return { ok: true as const, teamsPerGroup, groupCount: gc };
 }
 
+/**
+ * Whether teams may carry a concrete `groupIndex` (organizer has run Create groups, or legacy tournament).
+ * When `groupsDistributedAt === null`, teams stay unassigned until the organizer randomizes.
+ */
+export function tournamentAllowsManualGroupAssignment(t: { groupsDistributedAt?: string | null }): boolean {
+  const g = t.groupsDistributedAt;
+  if (g === undefined) return true;
+  if (g === null) return false;
+  return typeof g === 'string' && g.length > 0;
+}
+
+/**
+ * True while teams are not placed into real groups yet: no ISO `groupsDistributedAt`, and no team has a
+ * numeric `groupIndex`. Treats legacy docs that omit `groupsDistributedAt` like explicit `null` when every
+ * team is still `null`/missing — avoids showing "Grupo 1" from {@link teamGroupIndex} coercing null → 0.
+ */
+export function tournamentGroupPlacementPending(
+  tournament: { groupsDistributedAt?: string | null } | undefined,
+  teams: { groupIndex?: number | null }[]
+): boolean {
+  if (!tournament) return true;
+  const gda = tournament.groupsDistributedAt;
+  if (typeof gda === 'string' && gda.length > 0) return false;
+  const anyNumericGroup = teams.some((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
+  return !anyNumericGroup;
+}
+
 /** Effective group index for a team doc (legacy docs without field → 0; `null` = not yet distributed). */
 export function teamGroupIndex(team: { groupIndex?: number | null }): number {
   const g = team.groupIndex;

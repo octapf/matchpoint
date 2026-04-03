@@ -192,6 +192,8 @@
     "rosterNoTeams": "No teams yet.",
     "rosterCreateTeam": "Create team",
     "rosterGroup": "Group",
+    "rosterNoGroupYet": "Not assigned to a group yet",
+    "rosterGroupsAfterCreateGroups": "Group assignment is available after the organizer runs Create groups on the tournament Groups tab.",
     "rosterPickPlayers": "Select players (max 2)",
     "rosterPickPlayersFree": "Players without a team (tap to select, max 2)",
     "rosterDeleteTeam": "Delete team",

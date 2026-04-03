@@ -49,6 +49,7 @@ import {
   normalizeGroupCount,
   shouldOfferGroupRebalance,
   teamGroupIndex,
+  tournamentGroupPlacementPending,
   validateTournamentGroups,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
@@ -284,7 +285,6 @@ export default function TournamentDetailScreen() {
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
   const [activeDivision, setActiveDivision] = useState<DivisionTab>('mixed');
   const [activeMatchesSubtab, setActiveMatchesSubtab] = useState<MatchSubTab>('classification');
-  const [onlyMyClassificationMatches, setOnlyMyClassificationMatches] = useState(false);
   const [organizeOnlyModal, setOrganizeOnlyModal] = useState<{
     mode: 'promote' | 'self';
     targetUserId: string;
@@ -343,6 +343,7 @@ export default function TournamentDetailScreen() {
   const showQualificationOutcomeOnTeamsTab = useMemo(() => {
     if (shouldUseDevMocks()) return true;
     const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
+    if (phase === 'registration' || phase === 'open') return false;
     if (phase === 'categories' || phase === 'completed') return true;
     if (phase === 'classification') {
       return classificationMatches.some((m) => m.status === 'completed');
@@ -446,15 +447,16 @@ export default function TournamentDetailScreen() {
       (tournament as { phase?: unknown }).phase === 'completed';
 
     const gdaMenu = (tournament as { groupsDistributedAt?: unknown }).groupsDistributedAt;
+    const groupsDistributedMenu = typeof gdaMenu === 'string' && gdaMenu.length > 0;
     const anyGroupAssignedMenu = teams.some((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
     const groupsDistributionPendingMenu =
-      !shouldUseDevMocks() && gdaMenu === null && !anyGroupAssignedMenu;
+      !shouldUseDevMocks() && !groupsDistributedMenu && !anyGroupAssignedMenu;
     const rosterFull = teams.length >= (tournament.maxTeams ?? 0);
     const allTeamsPlacedInGroups =
       rosterFull &&
       teams.length > 0 &&
       teams.every((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
-    const cannotStartForGroups = gdaMenu === null && !allTeamsPlacedInGroups;
+    const cannotStartForGroups = !groupsDistributedMenu && !allTeamsPlacedInGroups;
 
     if (id) {
       list.push(
@@ -503,8 +505,8 @@ export default function TournamentDetailScreen() {
       );
     }
 
-    if (!started && id && !shouldUseDevMocks()) {
-      if (groupsDistributionPendingMenu && rosterFull) {
+    if (!started && id && !shouldUseDevMocks() && rosterFull) {
+      if (groupsDistributionPendingMenu) {
         list.push({
           key: 'distributeGroups',
           label: t('tournamentDetail.menuCreateGroups'),
@@ -528,7 +530,7 @@ export default function TournamentDetailScreen() {
               ]
             ),
         });
-      } else if (!groupsDistributionPendingMenu) {
+      } else {
         list.push({
           key: 'randomizeGroups',
           label: t('tournamentDetail.menuReorganizeGroups'),
@@ -718,21 +720,17 @@ export default function TournamentDetailScreen() {
   }, [filteredEntries, userMap]);
 
   /**
-   * Until organizer runs "distribute into groups", show all teams in one list (no Grupo 1…N buckets).
-   * Legacy docs omit the field (not pending). If any team already has a group index (e.g. admin roster), show real groups.
+   * Until organizer runs Create groups (or legacy data has numeric groupIndex), show one bucket — not fake "Grupo 1".
    */
   const groupsDistributionPending = useMemo(() => {
     if (shouldUseDevMocks()) return false;
-    const gda = tournament?.groupsDistributedAt;
-    if (gda !== null && gda !== undefined) return false;
-    if (gda === undefined) return false;
-    const anyAssigned = teams.some((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
-    return !anyAssigned;
-  }, [tournament?.groupsDistributedAt, teams]);
+    return tournamentGroupPlacementPending(tournament, teams);
+  }, [tournament, teams]);
 
   const divisionTeamsByGroup = useMemo(() => {
+    // Before organizer runs Create groups: show only empty group slots (no team list — teams live under Equipos tab).
     if (groupsDistributionPending) {
-      return filteredTeams.length ? [filteredTeams] : [];
+      return Array.from({ length: Math.max(1, groupsPerDivisionCap) }, () => [] as Team[]);
     }
     // Clamp and map groupIndex into the current division slice.
     const clampLocalGi = (gi: number) => Math.max(0, Math.min(groupsPerDivisionCap - 1, gi));
@@ -1039,43 +1037,14 @@ export default function TournamentDetailScreen() {
   }, [classificationBundle, tournament]);
 
   const categoryTeamIdsByCategory = useMemo(() => {
+    if (groupsDistributionPending && !shouldUseDevMocks()) {
+      return {};
+    }
     const fromClass = categoryTeamIdsFromClassification;
     const hasClass = (['Gold', 'Silver', 'Bronze'] as const).some((k) => (fromClass[k]?.length ?? 0) > 0);
     if (hasClass) return fromClass;
     return categoryTeamIdsFromSnapshot;
-  }, [categoryTeamIdsFromClassification, categoryTeamIdsFromSnapshot]);
-
-  const myTeamIdForDivision = useMemo(() => {
-    if (!userId) return null;
-    const mine = teams.find((tm) => (tm.playerIds ?? []).includes(userId) && divisionForTeam(tm, userMap) === currentDivision);
-    return mine?._id ?? null;
-  }, [currentDivision, teams, userId, userMap]);
-
-  const filteredClassificationData = useMemo(() => {
-    if (!onlyMyClassificationMatches || !myTeamIdForDivision) return classificationData;
-    return classificationData
-      .map((g) => {
-        const matches = (g.matches ?? []).filter(
-          (m: any) => m?.teamA?._id === myTeamIdForDivision || m?.teamB?._id === myTeamIdForDivision
-        );
-        return { ...g, matches };
-      })
-      .filter((g) => (g.matches ?? []).length > 0);
-  }, [classificationData, myTeamIdForDivision, onlyMyClassificationMatches]);
-
-  const fixtureCounts = useMemo(() => {
-    if (selectedMatchesSubtab === 'live') return null;
-    if (selectedMatchesSubtab === 'classification') {
-      const ms = filteredClassificationData.flatMap((g) => g.matches ?? []);
-      const total = ms.length;
-      const completed = ms.filter((m: any) => m.status === 'completed').length;
-      return { total, completed };
-    }
-    const ms = (categoryMatchesByCategory[selectedMatchesSubtab as 'Gold' | 'Silver' | 'Bronze'] ?? []) as any[];
-    const total = ms.length;
-    const completed = ms.filter((m) => m.status === 'completed').length;
-    return { total, completed };
-  }, [categoryMatchesByCategory, filteredClassificationData, selectedMatchesSubtab]);
+  }, [categoryTeamIdsFromClassification, categoryTeamIdsFromSnapshot, groupsDistributionPending]);
 
   /** Ongoing matches in the current division (classification + category stages). */
   const liveMatchesRows = useMemo(() => {
@@ -1258,6 +1227,21 @@ export default function TournamentDetailScreen() {
     updateTeam.isPending ||
     leaveWaitlist.isPending;
 
+  const isOrganizer = organizerIds.includes(userId ?? '');
+  const isAdmin = user?.role === 'admin';
+  /** Organizers and global admins can manage roster, teams, and invites from this screen. */
+  const canManageTournament = isOrganizer || isAdmin;
+
+  const rosterFull =
+    (tournament?.maxTeams ?? 0) > 0 && teams.length >= (tournament?.maxTeams ?? 0);
+
+  const primaryGroupAction = useMemo((): 'distribute' | 'reorganize' | null => {
+    if (!canManageTournament || shouldUseDevMocks() || !id || tournamentStarted) return null;
+    if (!rosterFull) return null;
+    if (groupsDistributionPending) return 'distribute';
+    return 'reorganize';
+  }, [canManageTournament, id, tournamentStarted, rosterFull, groupsDistributionPending]);
+
   if (isLoading || !tournament) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -1289,11 +1273,6 @@ export default function TournamentDetailScreen() {
       </View>
     );
   }
-
-  const isOrganizer = organizerIds.includes(userId ?? '');
-  const isAdmin = user?.role === 'admin';
-  /** Organizers and global admins can manage roster, teams, and invites from this screen. */
-  const canManageTournament = isOrganizer || isAdmin;
 
   const handleSwapTeam = (team: Team) => {
     if (!id || !userId) return;
@@ -1894,7 +1873,8 @@ export default function TournamentDetailScreen() {
             filteredTeams={teamsSortedForTeamsTab}
             renderTeam={(team) => {
               const row = teamClassificationLookup.get(team._id);
-              const cat = classificationBundle.teamCategory.get(team._id) ?? null;
+              const showOut = showQualificationOutcomeOnTeamsTab;
+              const cat = showOut ? (classificationBundle.teamCategory.get(team._id) ?? null) : null;
               return (
                 <TeamCard
                   key={team._id}
@@ -1910,8 +1890,8 @@ export default function TournamentDetailScreen() {
                     wins: row?.wins ?? 0,
                     points: row?.points ?? 0,
                     category: cat,
-                    classified: classificationBundle.teamCategory.has(team._id),
-                    showOutcomeIcons: showQualificationOutcomeOnTeamsTab,
+                    classified: showOut && classificationBundle.teamCategory.has(team._id),
+                    showOutcomeIcons: showOut,
                   }}
                 />
               );
@@ -1929,21 +1909,15 @@ export default function TournamentDetailScreen() {
             filteredTeams={filteredTeams}
             canManageTournament={canManageTournament && !shouldUseDevMocks() && !!userId}
             groupsDistributionPending={groupsDistributionPending}
-            canDistributeGroups={
-              !!canManageTournament &&
-              !shouldUseDevMocks() &&
-              !!id &&
-              groupsDistributionPending &&
-              teams.length >= (tournament?.maxTeams ?? 0)
-            }
-            onDistributeGroups={() => {
+            primaryGroupAction={primaryGroupAction}
+            onPrimaryGroupAction={() => {
               if (!id) return;
               randomizeGroupsMutation.mutate(
                 { id },
                 { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
               );
             }}
-            distributePending={randomizeGroupsMutation.isPending}
+            primaryGroupPending={randomizeGroupsMutation.isPending}
             rosterTeamsTotal={teams.length}
             maxTeams={tournament?.maxTeams ?? 0}
             offerGroupRebalance={offerGroupRebalance}
@@ -1959,17 +1933,6 @@ export default function TournamentDetailScreen() {
               );
             }}
             rebalancePending={rebalanceGroupsMutation.isPending}
-            canReorganizeGroups={
-              canManageTournament && !tournamentStarted && !shouldUseDevMocks() && !!id && !groupsDistributionPending
-            }
-            onReorganizeGroups={() => {
-              if (!id) return;
-              randomizeGroupsMutation.mutate(
-                { id },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-              );
-            }}
-            reorganizePending={randomizeGroupsMutation.isPending}
             divisionTeamsByGroup={divisionTeamsByGroup}
             renderTeam={(team) => (
               <TeamCard
@@ -2005,6 +1968,8 @@ export default function TournamentDetailScreen() {
             t={t}
             filteredWaitlist={filteredWaitlist}
             userMap={userMap}
+            organizerIds={organizerIds}
+            organizerOnlyIds={tournament?.organizerOnlyIds ?? []}
             onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
             canManageTournament={canManageTournament}
             mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
@@ -2025,37 +1990,23 @@ export default function TournamentDetailScreen() {
             invitePending={invitePartnerFromWaitlist.isPending}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
+            playerRowOrganizerStyle={styles.playerRowOrganizer}
             playerRowMainStyle={styles.playerRowMain}
             playerRowTextStyle={styles.playerRowText}
             playerRowNameStyle={styles.playerRowName}
+            orgBadgeStyle={styles.orgBadge}
             waitlistRankTextStyle={styles.waitlistRankText}
           />
         ) : null}
 
         {activeTab === 'fixture' ? (
-          <View>
-            {selectedMatchesSubtab === 'classification' && myTeamIdForDivision ? (
-              <View style={styles.fixtureQuickFilters}>
-                <Pressable
-                  onPress={() => setOnlyMyClassificationMatches((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: onlyMyClassificationMatches }}
-                  style={[styles.fixtureQuickFilterPill, onlyMyClassificationMatches ? styles.fixtureQuickFilterPillSelected : null]}
-                >
-                  <Text style={[styles.fixtureQuickFilterLabel, onlyMyClassificationMatches ? styles.fixtureQuickFilterLabelSelected : null]}>
-                    {t('tournamentDetail.onlyMyMatches')}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             <FixtureTab
               t={t}
               matchCategoryTabs={matchCategoryTabs}
               selectedMatchesSubtab={selectedMatchesSubtab}
               onSelectSubtab={setActiveMatchesSubtab}
-              classificationCounts={fixtureCounts}
               liveMatches={liveMatchesRows}
-              classificationData={filteredClassificationData}
+              classificationData={classificationData}
               categoryMatchesByCategory={categoryMatchesByCategory}
               teamById={teamById}
               userMap={userMap}
@@ -2068,7 +2019,6 @@ export default function TournamentDetailScreen() {
               }}
               canQuickEditMatches={canManageTournament}
               emptyTextStyle={styles.emptyText}
-              classificationCountsTextStyle={styles.fixtureCounts}
               matchesSubtabBarStyle={styles.matchesSubtabBar}
               matchesSubtabItemStyle={styles.matchesSubtabItem}
               matchesSubtabItemSelectedStyle={styles.matchesSubtabItemSelected}
@@ -2087,7 +2037,6 @@ export default function TournamentDetailScreen() {
               matchStandingTeamStyle={styles.matchStandingTeam}
               matchStandingMetaStyle={styles.matchStandingMeta}
             />
-          </View>
         ) : null}
       </View>
 
@@ -2392,19 +2341,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
-  fixtureQuickFilters: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  fixtureQuickFilterPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
-  },
-  fixtureQuickFilterPillSelected: { backgroundColor: Colors.violetMuted, borderColor: Colors.violetOutline },
-  fixtureQuickFilterLabel: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
-  fixtureQuickFilterLabelSelected: { color: Colors.violet },
-  fixtureCounts: { color: Colors.textMuted, fontSize: 12, fontWeight: '700' },
   matchTeamName: {
     flex: 1,
     fontSize: 13,

@@ -10,18 +10,16 @@ export function GroupsTab({
   filteredTeams,
   canManageTournament,
   groupsDistributionPending,
-  canDistributeGroups,
-  onDistributeGroups,
-  distributePending,
+  /** 'distribute' = crear grupos; 'reorganize' = mismo CTA después de crear. */
+  primaryGroupAction,
+  onPrimaryGroupAction,
+  primaryGroupPending,
   rosterTeamsTotal,
   maxTeams,
   offerGroupRebalance,
   groupMetaTeamsPerGroup: _groupMetaTeamsPerGroup,
   onRebalancePress,
   rebalancePending,
-  canReorganizeGroups,
-  onReorganizeGroups,
-  reorganizePending,
   divisionTeamsByGroup,
   renderTeam,
   canReorderTeams: _canReorderTeams,
@@ -43,18 +41,15 @@ export function GroupsTab({
   filteredTeams: Team[];
   canManageTournament: boolean;
   groupsDistributionPending: boolean;
-  canDistributeGroups: boolean;
-  onDistributeGroups: () => void;
-  distributePending: boolean;
+  primaryGroupAction: 'distribute' | 'reorganize' | null;
+  onPrimaryGroupAction: () => void;
+  primaryGroupPending: boolean;
   rosterTeamsTotal: number;
   maxTeams: number;
   offerGroupRebalance: boolean;
   groupMetaTeamsPerGroup: number;
   onRebalancePress: () => void;
   rebalancePending: boolean;
-  canReorganizeGroups: boolean;
-  onReorganizeGroups: () => void;
-  reorganizePending: boolean;
   divisionTeamsByGroup: Team[][];
   renderTeam: (team: Team) => React.ReactNode;
   canReorderTeams: boolean;
@@ -84,34 +79,43 @@ export function GroupsTab({
   }
 
   const showRebalance = offerGroupRebalance && !groupsDistributionPending;
-  const singlePendingBucket = groupsDistributionPending && divisionTeamsByGroup.length === 1;
-  const showNeedMoreRosterHint = groupsDistributionPending && canManageTournament && !canDistributeGroups;
+  const rosterFull = maxTeams > 0 && rosterTeamsTotal >= maxTeams;
+  const showNeedMoreRosterHint = groupsDistributionPending && canManageTournament && !rosterFull;
 
   return (
     <>
-      {canManageTournament && (canDistributeGroups || showRebalance || canReorganizeGroups || showNeedMoreRosterHint) ? (
+      {canManageTournament && (primaryGroupAction != null || showRebalance || showNeedMoreRosterHint) ? (
         <View style={{ flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-          {canDistributeGroups ? (
+          {primaryGroupAction ? (
             <View style={{ gap: 6 }}>
               <Button
-                title={t('tournamentDetail.createGroupsButton')}
+                title={
+                  primaryGroupAction === 'distribute'
+                    ? t('tournamentDetail.createGroupsButton')
+                    : t('tournamentDetail.menuReorganizeGroups')
+                }
                 variant="primary"
                 size="sm"
-                iconLeft="grid-outline"
+                iconLeft={primaryGroupAction === 'distribute' ? 'grid-outline' : 'shuffle-outline'}
                 onPress={() => {
+                  const isDist = primaryGroupAction === 'distribute';
                   Alert.alert(
-                    t('tournamentDetail.createGroupsButton'),
-                    t('tournamentDetail.createGroupsConfirm'),
+                    isDist ? t('tournamentDetail.createGroupsButton') : t('tournamentDetail.menuReorganizeGroups'),
+                    isDist ? t('tournamentDetail.createGroupsConfirm') : t('tournamentDetail.reorganizeGroupsConfirm'),
                     [
                       { text: t('common.cancel'), style: 'cancel' },
-                      { text: t('common.ok'), onPress: onDistributeGroups },
+                      { text: t('common.ok'), onPress: onPrimaryGroupAction },
                     ]
                   );
                 }}
-                disabled={distributePending}
+                disabled={primaryGroupPending}
                 fullWidth
               />
-              <Text style={rebalanceHintStyle as never}>{t('tournamentDetail.createGroupsHint')}</Text>
+              <Text style={rebalanceHintStyle as never}>
+                {primaryGroupAction === 'distribute'
+                  ? t('tournamentDetail.createGroupsHint')
+                  : t('tournamentDetail.reorganizeGroupsHint')}
+              </Text>
             </View>
           ) : null}
 
@@ -119,30 +123,6 @@ export function GroupsTab({
             <Text style={rebalanceHintStyle as never}>
               {t('tournamentDetail.groupsNeedFullRoster', { current: rosterTeamsTotal, max: maxTeams })}
             </Text>
-          ) : null}
-
-          {canReorganizeGroups ? (
-            <View style={{ gap: 6 }}>
-              <Button
-                title={t('tournamentDetail.menuReorganizeGroups')}
-                variant="secondary"
-                size="sm"
-                iconLeft="shuffle-outline"
-                onPress={() => {
-                  Alert.alert(
-                    t('tournamentDetail.menuReorganizeGroups'),
-                    t('tournamentDetail.reorganizeGroupsConfirm'),
-                    [
-                      { text: t('common.cancel'), style: 'cancel' },
-                      { text: t('common.ok'), onPress: onReorganizeGroups },
-                    ]
-                  );
-                }}
-                disabled={reorganizePending}
-                fullWidth
-              />
-              <Text style={rebalanceHintStyle as never}>{t('tournamentDetail.reorganizeGroupsHint')}</Text>
-            </View>
           ) : null}
 
           {showRebalance ? (
@@ -168,25 +148,23 @@ export function GroupsTab({
         </View>
       ) : null}
 
-      {filteredTeams.length === 0 ? <Text style={emptyTextStyle as never}>{t('tournamentDetail.noTeamsYet')}</Text> : null}
-
-      {divisionTeamsByGroup.map((groupTeams, gi) => (
-        <View key={`g-${gi}`} style={groupBlockStyle as never}>
-          <Text style={groupHeadingStyle as never}>
-            {singlePendingBucket
-              ? t('tournamentDetail.groupsPendingBucketTitle')
-              : t('tournamentDetail.groupTitle', { n: gi + 1 })}
-          </Text>
-          {!singlePendingBucket && groupTeams.length === 0 ? (
-            <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
-          ) : null}
-          {groupTeams.map((team) => (
-            <View key={team._id} style={{ borderRadius: 12 } as never}>
-              {renderTeam(team)}
-            </View>
-          ))}
-        </View>
-      ))}
+      {filteredTeams.length === 0 ? (
+        <Text style={emptyTextStyle as never}>{t('tournamentDetail.noTeamsYet')}</Text>
+      ) : (
+        divisionTeamsByGroup.map((groupTeams, gi) => (
+          <View key={`g-${gi}`} style={groupBlockStyle as never}>
+            <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
+            {!groupsDistributionPending && groupTeams.length === 0 ? (
+              <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
+            ) : null}
+            {groupTeams.map((team) => (
+              <View key={team._id} style={{ borderRadius: 12 } as never}>
+                {renderTeam(team)}
+              </View>
+            ))}
+          </View>
+        ))
+      )}
     </>
   );
 }

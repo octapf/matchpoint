@@ -23,7 +23,12 @@ import { config } from '@/lib/config';
 import { useUserStore } from '@/store/useUserStore';
 import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import type { Entry, Team, User } from '@/types';
-import { normalizeGroupCount, teamGroupIndex, validateTournamentGroups } from '@/lib/tournamentGroups';
+import {
+  normalizeGroupCount,
+  teamGroupIndex,
+  tournamentAllowsManualGroupAssignment,
+  validateTournamentGroups,
+} from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
 
 const MAX_TEAM_PLAYERS = 2;
@@ -83,6 +88,8 @@ export default function AdminTournamentRosterScreen() {
     ? validateTournamentGroups(tournament.maxTeams, rosterGroupCount)
     : { ok: true, groupCount: 4, teamsPerGroup: 4 };
   const rosterGc = rosterVg.ok ? rosterVg.groupCount : rosterGroupCount;
+
+  const showGroupPicker = tournament ? tournamentAllowsManualGroupAssignment(tournament) : false;
 
   const entriesWithoutTeam = useMemo(
     () => entries.filter((e) => !e.teamId),
@@ -165,7 +172,7 @@ export default function AdminTournamentRosterScreen() {
         name: newTeamName.trim(),
         playerIds: selectedNewTeam,
         createdBy: adminId,
-        groupIndex: Math.min(rosterGc - 1, Math.max(0, newTeamGroupIndex)),
+        ...(showGroupPicker ? { groupIndex: Math.min(rosterGc - 1, Math.max(0, newTeamGroupIndex)) } : {}),
       });
       for (const pid of selectedNewTeam) {
         const ent = entries.find((e) => e.userId === pid && e.tournamentId === id);
@@ -207,7 +214,7 @@ export default function AdminTournamentRosterScreen() {
         update: {
           name: editName.trim(),
           playerIds: editPlayers,
-          groupIndex: Math.min(rosterGc - 1, Math.max(0, editGroupIndex)),
+          ...(showGroupPicker ? { groupIndex: Math.min(rosterGc - 1, Math.max(0, editGroupIndex)) } : {}),
         },
       });
       setEditingTeamId(null);
@@ -327,20 +334,24 @@ export default function AdminTournamentRosterScreen() {
                     onChangeText={setEditName}
                     placeholder={t('tournaments.name')}
                   />
-                  <Text style={styles.subLabel}>{t('admin.rosterGroup')}</Text>
-                  <View style={styles.groupRow}>
-                    {Array.from({ length: rosterGc }, (_, i) => (
-                      <Pressable
-                        key={i}
-                        onPress={() => setEditGroupIndex(i)}
-                        style={[styles.groupChip, editGroupIndex === i && styles.groupChipOn]}
-                      >
-                        <Text style={[styles.groupChipText, editGroupIndex === i && styles.groupChipTextOn]}>
-                          {i + 1}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
+                  {showGroupPicker ? (
+                    <>
+                      <Text style={styles.subLabel}>{t('admin.rosterGroup')}</Text>
+                      <View style={styles.groupRow}>
+                        {Array.from({ length: rosterGc }, (_, i) => (
+                          <Pressable
+                            key={i}
+                            onPress={() => setEditGroupIndex(i)}
+                            style={[styles.groupChip, editGroupIndex === i && styles.groupChipOn]}
+                          >
+                            <Text style={[styles.groupChipText, editGroupIndex === i && styles.groupChipTextOn]}>
+                              {i + 1}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
                   <Text style={styles.subLabel}>{t('admin.rosterPickPlayers')}</Text>
                   <View style={styles.chipWrap}>
                     {selectableForEdit.map((uid) => (
@@ -386,7 +397,9 @@ export default function AdminTournamentRosterScreen() {
                     </View>
                   </View>
                   <Text style={styles.teamGroupMeta}>
-                    {t('tournamentDetail.groupTitle', { n: teamGroupIndex(team) + 1 })}
+                    {tournament?.groupsDistributedAt === null && team.groupIndex == null
+                      ? t('admin.rosterNoGroupYet')
+                      : t('tournamentDetail.groupTitle', { n: teamGroupIndex(team) + 1 })}
                   </Text>
                   <Text style={styles.teamPlayers}>
                     {(team.playerIds ?? [])
@@ -410,20 +423,26 @@ export default function AdminTournamentRosterScreen() {
             placeholderTextColor={Colors.textMuted}
           />
         </View>
-        <Text style={styles.subLabel}>{t('admin.rosterGroup')}</Text>
-        <View style={styles.groupRow}>
-          {Array.from({ length: rosterGc }, (_, i) => (
-            <Pressable
-              key={i}
-              onPress={() => setNewTeamGroupIndex(i)}
-              style={[styles.groupChip, newTeamGroupIndex === i && styles.groupChipOn]}
-            >
-              <Text style={[styles.groupChipText, newTeamGroupIndex === i && styles.groupChipTextOn]}>
-                {i + 1}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        {showGroupPicker ? (
+          <>
+            <Text style={styles.subLabel}>{t('admin.rosterGroup')}</Text>
+            <View style={styles.groupRow}>
+              {Array.from({ length: rosterGc }, (_, i) => (
+                <Pressable
+                  key={i}
+                  onPress={() => setNewTeamGroupIndex(i)}
+                  style={[styles.groupChip, newTeamGroupIndex === i && styles.groupChipOn]}
+                >
+                  <Text style={[styles.groupChipText, newTeamGroupIndex === i && styles.groupChipTextOn]}>
+                    {i + 1}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Text style={styles.muted}>{t('admin.rosterGroupsAfterCreateGroups')}</Text>
+        )}
         <Text style={styles.subLabel}>{t('admin.rosterPickPlayersFree')}</Text>
         <View style={styles.chipWrap}>
           {freeUserIds.map((uid) => (

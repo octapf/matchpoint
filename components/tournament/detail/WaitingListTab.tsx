@@ -11,6 +11,8 @@ export function WaitingListTab({
   t,
   filteredWaitlist,
   userMap,
+  organizerIds,
+  organizerOnlyIds,
   onOpenProfile,
   canManageTournament,
   mutationBusy,
@@ -21,14 +23,19 @@ export function WaitingListTab({
   invitePending,
   emptyTextStyle,
   playerRowStyle,
+  playerRowOrganizerStyle,
   playerRowMainStyle,
   playerRowTextStyle,
   playerRowNameStyle,
+  orgBadgeStyle,
   waitlistRankTextStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   filteredWaitlist: { userId: string }[];
   userMap: Record<string, User>;
+  organizerIds: string[];
+  /** Subset of organizers who are organize-only (same as Players tab). */
+  organizerOnlyIds?: string[];
   onOpenProfile: (userId: string) => void;
   canManageTournament: boolean;
   mutationBusy: boolean;
@@ -39,11 +46,14 @@ export function WaitingListTab({
   invitePending?: boolean;
   emptyTextStyle: unknown;
   playerRowStyle: unknown;
+  playerRowOrganizerStyle: unknown;
   playerRowMainStyle: unknown;
   playerRowTextStyle: unknown;
   playerRowNameStyle: unknown;
+  orgBadgeStyle: unknown;
   waitlistRankTextStyle: unknown;
 }) {
+  const onlySet = React.useMemo(() => new Set(organizerOnlyIds ?? []), [organizerOnlyIds]);
   if (filteredWaitlist.length === 0) {
     return <Text style={emptyTextStyle as never}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>;
   }
@@ -55,13 +65,21 @@ export function WaitingListTab({
       renderItem={({ item: row, index: idx }) => {
         const u = userMap[row.userId];
         const playerName = getTournamentPlayerDisplayName(u) || t('common.player');
+        const isOrganizeOnly = onlySet.has(row.userId);
+        const isOrg = organizerIds.includes(row.userId);
         const showInvite =
           !!onInvitePartner &&
           viewerOnWaitlist &&
           !!viewerUserId &&
           row.userId !== viewerUserId;
         return (
-          <View style={[playerRowStyle as never, { flexDirection: 'row', alignItems: 'center' } as never]}>
+          <View
+            style={[
+              playerRowStyle as never,
+              isOrg ? (playerRowOrganizerStyle as never) : null,
+              { flexDirection: 'row', alignItems: 'center' } as never,
+            ]}
+          >
             <Pressable
               style={[playerRowMainStyle as never, { flex: 1, minWidth: 0 } as never]}
               onPress={() => onOpenProfile(row.userId)}
@@ -77,6 +95,11 @@ export function WaitingListTab({
               />
               <View style={playerRowTextStyle as never}>
                 <Text style={playerRowNameStyle as never}>{playerName}</Text>
+                {isOrganizeOnly ? (
+                  <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerOrganizeOnlyBadge')}</Text>
+                ) : isOrg ? (
+                  <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text>
+                ) : null}
                 <Text style={waitlistRankTextStyle as never}>{t('tournaments.waitlistYouAre', { n: idx + 1 })}</Text>
               </View>
             </Pressable>

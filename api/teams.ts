@@ -6,7 +6,7 @@ import { teamsPostSchema } from '../server/lib/schemas/teamsPost';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isTournamentOrganizer } from '../server/lib/organizer';
-import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
+import { normalizeGroupCount, tournamentAllowsManualGroupAssignment, validateTournamentGroups } from '../lib/tournamentGroups';
 import { countTeamsInGroup } from '../server/lib/tournamentGroupDb';
 import { isPairValidForTournamentDivisions } from '../server/lib/teamDivisionPairing';
 import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
@@ -123,8 +123,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!vg.ok) {
         return corsRes.status(400).json({ error: 'Tournament group configuration is invalid' });
       }
+      const allowManualGroups = tournamentAllowsManualGroupAssignment(
+        tournament as { groupsDistributedAt?: string | null }
+      );
       let groupIndex: number | null;
-      if (!hasExplicitGroupIndex(rawGi)) {
+      if (!allowManualGroups) {
+        groupIndex = null;
+      } else if (!hasExplicitGroupIndex(rawGi)) {
         groupIndex = null;
       } else {
         let parsed = typeof rawGi === 'number' ? rawGi : parseInt(String(rawGi), 10);
