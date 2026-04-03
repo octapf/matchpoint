@@ -23,6 +23,11 @@ import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentP
 import { notifyMany, notifyOne } from '../../server/lib/notify';
 import { applyCategoryKnockoutAdvances } from '../../server/lib/knockoutAdvance';
 import { insertAuditLogSafe } from '../../server/lib/auditLog';
+import {
+  buildDivisionStatsFromTeams,
+  normalizeTournamentIdForStats,
+  zeroDivisionCounts,
+} from '../../server/lib/tournamentListDivisionCounts';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -87,13 +92,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const serialized = serializeDoc(doc as Record<string, unknown>)!;
 
       // Attach the same count fields as the list endpoint so cards and detail stay consistent.
-      const entriesCol = db.collection('entries');
       const teamsCol = db.collection('teams');
       const waitCol = db.collection('waitlist');
 
-      const [entriesCount, teamsList, waitByDiv] = await Promise.all([
-        entriesCol.countDocuments({ tournamentId: id, teamId: { $ne: null } }),
-        teamsCol.find({ tournamentId: id }).project({ groupIndex: 1 }).toArray(),
+      const [teamsList, waitByDiv] = await Promise.all([
+        teamsCol.find({ tournamentId: id }).project({ groupIndex: 1, division: 1, playerIds: 1 }).toArray(),
         waitCol
           .aggregate<{ _id: { division: string }; count: number }>([
             { $match: { tournamentId: id, division: { $in: ['men', 'women', 'mixed'] } } },
@@ -101,6 +104,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ])
           .toArray(),
       ]);
+      const gcForStats = normalizeGroupCount((serialized as { groupCount?: number }).groupCount);
+      const idNorm = normalizeTournamentIdForStats(id);
+      const divisionStats = buildDivisionStatsFromTeams(teamsList, new Map([[idNorm, gcForStats]]));
+      const entriesCount = divisionStats.totalPlayersByTid.get(idNorm) ?? 0;
+      const teamsCount = divisionStats.totalTeamsByTid.get(idNorm) ?? 0;
+      const groupsWithTeamsCount = divisionStats.globalGroupsWithTeamsSet.get(idNorm)?.size ?? 0;
+      const entriesCountByDivision = divisionStats.playersByTid.get(idNorm) ?? zeroDivisionCounts();
+      const teamsCountByDivision = divisionStats.teamsByTid.get(idNorm) ?? zeroDivisionCounts();
+      const groupsWithTeamsCountByDivision = divisionStats.groupsWithTeamsByTid.get(idNorm) ?? zeroDivisionCounts();
       const waitlistCountByDivision = { men: 0, women: 0, mixed: 0 };
       for (const row of waitByDiv) {
         const div = String(row._id.division);
@@ -109,15 +121,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         else if (div === 'mixed') waitlistCountByDivision.mixed = row.count;
       }
       const waitlistCount = waitlistCountByDivision.men + waitlistCountByDivision.women + waitlistCountByDivision.mixed;
-
-      const teamsCount = teamsList.length;
-      const gc = normalizeGroupCount((serialized as { groupCount?: number }).groupCount);
-      const groupsSet = new Set<number>();
-      for (const row of teamsList) {
-        const gi = teamGroupIndex(row as { groupIndex?: number });
-        const clamped = Math.min(gc - 1, Math.max(0, gi));
-        groupsSet.add(clamped);
-      }
 
       const includeMatches = String(req.query.includeMatches ?? '') === '1';
       const includeStandings = String(req.query.includeStandings ?? '') === '1';
@@ -149,7 +152,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const divisions = cfg.divisions.length ? cfg.divisions : (['mixed'] as const);
 
         const byGroup = new Map<number, { _id: string; name: string }[]>();
-        for (const tm of teams as unknown as Array<{ _id: ObjectId; name?: unknown; groupIndex?: unknown }>) {
+        for (const tm of teams as unknown as { _id: ObjectId; name?: unknown; groupIndex?: unknown }[]) {
           const gi = teamGroupIndex({ groupIndex: typeof tm.groupIndex === 'number' ? tm.groupIndex : 0 });
           const list = byGroup.get(gi) ?? [];
           list.push({ _id: tm._id.toString(), name: String(tm.name ?? '') });
@@ -232,8 +235,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return corsRes.status(200).json({
         ...serialized,
         entriesCount,
+        entriesCountByDivision,
         teamsCount,
-        groupsWithTeamsCount: groupsSet.size,
+        teamsCountByDivision,
+        groupsWithTeamsCount,
+        groupsWithTeamsCountByDivision,
         waitlistCount,
         waitlistCountByDivision,
         ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
@@ -527,7 +533,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Notifications: schedule changes + match completion.
         const updated = result as any;
-        const tournamentName = String((await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } }))?.name ?? '');
         const teamA = hasTeamA
           ? await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } })
           : null;

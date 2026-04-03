@@ -20,7 +20,6 @@ import { PlayersTab } from '@/components/tournament/detail/PlayersTab';
 import { TeamsTab } from '@/components/tournament/detail/TeamsTab';
 import { FixtureTab } from '@/components/tournament/detail/FixtureTab';
 import { TournamentHeader } from '@/components/tournament/detail/TournamentHeader';
-import { WaitlistActions } from '@/components/tournament/detail/WaitlistActions';
 import { TournamentTabsBar } from '@/components/tournament/detail/TournamentTabsBar';
 import {
   useTournament,
@@ -34,12 +33,12 @@ import {
 } from '@/lib/hooks/useTournaments';
 import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
-import { useWaitlist, useJoinWaitlist, useLeaveWaitlist } from '@/lib/hooks/useWaitlist';
+import { useWaitlist, useJoinWaitlist, useLeaveWaitlist, useInvitePartnerFromWaitlist } from '@/lib/hooks/useWaitlist';
 import { useMatches } from '@/lib/hooks/useMatches';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
-import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
+import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
@@ -101,8 +100,15 @@ function TeamCard({
     points: number;
     category: TournamentCategory | null;
     classified: boolean;
+    /**
+     * When false, hide category medal and qualified/eliminated icons — standings-based category is not meaningful yet
+     * (e.g. registration or classification before any match is completed).
+     */
+    showOutcomeIcons?: boolean;
   };
 }) {
+  const showOutcomeIcons = classificationSummary?.showOutcomeIcons !== false;
+
   const medalColor =
     classificationSummary?.category === 'Gold'
       ? Colors.yellow
@@ -115,12 +121,16 @@ function TeamCard({
   const a11yIcons =
     classificationSummary != null
       ? [
-          classificationSummary.classified
-            ? t('tournamentDetail.teamClassified')
-            : t('tournamentDetail.teamEliminated'),
-          classificationSummary.category
-            ? t('tournamentDetail.teamCategoryMedalA11y', { medal: classificationSummary.category })
-            : t('tournamentDetail.teamCategoryClassificationA11y'),
+          ...(showOutcomeIcons
+            ? [
+                classificationSummary.classified
+                  ? t('tournamentDetail.teamClassified')
+                  : t('tournamentDetail.teamEliminated'),
+                ...(classificationSummary.category
+                  ? [t('tournamentDetail.teamCategoryMedalA11y', { medal: classificationSummary.category })]
+                  : []),
+              ]
+            : []),
           `${t('tournamentDetail.teamTabWins')}: ${classificationSummary.wins}`,
           `${t('tournamentDetail.teamTabPoints')}: ${classificationSummary.points}`,
         ].join('. ')
@@ -143,16 +153,16 @@ function TeamCard({
               accessibilityLabel={a11yIcons}
               accessible={true}
             >
-              <Ionicons
-                name={classificationSummary.classified ? 'checkmark-circle' : 'close-circle'}
-                size={20}
-                color={classificationSummary.classified ? Colors.success : Colors.error}
-              />
-              {classificationSummary.category ? (
+              {showOutcomeIcons ? (
+                <Ionicons
+                  name={classificationSummary.classified ? 'checkmark-circle' : 'close-circle'}
+                  size={20}
+                  color={classificationSummary.classified ? Colors.success : Colors.error}
+                />
+              ) : null}
+              {showOutcomeIcons && classificationSummary.category ? (
                 <MaterialCommunityIcons name="medal-outline" size={20} color={medalColor} />
-              ) : (
-                <Ionicons name="git-network-outline" size={20} color={Colors.textSecondary} />
-              )}
+              ) : null}
               <Ionicons name="trophy-outline" size={17} color={Colors.textSecondary} />
               <Text style={styles.teamCardStatNumber}>{classificationSummary.wins}</Text>
               <Text style={styles.teamCardPtsLabel}>{t('tournamentDetail.teamTabPoints')}</Text>
@@ -168,7 +178,7 @@ function TeamCard({
             {[0, 1].map((i) => {
               const pid = team.playerIds?.[i];
               const user = pid ? userMap[pid] : null;
-              const playerName = user ? getPlayerListName(user) : null;
+              const playerName = user ? getTournamentPlayerDisplayName(user) : null;
               const isYou = pid === currentUserId;
               return pid ? (
                 <Pressable
@@ -297,8 +307,14 @@ export default function TournamentDetailScreen() {
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: entries = [] } = useEntries(id ? { tournamentId: id, inTeamOnly: true } : undefined);
+  /** Current user's entry for this tournament (any teamId); used to leave — not the inTeamOnly roster list. */
+  const { data: myTournamentEntries = [] } = useEntries(
+    id && userId ? { tournamentId: id, userId } : undefined,
+    { enabled: !!id && !!userId }
+  );
   const joinWaitlist = useJoinWaitlist();
   const leaveWaitlist = useLeaveWaitlist();
+  const invitePartnerFromWaitlist = useInvitePartnerFromWaitlist();
 
   const createEntry = useCreateEntry();
   const deleteTournament = useDeleteTournament();
@@ -320,6 +336,19 @@ export default function TournamentDetailScreen() {
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
     [allMatches]
   );
+  /**
+   * assignCategories() assigns Gold/Silver from tie-break even with 0 matches played.
+   * Only show medal + qualified/eliminated icons once outcomes are meaningful.
+   */
+  const showQualificationOutcomeOnTeamsTab = useMemo(() => {
+    if (shouldUseDevMocks()) return true;
+    const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
+    if (phase === 'categories' || phase === 'completed') return true;
+    if (phase === 'classification') {
+      return classificationMatches.some((m) => m.status === 'completed');
+    }
+    return false;
+  }, [tournament?.phase, classificationMatches]);
   /** Category matches from API; when empty, fall back to embedded dev bracket so Gold/Oro shows with API URL + OAuth on. */
   const categoryMatches = useMemo(() => {
     const fromApi = allMatches.filter((m) => (m as { stage?: string }).stage === 'category');
@@ -416,6 +445,17 @@ export default function TournamentDetailScreen() {
       (tournament as { phase?: unknown }).phase === 'categories' ||
       (tournament as { phase?: unknown }).phase === 'completed';
 
+    const gdaMenu = (tournament as { groupsDistributedAt?: unknown }).groupsDistributedAt;
+    const anyGroupAssignedMenu = teams.some((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
+    const groupsDistributionPendingMenu =
+      !shouldUseDevMocks() && gdaMenu === null && !anyGroupAssignedMenu;
+    const rosterFull = teams.length >= (tournament.maxTeams ?? 0);
+    const allTeamsPlacedInGroups =
+      rosterFull &&
+      teams.length > 0 &&
+      teams.every((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
+    const cannotStartForGroups = gdaMenu === null && !allTeamsPlacedInGroups;
+
     if (id) {
       list.push(
         {
@@ -438,18 +478,11 @@ export default function TournamentDetailScreen() {
     if (!started && id && !shouldUseDevMocks()) {
       list.push(
         {
-          key: 'classificationSettings',
-          label: t('tournamentDetail.menuClassificationSettings'),
-          icon: 'options-outline',
-          color: Colors.yellow,
-          onPress: () => router.push(`/tournament/${id}/classification-settings` as never),
-        },
-        {
           key: 'start',
           label: t('tournamentDetail.menuStartTournament'),
           icon: 'play-outline',
           color: Colors.success,
-          disabled: startTournamentMutation.isPending,
+          disabled: startTournamentMutation.isPending || cannotStartForGroups,
           onPress: () =>
             Alert.alert(
               t('tournamentDetail.menuStartTournament'),
@@ -471,29 +504,55 @@ export default function TournamentDetailScreen() {
     }
 
     if (!started && id && !shouldUseDevMocks()) {
-      list.push({
-        key: 'randomizeGroups',
-        label: t('tournamentDetail.menuReorganizeGroups'),
-        icon: 'shuffle-outline',
-        color: Colors.violet,
-        disabled: randomizeGroupsMutation.isPending,
-        onPress: () =>
-          Alert.alert(
-            t('tournamentDetail.menuReorganizeGroups'),
-            t('tournamentDetail.reorganizeGroupsConfirm'),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              {
-                text: t('common.ok'),
-                onPress: () =>
-                  randomizeGroupsMutation.mutate(
-                    { id },
-                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                  ),
-              },
-            ]
-          ),
-      });
+      if (groupsDistributionPendingMenu && rosterFull) {
+        list.push({
+          key: 'distributeGroups',
+          label: t('tournamentDetail.menuCreateGroups'),
+          icon: 'grid-outline',
+          color: Colors.violet,
+          disabled: randomizeGroupsMutation.isPending,
+          onPress: () =>
+            Alert.alert(
+              t('tournamentDetail.menuCreateGroups'),
+              t('tournamentDetail.createGroupsConfirm'),
+              [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.ok'),
+                  onPress: () =>
+                    randomizeGroupsMutation.mutate(
+                      { id },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    ),
+                },
+              ]
+            ),
+        });
+      } else if (!groupsDistributionPendingMenu) {
+        list.push({
+          key: 'randomizeGroups',
+          label: t('tournamentDetail.menuReorganizeGroups'),
+          icon: 'shuffle-outline',
+          color: Colors.violet,
+          disabled: randomizeGroupsMutation.isPending,
+          onPress: () =>
+            Alert.alert(
+              t('tournamentDetail.menuReorganizeGroups'),
+              t('tournamentDetail.reorganizeGroupsConfirm'),
+              [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.ok'),
+                  onPress: () =>
+                    randomizeGroupsMutation.mutate(
+                      { id },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    ),
+                },
+              ]
+            ),
+        });
+      }
     }
 
     if (tournament.inviteLink) {
@@ -564,6 +623,7 @@ export default function TournamentDetailScreen() {
   }, [
     id,
     tournament,
+    teams,
     t,
     router,
     handleShareInvite,
@@ -657,7 +717,23 @@ export default function TournamentDetailScreen() {
     });
   }, [filteredEntries, userMap]);
 
+  /**
+   * Until organizer runs "distribute into groups", show all teams in one list (no Grupo 1…N buckets).
+   * Legacy docs omit the field (not pending). If any team already has a group index (e.g. admin roster), show real groups.
+   */
+  const groupsDistributionPending = useMemo(() => {
+    if (shouldUseDevMocks()) return false;
+    const gda = tournament?.groupsDistributedAt;
+    if (gda !== null && gda !== undefined) return false;
+    if (gda === undefined) return false;
+    const anyAssigned = teams.some((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
+    return !anyAssigned;
+  }, [tournament?.groupsDistributedAt, teams]);
+
   const divisionTeamsByGroup = useMemo(() => {
+    if (groupsDistributionPending) {
+      return filteredTeams.length ? [filteredTeams] : [];
+    }
     // Clamp and map groupIndex into the current division slice.
     const clampLocalGi = (gi: number) => Math.max(0, Math.min(groupsPerDivisionCap - 1, gi));
     const sourceGroups = Array.from({ length: groupsPerDivisionCap }, (_, i) => i);
@@ -670,7 +746,7 @@ export default function TournamentDetailScreen() {
       if (idx != null) buckets[idx]!.push(team);
     }
     return buckets;
-  }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset]);
+  }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset, groupsDistributionPending]);
 
   const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
   const filteredWaitlist = useMemo(() => waitlistInfo?.users ?? [], [waitlistInfo?.users]);
@@ -1515,12 +1591,38 @@ export default function TournamentDetailScreen() {
   const confirmLeave = () => {
     if (!userId || !id) return;
     if (!requireOnline()) return;
-    const ownEntry = entries.find((e) => e.userId === userId);
-    if (onWaitlist && !ownEntry) {
-      Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveWaitlistConfirm'), [
+    const ownEntry: Entry | undefined =
+      myTournamentEntries.find((e) => e.userId === userId) ?? myTournamentEntries[0];
+
+    if (ownEntry) {
+      Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
         { text: t('common.cancel'), style: 'cancel' },
         {
-          text: t('tournaments.waitlistLeave'),
+          text: t('tournamentDetail.leaveTournament'),
+          style: 'destructive',
+          onPress: () =>
+            deleteEntry.mutate(
+              { id: ownEntry._id, tournamentId: id },
+              {
+                onError: (err: unknown) =>
+                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+              }
+            ),
+        },
+      ]);
+      return;
+    }
+
+    if (userHasTeam) {
+      Alert.alert(t('common.error'), t('tournamentDetail.leaveTournamentStateError'));
+      return;
+    }
+
+    if (onWaitlist) {
+      Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('tournamentDetail.leaveTournament'),
           style: 'destructive',
           onPress: () =>
             leaveWaitlist.mutate(
@@ -1529,31 +1631,14 @@ export default function TournamentDetailScreen() {
             ),
         },
       ]);
-      return;
     }
-    if (!ownEntry) return;
-    Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('tournamentDetail.leaveTournament'),
-        style: 'destructive',
-        onPress: () =>
-          deleteEntry.mutate(
-            { id: ownEntry._id, tournamentId: id },
-            {
-              onError: (err: unknown) =>
-                alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-            }
-          ),
-      },
-    ]);
   };
 
   const confirmRemoveTeam = (team: Team) => {
     if (!userId || !id) return;
     if (!requireOnline()) return;
     const pNames = (team.playerIds ?? [])
-      .map((pid) => (pid ? getPlayerListName(userMap[pid]) : ''))
+      .map((pid) => (pid ? getTournamentPlayerDisplayName(userMap[pid]) : ''))
       .filter(Boolean)
       .join(' · ');
     Alert.alert(
@@ -1668,39 +1753,40 @@ export default function TournamentDetailScreen() {
             </ImageBackground>
           ) : null}
 
-          {/* Single CTA below the panel: Join or Leave for the selected division */}
-          {!userHasTeam && canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
+          {/* Join / leave tournament (waitlist join + leave waitlist or delete entry when on a team) */}
+          {canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
             <>
-              {onWaitlist ? (
+              {onWaitlist && !userHasTeam ? (
                 <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
               ) : null}
-              <WaitlistActions
-                t={t}
-                show={true}
-                waitlistPosition={waitlistInfo?.position ?? null}
-                showPositionText={false}
-                onJoin={() => {
-                  if (!userId || !id) return;
-                  if (!requireOnline()) return;
-                  joinWaitlist.mutate(
-                    { tournamentId: id, division: currentDivision, userId },
-                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
-                  );
-                }}
-                onLeave={() => {
-                  if (!userId || !id) return;
-                  if (!requireOnline()) return;
-                  leaveWaitlist.mutate(
-                    { tournamentId: id, division: currentDivision },
-                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                  );
-                }}
-                joinPending={joinWaitlist.isPending}
-                leavePending={leaveWaitlist.isPending}
-                wrapStyle={styles.waitlistActions}
-                waitlistRowStyle={styles.waitlistRow}
-                waitlistPositionTextStyle={styles.waitlistPositionText}
-              />
+              <View style={styles.waitlistActions}>
+                {!isRegistered ? (
+                  <Button
+                    title={t('tournamentDetail.joinTournament')}
+                    variant="secondary"
+                    onPress={() => {
+                      if (!userId || !id) return;
+                      if (!requireOnline()) return;
+                      joinWaitlist.mutate(
+                        { tournamentId: id, division: currentDivision, userId },
+                        { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
+                      );
+                    }}
+                    disabled={joinWaitlist.isPending}
+                    size="sm"
+                    fullWidth
+                  />
+                ) : (
+                  <Button
+                    title={t('tournamentDetail.leaveTournament')}
+                    variant="outline"
+                    onPress={confirmLeave}
+                    disabled={leaveWaitlist.isPending || deleteEntry.isPending}
+                    size="sm"
+                    fullWidth
+                  />
+                )}
+              </View>
             </>
           ) : null}
 
@@ -1729,7 +1815,9 @@ export default function TournamentDetailScreen() {
             tabValueById={{
               players: `${filteredEntries.length}/${playersPerDivisionCap}`,
               teams: `${filteredTeams.length}/${teamsPerDivisionCap}`,
-              groups: `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`,
+              groups: `${
+                groupsDistributionPending ? `0/${groupsPerDivisionCap}` : `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
+              }`,
               waitinglist: `${filteredWaitlist.length}`,
             }}
             tabsSectionStyle={styles.tabsSection}
@@ -1823,6 +1911,7 @@ export default function TournamentDetailScreen() {
                     points: row?.points ?? 0,
                     category: cat,
                     classified: classificationBundle.teamCategory.has(team._id),
+                    showOutcomeIcons: showQualificationOutcomeOnTeamsTab,
                   }}
                 />
               );
@@ -1839,6 +1928,24 @@ export default function TournamentDetailScreen() {
             loadingTeams={loadingTeams}
             filteredTeams={filteredTeams}
             canManageTournament={canManageTournament && !shouldUseDevMocks() && !!userId}
+            groupsDistributionPending={groupsDistributionPending}
+            canDistributeGroups={
+              !!canManageTournament &&
+              !shouldUseDevMocks() &&
+              !!id &&
+              groupsDistributionPending &&
+              teams.length >= (tournament?.maxTeams ?? 0)
+            }
+            onDistributeGroups={() => {
+              if (!id) return;
+              randomizeGroupsMutation.mutate(
+                { id },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              );
+            }}
+            distributePending={randomizeGroupsMutation.isPending}
+            rosterTeamsTotal={teams.length}
+            maxTeams={tournament?.maxTeams ?? 0}
             offerGroupRebalance={offerGroupRebalance}
             groupMetaTeamsPerGroup={groupMeta.teamsPerGroup}
             onRebalancePress={() => {
@@ -1852,7 +1959,9 @@ export default function TournamentDetailScreen() {
               );
             }}
             rebalancePending={rebalanceGroupsMutation.isPending}
-            canReorganizeGroups={canManageTournament && !tournamentStarted && !shouldUseDevMocks() && !!id}
+            canReorganizeGroups={
+              canManageTournament && !tournamentStarted && !shouldUseDevMocks() && !!id && !groupsDistributionPending
+            }
             onReorganizeGroups={() => {
               if (!id) return;
               randomizeGroupsMutation.mutate(
@@ -1900,6 +2009,20 @@ export default function TournamentDetailScreen() {
             canManageTournament={canManageTournament}
             mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
             onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
+            viewerUserId={userId}
+            viewerOnWaitlist={onWaitlist}
+            onInvitePartner={
+              onWaitlist && id
+                ? (toUserId) => {
+                    if (!requireOnline()) return;
+                    invitePartnerFromWaitlist.mutate(
+                      { tournamentId: id, division: currentDivision, toUserId },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    );
+                  }
+                : undefined
+            }
+            invitePending={invitePartnerFromWaitlist.isPending}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
             playerRowMainStyle={styles.playerRowMain}
@@ -2460,8 +2583,6 @@ const styles = StyleSheet.create({
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
   waitlistExplainer: { fontSize: 13, color: Colors.textMuted, lineHeight: 18, marginBottom: 12 },
   waitlistOnWaitlistHint: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 8 },
-  waitlistRow: { gap: 10 },
-  waitlistPositionText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   tournamentConfigCard: {
     position: 'relative',
     borderRadius: 12,

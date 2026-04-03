@@ -88,15 +88,16 @@ export function validateTournamentGroups(
   return { ok: true as const, teamsPerGroup, groupCount: gc };
 }
 
-/** Effective group index for a team doc (legacy docs without field → 0). */
-export function teamGroupIndex(team: { groupIndex?: number }): number {
+/** Effective group index for a team doc (legacy docs without field → 0; `null` = not yet distributed). */
+export function teamGroupIndex(team: { groupIndex?: number | null }): number {
   const g = team.groupIndex;
+  if (g === null) return 0;
   return typeof g === 'number' && g >= 0 ? g : 0;
 }
 
 /** Distinct group slots (0 … groupCount−1) that have at least one team. */
 export function countGroupsWithTeams(
-  teams: { groupIndex?: number }[],
+  teams: { groupIndex?: number | null }[],
   groupCount: number,
 ): number {
   const gc = normalizeGroupCount(groupCount);
@@ -114,7 +115,7 @@ export function countGroupsWithTeams(
  * (legacy missing groupIndex) while other groups are empty.
  */
 export function shouldOfferGroupRebalance(
-  teams: { groupIndex?: number }[],
+  teams: { groupIndex?: number | null }[],
   groupCount: number,
   teamsPerGroup: number
 ): boolean {

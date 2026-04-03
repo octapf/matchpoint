@@ -3,7 +3,8 @@ import { View, Text, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/IconButton';
-import { getPlayerListName } from '@/lib/utils/userDisplay';
+import Colors from '@/constants/Colors';
+import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import type { User } from '@/types';
 
 export function WaitingListTab({
@@ -14,6 +15,10 @@ export function WaitingListTab({
   canManageTournament,
   mutationBusy,
   onRemoveWaitlistPlayer,
+  viewerUserId,
+  viewerOnWaitlist,
+  onInvitePartner,
+  invitePending,
   emptyTextStyle,
   playerRowStyle,
   playerRowMainStyle,
@@ -28,6 +33,10 @@ export function WaitingListTab({
   canManageTournament: boolean;
   mutationBusy: boolean;
   onRemoveWaitlistPlayer: (userId: string, playerName: string) => void;
+  viewerUserId: string | null;
+  viewerOnWaitlist: boolean;
+  onInvitePartner?: (toUserId: string) => void;
+  invitePending?: boolean;
   emptyTextStyle: unknown;
   playerRowStyle: unknown;
   playerRowMainStyle: unknown;
@@ -45,11 +54,16 @@ export function WaitingListTab({
       keyExtractor={(row, idx) => `${row.userId}-${idx}`}
       renderItem={({ item: row, index: idx }) => {
         const u = userMap[row.userId];
-        const playerName = getPlayerListName(u) || t('common.player');
+        const playerName = getTournamentPlayerDisplayName(u) || t('common.player');
+        const showInvite =
+          !!onInvitePartner &&
+          viewerOnWaitlist &&
+          !!viewerUserId &&
+          row.userId !== viewerUserId;
         return (
-          <View style={[playerRowStyle as never, { position: 'relative' } as never]}>
+          <View style={[playerRowStyle as never, { flexDirection: 'row', alignItems: 'center' } as never]}>
             <Pressable
-              style={playerRowMainStyle as never}
+              style={[playerRowMainStyle as never, { flex: 1, minWidth: 0 } as never]}
               onPress={() => onOpenProfile(row.userId)}
               accessibilityRole="button"
               accessibilityLabel={t('profile.viewProfile')}
@@ -66,8 +80,18 @@ export function WaitingListTab({
                 <Text style={waitlistRankTextStyle as never}>{t('tournaments.waitlistYouAre', { n: idx + 1 })}</Text>
               </View>
             </Pressable>
-            {canManageTournament ? (
-              <View style={{ position: 'absolute', top: 4, right: 4, zIndex: 2 } as never}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 } as never}>
+              {showInvite ? (
+                <IconButton
+                  icon="person-add-outline"
+                  onPress={() => onInvitePartner?.(row.userId)}
+                  disabled={!!invitePending}
+                  accessibilityLabel={t('tournamentDetail.waitlistInvitePartnerHint')}
+                  color={Colors.yellow}
+                  compact
+                />
+              ) : null}
+              {canManageTournament ? (
                 <IconButton
                   icon="trash-outline"
                   onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
@@ -76,12 +100,11 @@ export function WaitingListTab({
                   color="#f87171"
                   compact
                 />
-              </View>
-            ) : null}
+              ) : null}
+            </View>
           </View>
         );
       }}
     />
   );
 }
-

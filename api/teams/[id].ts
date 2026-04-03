@@ -130,6 +130,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
         }
         update.playerIds = clean;
+
+        const prevPids = ((team as { playerIds?: string[] }).playerIds ?? []).filter(Boolean);
+        const division = String((team as { division?: unknown }).division ?? 'mixed');
+        const added = clean.filter((pid) => !prevPids.includes(pid));
+        const waitlistCol = db.collection('waitlist');
+        for (const uid of added) {
+          const w = await waitlistCol.findOne({ tournamentId, division, userId: uid });
+          if (!w) {
+            return corsRes.status(400).json({ error: 'Both players must be on the waiting list' });
+          }
+        }
+
+        update.updatedAt = new Date().toISOString();
+        const now = update.updatedAt as string;
+        const teamIdStr = id;
+
+        const client = await getMongoClient();
+        const session = client.startSession();
+        try {
+          await session.withTransaction(async () => {
+            const tdb = client.db('matchpoint');
+            const teamsCol = tdb.collection('teams');
+            const ec = tdb.collection('entries');
+            const wc = tdb.collection('waitlist');
+            await teamsCol.updateOne({ _id: oid }, { $set: update }, { session });
+
+            const removed = prevPids.filter((pid) => !clean.includes(pid));
+            for (const uid of removed) {
+              await ec.deleteMany({ tournamentId, userId: uid }, { session });
+              const dup = await wc.findOne({ tournamentId, division, userId: uid }, { session });
+              if (!dup) {
+                await wc.insertOne(
+                  {
+                    tournamentId,
+                    division,
+                    userId: uid,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                  { session }
+                );
+              }
+            }
+
+            for (const uid of clean) {
+              await ec.deleteMany({ tournamentId, userId: uid, teamId: null }, { session });
+              const existing = await ec.findOne({ tournamentId, userId: uid }, { session });
+              const entryPayload = {
+                teamId: teamIdStr,
+                status: 'in_team',
+                lookingForPartner: false,
+                updatedAt: now,
+              };
+              if (existing) {
+                await ec.updateOne({ _id: existing._id }, { $set: entryPayload }, { session });
+              } else {
+                await ec.insertOne(
+                  {
+                    tournamentId,
+                    userId: uid,
+                    ...entryPayload,
+                    createdAt: now,
+                  },
+                  { session }
+                );
+              }
+            }
+
+            await wc.deleteMany({ tournamentId, division, userId: { $in: clean } }, { session });
+          });
+        } finally {
+          await session.endSession();
+        }
+
+        const updatedTeam = await col.findOne({ _id: oid });
+        if (!updatedTeam) return corsRes.status(404).json({ error: 'Team not found' });
+        await syncTournamentOpenFullStatus(db, tournamentId);
+        return corsRes.status(200).json(serializeDoc(updatedTeam as Record<string, unknown>));
       }
 
       update.updatedAt = new Date().toISOString();

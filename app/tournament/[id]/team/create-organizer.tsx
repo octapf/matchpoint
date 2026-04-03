@@ -9,7 +9,7 @@ import { useWaitlist } from '@/lib/hooks/useWaitlist';
 import { useTeams, useCreateTeam } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
-import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
+import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
 import { useTranslation } from '@/lib/i18n';
 import type { TournamentDivision } from '@/types';
@@ -51,16 +51,9 @@ export default function CreateTeamOrganizerScreen() {
     return list;
   }, [allUserIds, inTeamUserIds, userMap]);
 
-  const [query, setQuery] = useState('');
   const [teamName, setTeamName] = useState('');
   const [p1, setP1] = useState<string | null>(null);
   const [p2, setP2] = useState<string | null>(null);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return availablePlayers;
-    return availablePlayers.filter((uid) => getPlayerListName(userMap[uid]).toLowerCase().includes(q));
-  }, [availablePlayers, query, userMap]);
 
   if (!id || !tournament) {
     return (
@@ -119,22 +112,15 @@ export default function CreateTeamOrganizerScreen() {
 
       <View style={styles.field}>
         <Text style={styles.label}>{t('team.players')}</Text>
-        <TextInput
-          style={styles.input}
-          placeholder={t('tournamentDetail.searchTeams')}
-          placeholderTextColor={Colors.textMuted}
-          value={query}
-          onChangeText={setQuery}
-        />
       </View>
 
       <View style={styles.picksRow}>
-        <Text style={styles.pickText}>{p1 ? getPlayerListName(userMap[p1]) : t('team.pickPlayer1')}</Text>
-        <Text style={styles.pickText}>{p2 ? getPlayerListName(userMap[p2]) : t('team.pickPlayer2')}</Text>
+        <Text style={styles.pickText}>{p1 ? getTournamentPlayerDisplayName(userMap[p1]) : t('team.pickPlayer1')}</Text>
+        <Text style={styles.pickText}>{p2 ? getTournamentPlayerDisplayName(userMap[p2]) : t('team.pickPlayer2')}</Text>
       </View>
 
       <View style={styles.list}>
-        {filtered.map((uid) => {
+        {availablePlayers.map((uid) => {
           const u = userMap[uid];
           const selected = uid === p1 || uid === p2;
           return (
@@ -146,11 +132,11 @@ export default function CreateTeamOrganizerScreen() {
                 size="sm"
                 photoUrl={u?.photoUrl}
               />
-              <Text style={styles.rowText}>{getPlayerListName(u) || t('common.player')}</Text>
+              <Text style={styles.rowText}>{getTournamentPlayerDisplayName(u) || t('common.player')}</Text>
             </Pressable>
           );
         })}
-        {filtered.length === 0 ? <Text style={styles.empty}>{t('common.noResults')}</Text> : null}
+        {availablePlayers.length === 0 ? <Text style={styles.empty}>{t('common.noResults')}</Text> : null}
       </View>
 
       <Button

@@ -30,7 +30,12 @@ const API_ERROR_I18N: Record<string, string> = {
   'Match is locked by another referee': 'apiErrors.matchLockedByOtherReferee',
   'Referee changed': 'apiErrors.refereeChanged',
   'Both players must be on the waiting list': 'apiErrors.bothPlayersMustBeOnWaitlist',
+  'You must be on the waiting list to invite someone': 'apiErrors.waitlistInviteMustBeOnList',
+  'That player is not on the waiting list': 'apiErrors.waitlistInviteTargetNotOnList',
+  'Cannot invite yourself': 'apiErrors.waitlistInviteSelf',
   'One or more players are already in a team': 'apiErrors.playersAlreadyInTeam',
+  'All team slots must be filled before creating groups': 'apiErrors.allTeamSlotsForGroups',
+  'Distribute teams into groups before starting': 'apiErrors.distributeGroupsBeforeStart',
   'Internal server error': 'apiErrors.internal',
 };
 

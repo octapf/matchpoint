@@ -331,7 +331,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   }
 
   const waitingUserIds: string[] = [];
-  const teamDocs: Array<{
+  const teamDocs: {
     tournamentId: string;
     name: string;
     groupIndex: number;
@@ -339,7 +339,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     createdBy: string;
     createdAt: string;
     updatedAt: string;
-  }> = [];
+  }[] = [];
   const teamPlayersByIndex: string[][] = [];
 
   const divisionSpecs: { key: SeedDivision; label: string; groupOffset: number }[] = [
@@ -418,7 +418,7 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const waitlistDocs = waitingUserIds.flatMap((playerId) => {
     const idx = userIds.indexOf(playerId);
     const gender = idx >= 0 ? PLAYERS[idx]?.gender : undefined;
-    const divs: Array<'men' | 'women' | 'mixed'> =
+    const divs: ('men' | 'women' | 'mixed')[] =
       gender === 'male' ? ['men', 'mixed'] : gender === 'female' ? ['women', 'mixed'] : (['mixed'] as const);
     return divs.map((division) => ({
       tournamentId,
@@ -431,6 +431,12 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   if (waitlistDocs.length) {
     await waitlist.insertMany(waitlistDocs);
   }
+
+  // Seed assigns groupIndex directly; set this so DB matches tournaments that completed "Create groups."
+  await tournaments.updateOne(
+    { _id: tRes.insertedId },
+    { $set: { groupsDistributedAt: now, updatedAt: now } }
+  );
 
   // Start tournament → generate classification matches.
   await actionStartTournament(db, tournamentId, { matchesPerOpponent: 1 });
@@ -445,11 +451,11 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   const now2 = new Date().toISOString();
   if (classificationMatches.length) {
     const ops: { updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }[] = [];
-    for (const m of classificationMatches as unknown as Array<{
+    for (const m of classificationMatches as unknown as {
       _id: ObjectId;
       teamAId: string;
       teamBId: string;
-    }>) {
+    }[]) {
       const seed = hashStr(`${m.teamAId}-${m.teamBId}-${m._id.toString()}`);
       const aWins = seed % 2 === 0;
       const loserPts = Math.max(0, pointsToWin - 2 - (seed % 8));

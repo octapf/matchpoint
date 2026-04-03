@@ -23,7 +23,8 @@ export function useTournaments(params?: { status?: string; organizerId?: string 
       shouldUseDevMocks()
         ? Promise.resolve(MOCK_TOURNAMENTS)
         : (tournamentsApi.find(params) as Promise<Tournament[]>),
-    staleTime: 60_000,
+    // Counts (entriesCountByDivision, etc.) change often; keep list reasonably fresh after roster edits.
+    staleTime: 15_000,
   });
 }
 

@@ -21,7 +21,7 @@ import { useUsers } from '@/lib/hooks/useUsers';
 import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import { useUserStore } from '@/store/useUserStore';
-import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
+import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import type { Entry, Team, User } from '@/types';
 import { normalizeGroupCount, teamGroupIndex, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
@@ -100,34 +100,6 @@ export default function AdminTournamentRosterScreen() {
     setEditGroupIndex(teamGroupIndex(team));
   };
 
-  const syncEntriesForTeam = async (
-    tournamentId: string,
-    teamId: string,
-    playerIdsList: string[],
-    prevPlayerIds: string[]
-  ) => {
-    const removed = prevPlayerIds.filter((p) => !playerIdsList.includes(p));
-    const added = playerIdsList.filter((p) => !prevPlayerIds.includes(p));
-    for (const uid of removed) {
-      const ent = entries.find((e) => e.userId === uid && e.tournamentId === tournamentId);
-      if (ent?._id) {
-        await updateEntry.mutateAsync({
-          id: ent._id,
-          update: { teamId: null, status: 'joined', lookingForPartner: true },
-        });
-      }
-    }
-    for (const uid of added) {
-      const ent = entries.find((e) => e.userId === uid && e.tournamentId === tournamentId);
-      if (ent?._id) {
-        await updateEntry.mutateAsync({
-          id: ent._id,
-          update: { teamId, status: 'in_team', lookingForPartner: false },
-        });
-      }
-    }
-  };
-
   const handleAddByEmail = async () => {
     const em = email.trim().toLowerCase();
     if (!em || !id || !adminId || !config.api.isConfigured) return;
@@ -155,7 +127,7 @@ export default function AdminTournamentRosterScreen() {
 
   const handleRemovePlayer = (entry: Entry) => {
     if (!adminId || !id) return;
-    const name = getPlayerListName(userMap[entry.userId]) || entry.userId;
+    const name = getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId;
     Alert.alert(t('admin.rosterRemovePlayer'), t('admin.rosterRemovePlayerConfirm', { name }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -229,7 +201,6 @@ export default function AdminTournamentRosterScreen() {
       Alert.alert(t('common.error'), t('admin.rosterMaxPlayers', { max: MAX_TEAM_PLAYERS }));
       return;
     }
-    const prev = team.playerIds ?? [];
     try {
       await updateTeam.mutateAsync({
         id: editingTeamId,
@@ -239,7 +210,6 @@ export default function AdminTournamentRosterScreen() {
           groupIndex: Math.min(rosterGc - 1, Math.max(0, editGroupIndex)),
         },
       });
-      await syncEntriesForTeam(id, editingTeamId, editPlayers, prev);
       setEditingTeamId(null);
       void refetchEntries();
       void refetchTeams();
@@ -308,7 +278,7 @@ export default function AdminTournamentRosterScreen() {
           sortedEntries.map((entry) => (
             <View key={entry._id} style={styles.row}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{getPlayerListName(userMap[entry.userId]) || entry.userId}</Text>
+                <Text style={styles.rowTitle}>{getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId}</Text>
                 <Text style={styles.rowMeta}>
                   {entry.teamId ? t('admin.rosterInTeam') : t('admin.rosterSolo')}
                 </Text>
@@ -385,7 +355,7 @@ export default function AdminTournamentRosterScreen() {
                           }
                         }}
                       >
-                        <Text style={styles.chipText}>{getPlayerListName(userMap[uid]) || uid}</Text>
+                        <Text style={styles.chipText}>{getTournamentPlayerDisplayName(userMap[uid]) || uid}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -420,7 +390,7 @@ export default function AdminTournamentRosterScreen() {
                   </Text>
                   <Text style={styles.teamPlayers}>
                     {(team.playerIds ?? [])
-                      .map((pid) => getPlayerListName(userMap[pid]) || pid)
+                      .map((pid) => getTournamentPlayerDisplayName(userMap[pid]) || pid)
                       .join(' · ')}
                   </Text>
                 </>
@@ -468,7 +438,7 @@ export default function AdminTournamentRosterScreen() {
                 }
               }}
             >
-              <Text style={styles.chipText}>{getPlayerListName(userMap[uid]) || uid}</Text>
+              <Text style={styles.chipText}>{getTournamentPlayerDisplayName(userMap[uid]) || uid}</Text>
             </Pressable>
           ))}
         </View>

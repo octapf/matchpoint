@@ -3,7 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/IconButton';
-import { getPlayerListName } from '@/lib/utils/userDisplay';
+import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import type { Entry, User } from '@/types';
 import Colors from '@/constants/Colors';
 
@@ -72,7 +72,7 @@ export function PlayersTab({
         </Text>
         {organizeOnlyUserIds.map((uid) => {
           const u = userMap[uid];
-          const playerName = getPlayerListName(u) || t('common.player');
+          const playerName = getTournamentPlayerDisplayName(u) || t('common.player');
           const showDemote = canManageTournament;
           return (
             <View
@@ -133,7 +133,7 @@ export function PlayersTab({
       ListHeaderComponent={header}
       renderItem={({ item: entry }) => {
         const u = userMap[entry.userId];
-        const playerName = getPlayerListName(u) || t('common.player');
+        const playerName = getTournamentPlayerDisplayName(u) || t('common.player');
         const isOrg = organizerIds.includes(entry.userId);
         const isSelf = entry.userId === currentUserId;
         const showTopTrash = (canManageTournament && !isSelf) || (isSelf && hasJoined);

@@ -35,6 +35,22 @@ export function getPlayerListName(user: User | null | undefined, fallback = 'Pla
   return fallback;
 }
 
+/**
+ * Tournament screens: same source as {@link getPlayerListName}, with first letter of each word capitalized
+ * (username / list label).
+ */
+export function getTournamentPlayerDisplayName(user: User | null | undefined, fallback = 'Player'): string {
+  const raw = getPlayerListName(user, fallback).trim();
+  if (!raw) return fallback;
+  return raw
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return word;
+      return word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
+    })
+    .join(' ');
+}
+
 /** Sort key: username, else legacy displayName, else last + first. */
 export function getPlayerSortKey(user: User | null | undefined): string {
   if (!user) return '';

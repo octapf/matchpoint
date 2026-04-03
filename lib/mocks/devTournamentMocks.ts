@@ -51,6 +51,7 @@ export const MOCK_DEV_TOURNAMENT: Tournament = {
   status: 'open',
   organizerIds: ['mock-u-1'],
   waitlistCount: 0,
+  groupsDistributedAt: TS,
   createdAt: TS,
   updatedAt: TS,
 };

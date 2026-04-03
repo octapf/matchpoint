@@ -25,7 +25,7 @@ import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
 import { isMongoObjectId, teamDisplayName } from '@/lib/tournamentMatchDisplay';
-import { getPlayerListName } from '@/lib/utils/userDisplay';
+import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
@@ -444,7 +444,7 @@ export default function EditMatchScreen() {
             {[0, 2].map((idx) => {
               const pid = order[idx]!;
               const u = usersById.get(pid);
-              const label = u ? getPlayerListName(u as any) : pid;
+              const label = u ? getTournamentPlayerDisplayName(u as any) : pid;
               const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
@@ -495,7 +495,7 @@ export default function EditMatchScreen() {
             {[1, 3].map((idx) => {
               const pid = order[idx]!;
               const u = usersById.get(pid);
-              const label = u ? getPlayerListName(u as any) : pid;
+              const label = u ? getTournamentPlayerDisplayName(u as any) : pid;
               const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
@@ -807,8 +807,11 @@ export default function EditMatchScreen() {
                 name:
                   userId && String((match as { refereeUserId?: unknown }).refereeUserId ?? '') === userId
                     ? t('common.you')
-                    : (usersById.get(String((match as { refereeUserId?: unknown }).refereeUserId ?? ''))?.firstName as string | undefined) ||
-                      String((match as { refereeUserId?: unknown }).refereeUserId ?? ''),
+                    : (() => {
+                        const refUid = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
+                        const refU = refUid ? usersById.get(refUid) : undefined;
+                        return refU ? getTournamentPlayerDisplayName(refU as any) : refUid;
+                      })(),
               })}
             </Text>
           ) : null}

@@ -12,7 +12,7 @@ import { useUsers } from '@/lib/hooks/useUsers';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { isPairValidForTournamentDivisions } from '@/lib/teamDivisionPairing';
 import { useUserStore } from '@/store/useUserStore';
-import { getPlayerListName, getPlayerSortKey } from '@/lib/utils/userDisplay';
+import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
 import type { TournamentDivision } from '@/types';
 
@@ -61,19 +61,12 @@ export default function CreateTeamScreen() {
 
   const [teamName, setTeamName] = useState('');
   const [partnerId, setPartnerId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
 
   const sortedPartners = useMemo(() => {
     return [...partnerCandidates].sort((a, b) =>
       getPlayerSortKey(partnerMap[a]).localeCompare(getPlayerSortKey(partnerMap[b]))
     );
   }, [partnerCandidates, partnerMap]);
-
-  const filteredPartners = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return sortedPartners;
-    return sortedPartners.filter((pid) => getPlayerListName(partnerMap[pid]).toLowerCase().includes(q));
-  }, [sortedPartners, query, partnerMap]);
 
   const groupCount = tournament ? normalizeGroupCount(tournament.groupCount) : 4;
   const vg = tournament
@@ -177,15 +170,8 @@ export default function CreateTeamScreen() {
         </Pressable>
 
         <Text style={styles.partnerHint}>{t('team.pickPartnerFromWaitlist')}</Text>
-        <TextInput
-          style={styles.input}
-          placeholder={t('tournamentDetail.searchTeams')}
-          placeholderTextColor={Colors.textMuted}
-          value={query}
-          onChangeText={setQuery}
-        />
         <View style={styles.partnerList}>
-          {filteredPartners.map((pid) => {
+          {sortedPartners.map((pid) => {
             const u = partnerMap[pid];
             const selected = partnerId === pid;
             return (
@@ -201,11 +187,11 @@ export default function CreateTeamScreen() {
                   size="sm"
                   photoUrl={u?.photoUrl}
                 />
-                <Text style={styles.partnerName}>{getPlayerListName(u) || t('common.player')}</Text>
+                <Text style={styles.partnerName}>{getTournamentPlayerDisplayName(u) || t('common.player')}</Text>
               </Pressable>
             );
           })}
-          {filteredPartners.length === 0 ? <Text style={styles.emptyPartners}>{t('common.noResults')}</Text> : null}
+          {sortedPartners.length === 0 ? <Text style={styles.emptyPartners}>{t('common.noResults')}</Text> : null}
         </View>
       </View>
 

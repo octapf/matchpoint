@@ -26,6 +26,22 @@ export async function actionStartTournament(
   if (!current) throw new Error('Tournament not found');
   const cur = current as Record<string, unknown>;
   if (tournamentStarted(cur)) throw new Error('Tournament already started');
+  const groupsDistributedAt = (cur as { groupsDistributedAt?: unknown }).groupsDistributedAt;
+  if (groupsDistributedAt === null) {
+    const teamsCol = db.collection('teams');
+    const maxT = Number((cur as { maxTeams?: unknown }).maxTeams);
+    const allTeams = await teamsCol.find({ tournamentId }).toArray();
+    const allPlaced =
+      Number.isFinite(maxT) &&
+      allTeams.length === maxT &&
+      allTeams.every((tm) => {
+        const gi = (tm as { groupIndex?: unknown }).groupIndex;
+        return typeof gi === 'number' && gi >= 0;
+      });
+    if (!allPlaced) {
+      throw new Error('Distribute teams into groups before starting');
+    }
+  }
 
   const matchesPerOpponentRaw = Number(
     params.matchesPerOpponent ?? (cur as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1
@@ -115,7 +131,7 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string,
   const divisions = groupCfg.divisions.length ? groupCfg.divisions : (['mixed'] as const);
 
   const byGroup = new Map<number, { _id: string; name: string }[]>();
-  for (const tm of teams as unknown as Array<{ _id: ObjectId; name?: unknown; groupIndex?: unknown }>) {
+  for (const tm of teams as unknown as { _id: ObjectId; name?: unknown; groupIndex?: unknown }[]) {
     const gi = typeof tm.groupIndex === 'number' && Number.isFinite(tm.groupIndex) ? tm.groupIndex : 0;
     const list = byGroup.get(gi) ?? [];
     list.push({ _id: tm._id.toString(), name: String(tm.name ?? '') });

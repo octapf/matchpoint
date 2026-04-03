@@ -7,7 +7,7 @@ import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isTournamentOrganizer } from '../server/lib/organizer';
 import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
-import { countTeamsInGroup, pickLeastLoadedGroup } from '../server/lib/tournamentGroupDb';
+import { countTeamsInGroup } from '../server/lib/tournamentGroupDb';
 import { isPairValidForTournamentDivisions } from '../server/lib/teamDivisionPairing';
 import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
 import type { TournamentDivision } from '../types';
@@ -123,21 +123,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!vg.ok) {
         return corsRes.status(400).json({ error: 'Tournament group configuration is invalid' });
       }
-      let groupIndex: number;
+      let groupIndex: number | null;
       if (!hasExplicitGroupIndex(rawGi)) {
-        groupIndex = await pickLeastLoadedGroup(db, tournamentId, vg);
+        groupIndex = null;
       } else {
         let parsed = typeof rawGi === 'number' ? rawGi : parseInt(String(rawGi), 10);
         if (!Number.isFinite(parsed) || parsed < 0) parsed = 0;
         groupIndex = Math.min(vg.groupCount - 1, Math.floor(parsed));
+        const inGroup = await countTeamsInGroup(db, tournamentId, groupIndex);
+        if (inGroup >= vg.teamsPerGroup) {
+          return corsRes.status(400).json({ error: 'This group is full' });
+        }
       }
       const totalTeams = await col.countDocuments({ tournamentId });
       if (totalTeams >= maxT) {
         return corsRes.status(400).json({ error: 'Tournament is full (max teams reached)' });
-      }
-      const inGroup = await countTeamsInGroup(db, tournamentId, groupIndex);
-      if (inGroup >= vg.teamsPerGroup) {
-        return corsRes.status(400).json({ error: 'This group is full' });
       }
 
       const playerIdSet = new Set(cleanPlayerIds);

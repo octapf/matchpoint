@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, ScrollView, TextInput, Alert, Pressable, Switch } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
@@ -11,7 +10,7 @@ import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { MaxTeamsSelect } from '@/components/ui/MaxTeamsSelect';
 import { useCreateTournament } from '@/lib/hooks/useTournaments';
 import { useUserStore } from '@/store/useUserStore';
-import type { TournamentDivision } from '@/types';
+import type { TournamentCategory, TournamentDivision } from '@/types';
 import {
   validateTournamentGroups,
   normalizeGroupCount,
@@ -21,6 +20,7 @@ import {
   defaultMaxTeamsForDivisions,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
+import { ClassificationSettingsFormFields } from '@/components/tournament/ClassificationSettingsForm';
 
 const MIN_DATE = new Date(2000, 0, 1);
 
@@ -57,6 +57,9 @@ export default function CreateTournamentScreen() {
   const [divisions, setDivisions] = useState<TournamentDivision[]>(['mixed']);
   const [categoryPreset, setCategoryPreset] = useState<CategoryPreset>('none');
   const [lastDivisionsCount, setLastDivisionsCount] = useState<number>(1);
+  const [clsMatches, setClsMatches] = useState('1');
+  const [clsAdvance, setClsAdvance] = useState('0.5');
+  const [clsFractions, setClsFractions] = useState({ Gold: '', Silver: '', Bronze: '' });
 
   const maxTeamsForSelect = useMemo(() => {
     const n = parseInt(maxTeams, 10);
@@ -135,7 +138,40 @@ export default function CreateTournamentScreen() {
       return;
     }
 
+    const clsM = Math.floor(Number(clsMatches));
+    if (!Number.isFinite(clsM) || clsM < 1 || clsM > 5) {
+      Alert.alert(t('common.error'), t('tournamentDetail.matchesPerOpponentInvalid'));
+      return;
+    }
+
     const categories = presetToCategories(categoryPreset);
+    const clsPayload: Record<string, unknown> = {
+      classificationMatchesPerOpponent: clsM,
+    };
+    if (categories.length > 0) {
+      const raw: Partial<Record<TournamentCategory, number>> = {};
+      for (const k of ['Gold', 'Silver', 'Bronze'] as const) {
+        const s = clsFractions[k].trim();
+        if (!s) continue;
+        const n = Number(s);
+        if (!Number.isFinite(n) || n < 0) {
+          Alert.alert(t('common.error'), t('tournamentDetail.categoryFractionsInvalid'));
+          return;
+        }
+        raw[k] = n;
+      }
+      clsPayload.categoryFractions = Object.keys(raw).length ? raw : null;
+      clsPayload.categoryPhaseFormat = 'single_elim';
+    } else {
+      const f = Number(clsAdvance);
+      if (!Number.isFinite(f) || f <= 0 || f >= 1) {
+        Alert.alert(t('common.error'), t('tournamentDetail.advanceFractionInvalid'));
+        return;
+      }
+      clsPayload.singleCategoryAdvanceFraction = Math.round(f * 1000) / 1000;
+      clsPayload.categoryFractions = null;
+    }
+
     const inviteToken = generateInviteToken();
     createTournament.mutate(
       {
@@ -154,7 +190,7 @@ export default function CreateTournamentScreen() {
         organizerIds: [userId],
         groupCount: vg.groupCount,
         visibility: visibilityPrivate ? 'private' : 'public',
-        ...(categories.length > 0 ? { categoryPhaseFormat: 'single_elim' as const } : {}),
+        ...clsPayload,
       },
       {
         onSuccess: (data) => {
@@ -298,12 +334,22 @@ export default function CreateTournamentScreen() {
         <Text style={styles.hintInline}>{t('tournaments.categoriesHint')}</Text>
       </View>
 
-      {presetToCategories(categoryPreset).length > 0 ? (
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('tournaments.categoryPhaseFormatLabel')}</Text>
-          <Text style={styles.hintInline}>{t('tournaments.categoryPhaseFormatBracketOnly')}</Text>
-        </View>
-      ) : null}
+      <View style={styles.field}>
+        <Text style={styles.sectionHeading}>{t('tournamentDetail.classificationSettingsTitle')}</Text>
+        <Text style={styles.hintInline}>{t('tournamentDetail.classificationSettingsHint')}</Text>
+        <ClassificationSettingsFormFields
+          hasCategories={presetToCategories(categoryPreset).length > 0}
+          matchesPerOpponent={clsMatches}
+          advanceFraction={clsAdvance}
+          fractions={clsFractions}
+          onChangeMatches={setClsMatches}
+          onChangeAdvance={setClsAdvance}
+          onChangeFraction={(k, v) => setClsFractions((p) => ({ ...p, [k]: v }))}
+          onEqualDistribution={() => setClsFractions({ Gold: '1', Silver: '1', Bronze: '1' })}
+          onClearFractions={() => setClsFractions({ Gold: '', Silver: '', Bronze: '' })}
+          variant="admin"
+        />
+      </View>
 
       <View style={styles.dateRow}>
         <DatePickerField
@@ -399,6 +445,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '700', color: Colors.text, marginBottom: 24 },
+  sectionHeading: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   dateRow: {
     flexDirection: 'row',
     gap: 12,

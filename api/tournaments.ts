@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
-import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../lib/tournamentGroups';
+import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
 import {
   buildInviteOgHtml,
   injectInviteOgIntoIndexHtml,
@@ -12,6 +12,11 @@ import {
 } from '../server/lib/inviteOgHtml';
 import { tournamentCreateSchema } from '../server/lib/schemas/tournamentCreate';
 import { parseLimitOffset } from '../server/lib/pagination';
+import {
+  buildDivisionStatsFromTeams,
+  normalizeTournamentIdForStats,
+  zeroDivisionCounts,
+} from '../server/lib/tournamentListDivisionCounts';
 
 /** Broad tournament lists: hide `private` unless admin, or (with auth) the user is an organizer of that event. Skipped for `organizerId` queries (my tournaments) or `inviteLink` queries. */
 function applyVisibilityListFilter(
@@ -128,30 +133,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         listQuery = listQuery.skip(offset).limit(limit);
       }
       const docs = await listQuery.toArray();
-      const entriesCol = db.collection('entries');
-      const tournamentIds = docs.map((d) =>
-        d._id instanceof ObjectId ? d._id.toString() : String(d._id),
-      );
+      const tournamentIds = docs.map((d) => normalizeTournamentIdForStats(d._id));
       const tournamentObjectIds = tournamentIds
         .filter((tid) => ObjectId.isValid(tid))
         .map((tid) => new ObjectId(tid));
       const tournamentIdMatch = { $in: [...tournamentIds, ...tournamentObjectIds] };
-      const countByTournament = new Map<string, number>();
-      if (tournamentIds.length > 0) {
-        const agg = await entriesCol
-          .aggregate<{ _id: string; count: number }>([
-            { $match: { tournamentId: tournamentIdMatch, teamId: { $ne: null } } },
-            { $group: { _id: '$tournamentId', count: { $sum: 1 } } },
-          ])
-          .toArray();
-        for (const row of agg) {
-          countByTournament.set(String(row._id), row.count);
-        }
-      }
 
       const groupCountByTid = new Map<string, number>();
       for (const d of docs) {
-        const tid = d._id instanceof ObjectId ? d._id.toString() : String(d._id);
+        const tid = normalizeTournamentIdForStats(d._id);
         groupCountByTid.set(tid, normalizeGroupCount((d as { groupCount?: number }).groupCount));
       }
 
@@ -162,20 +152,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         groupsSetByTid.set(tid, new Set<number>());
       }
 
+      let divisionStats:
+        | ReturnType<typeof buildDivisionStatsFromTeams>
+        | undefined;
+
       if (tournamentIds.length > 0) {
         const teamsCol = db.collection('teams');
         const teamsList = await teamsCol
           .find({ tournamentId: tournamentIdMatch })
-          .project({ tournamentId: 1, groupIndex: 1 })
+          .project({ tournamentId: 1, groupIndex: 1, division: 1, playerIds: 1 })
           .toArray();
-        for (const row of teamsList) {
-          const tid = String((row as { tournamentId?: string | ObjectId }).tournamentId ?? '');
-          if (!tid) continue;
-          teamsCountByTid.set(tid, (teamsCountByTid.get(tid) ?? 0) + 1);
-          const ngc = groupCountByTid.get(tid) ?? normalizeGroupCount(undefined);
-          const gi = teamGroupIndex(row as { groupIndex?: number });
-          const clamped = Math.min(ngc - 1, Math.max(0, gi));
-          groupsSetByTid.get(tid)?.add(clamped);
+
+        divisionStats = buildDivisionStatsFromTeams(teamsList, groupCountByTid);
+
+        for (const tid of tournamentIds) {
+          teamsCountByTid.set(tid, divisionStats.totalTeamsByTid.get(tid) ?? 0);
+          const gset = divisionStats.globalGroupsWithTeamsSet.get(tid);
+          if (gset) {
+            for (const gi of gset) {
+              groupsSetByTid.get(tid)?.add(gi);
+            }
+          }
         }
       }
 
@@ -199,7 +196,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ])
           .toArray();
         for (const row of wagg) {
-          const tid = String(row._id.tournamentId);
+          const tid = normalizeTournamentIdForStats(row._id.tournamentId);
           const div = String(row._id.division);
           const prev = waitlistCountByDivisionByTid.get(tid) ?? { men: 0, women: 0, mixed: 0 };
           if (div === 'men') waitlistCountByDivisionByTid.set(tid, { ...prev, men: row.count });
@@ -215,12 +212,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return corsRes.status(200).json(
         docs.map((d) => {
           const serialized = serializeDoc(d as Record<string, unknown>)!;
-          const tid = d._id instanceof ObjectId ? d._id.toString() : String(d._id);
+          const tid = normalizeTournamentIdForStats(d._id);
+          const divStats = divisionStats;
+          const playersByDiv = divStats?.playersByTid.get(tid) ?? zeroDivisionCounts();
+          const teamsByDiv = divStats?.teamsByTid.get(tid) ?? zeroDivisionCounts();
+          const groupsByDiv = divStats?.groupsWithTeamsByTid.get(tid) ?? zeroDivisionCounts();
           return {
             ...serialized,
-            entriesCount: countByTournament.get(tid) ?? countByTournament.get(String((d as { _id?: unknown })._id)) ?? 0,
+            entriesCount: divStats?.totalPlayersByTid.get(tid) ?? 0,
+            entriesCountByDivision: playersByDiv,
             teamsCount: teamsCountByTid.get(tid) ?? teamsCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
+            teamsCountByDivision: teamsByDiv,
             groupsWithTeamsCount: groupsSetByTid.get(tid)?.size ?? 0,
+            groupsWithTeamsCountByDivision: groupsByDiv,
             waitlistCount: waitlistCountByTid.get(tid) ?? waitlistCountByTid.get(String((d as { _id?: unknown })._id)) ?? 0,
             waitlistCountByDivision:
               waitlistCountByDivisionByTid.get(tid) ??
@@ -255,6 +259,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         setsPerMatch: rawSetsPerMatch,
         groupCount: rawGroups,
         categoryPhaseFormat,
+        classificationMatchesPerOpponent: rawClsMatches,
+        singleCategoryAdvanceFraction: rawAdvance,
+        categoryFractions: rawCategoryFractions,
         inviteLink,
         organizerIds,
         visibility: rawVisibility,
@@ -293,6 +300,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const divisions = [...new Set(rawDivisions)];
       const now = new Date().toISOString();
       const visibility = rawVisibility === 'private' ? 'private' : 'public';
+      const clsMatches =
+        rawClsMatches != null && Number.isFinite(rawClsMatches)
+          ? Math.floor(rawClsMatches)
+          : 1;
+      const advanceFrac =
+        rawAdvance != null && Number.isFinite(rawAdvance) && rawAdvance > 0 && rawAdvance < 1
+          ? Math.round(Number(rawAdvance) * 1000) / 1000
+          : 0.5;
+      const fracDoc =
+        rawCategoryFractions && typeof rawCategoryFractions === 'object'
+          ? rawCategoryFractions
+          : null;
+      const hasCategories = validCategories.length > 0;
+      const categoryFractionsStored =
+        hasCategories && fracDoc && Object.keys(fracDoc).length > 0 ? fracDoc : null;
       const doc = {
         name,
         date: sDate,
@@ -311,11 +333,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         status: 'open',
         phase: 'registration',
         startedAt: null,
-        classificationMatchesPerOpponent: 1,
-        categoryFractions: null,
-        singleCategoryAdvanceFraction: 0.5,
+        classificationMatchesPerOpponent: clsMatches >= 1 && clsMatches <= 5 ? clsMatches : 1,
+        categoryFractions: categoryFractionsStored,
+        singleCategoryAdvanceFraction: hasCategories ? 0.5 : advanceFrac,
         categoryPhaseFormat: categoryPhaseFormat ?? 'single_elim',
         organizerIds: orgIds,
+        groupsDistributedAt: null,
         createdAt: now,
         updatedAt: now,
       };

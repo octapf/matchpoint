@@ -5,12 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
-  Alert,
   ActivityIndicator,
   Switch,
   Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from '@/lib/i18n';
@@ -28,6 +26,7 @@ import {
   pickGroupCountForMaxTeams,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
+import { ClassificationSettingsAutosave } from '@/components/tournament/ClassificationSettingsForm';
 
 const MIN_DATE = new Date(2000, 0, 1);
 const SAVE_DEBOUNCE_MS = 750;
@@ -379,6 +378,12 @@ export default function AdminEditTournamentScreen() {
     );
   }
 
+  const tournamentStarted =
+    !!(tournament as { startedAt?: string | null }).startedAt ||
+    tournament.phase === 'classification' ||
+    tournament.phase === 'categories' ||
+    tournament.phase === 'completed';
+
   return (
     <>
       <Stack.Screen options={{ title: t('admin.editTournamentTitle') }} />
@@ -628,6 +633,13 @@ export default function AdminEditTournamentScreen() {
             />
           </View>
         </View>
+
+        <ClassificationSettingsAutosave
+          tournamentId={id!}
+          tournament={tournament}
+          started={tournamentStarted}
+          embedded
+        />
 
         <View style={styles.switchRow}>
           <View style={styles.switchRowText}>

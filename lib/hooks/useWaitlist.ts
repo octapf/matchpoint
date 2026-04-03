@@ -95,6 +95,26 @@ export function useJoinWaitlist() {
   });
 }
 
+export function useInvitePartnerFromWaitlist() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tournamentId,
+      division,
+      toUserId,
+    }: {
+      tournamentId: string;
+      division: TournamentDivision;
+      toUserId: string;
+    }) => waitlistApi.invitePartner(tournamentId, division, toUserId),
+    onSuccess: (_data, { tournamentId, division }) => {
+      hapticSuccess();
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', tournamentId, division] });
+    },
+  });
+}
+
 export function useLeaveWaitlist() {
   const queryClient = useQueryClient();
   return useMutation({

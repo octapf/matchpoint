@@ -79,7 +79,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Validate teamId updates (string-only) and keep status consistent.
       if (update.teamId !== undefined) {
         const nextTeamId = typeof update.teamId === 'string' ? update.teamId.trim() : '';
+        const currentTeamIdRaw = (entry as { teamId?: unknown }).teamId;
+        const hadTeam =
+          currentTeamIdRaw != null &&
+          String(currentTeamIdRaw).trim() !== '' &&
+          String(currentTeamIdRaw) !== 'null';
+
+        // Clearing teamId must dissolve the team (both players → waitlist), never orphan one entry.
         if (!nextTeamId) {
+          if (hadTeam) {
+            await removePlayerFromTournament(db, tournamentId, entryUserId, { leaveTournament: false });
+            await syncTournamentOpenFullStatus(db, tournamentId);
+            return corsRes.status(200).json({
+              ok: true,
+              dissolved: true,
+              tournamentId,
+              userId: entryUserId,
+            });
+          }
           update.teamId = null;
           update.status = 'joined';
           update.lookingForPartner = true;

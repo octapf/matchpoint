@@ -100,6 +100,7 @@ export function useUpdateTeam() {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['team', data._id] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', data.tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },

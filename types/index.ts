@@ -63,6 +63,11 @@ export interface Tournament {
   setsPerMatch?: number;
   /** Number of groups (min 2, default 4). maxTeams ÷ groupCount must be ≥ 2 (default capacity 4 per group with 16 max teams). */
   groupCount?: number;
+  /**
+   * ISO timestamp when organizer ran "distribute into groups" (randomize). `null` = not yet distributed.
+   * Omitted on older tournaments (treated as already distributed for backward compatibility).
+   */
+  groupsDistributedAt?: string | null;
   inviteLink: string;
   /** `public` = listed in app browse/feed for everyone. `private` = discoverable only via invite link (organizers still see theirs in lists). */
   visibility?: 'public' | 'private';
@@ -106,12 +111,18 @@ export interface Tournament {
    * Per organize-only organizer: divisions they are responsible for (must cover collectively with playing organizers per division rules).
    */
   organizerOnlyCovers?: Partial<Record<string, TournamentDivision[]>>;
-  /** Populated by GET /api/tournaments list (count of entry documents). */
+  /** Populated by GET /api/tournaments list (rostered players = sum of team playerIds). */
   entriesCount?: number;
+  /** Per-division rostered players (preferred over splitting `entriesCount` in the UI). */
+  entriesCountByDivision?: Partial<Record<TournamentDivision, number>>;
   /** Populated by GET /api/tournaments list (count of team documents). */
   teamsCount?: number;
+  /** Per-division team counts. */
+  teamsCountByDivision?: Partial<Record<TournamentDivision, number>>;
   /** Populated by GET /api/tournaments list (groups with ≥1 team vs `groupCount`). */
   groupsWithTeamsCount?: number;
+  /** Distinct group slots with ≥1 team per division. */
+  groupsWithTeamsCountByDivision?: Partial<Record<TournamentDivision, number>>;
   /** Populated by GET /api/tournaments list (waitlist entries). */
   waitlistCount?: number;
   /**
@@ -204,8 +215,8 @@ export interface Team {
   tournamentId: string;
   name: string;
   playerIds: string[];
-  /** 0-based; capacity per group = maxTeams / groupCount (at least 2). Omit on create to auto-fill least-loaded group. */
-  groupIndex?: number;
+  /** 0-based; capacity per group = maxTeams / groupCount (at least 2). `null` until organizer distributes teams into groups. */
+  groupIndex?: number | null;
   /** Derived once the tournament is categorized (server-side). */
   division?: TournamentDivision;
   /** Derived once the tournament is categorized (server-side). */
@@ -217,6 +228,7 @@ export interface Team {
 
 export type NotificationType =
   | 'tournament.waitlistJoined'
+  | 'waitlist.teamInvite'
   | 'team.created'
   | 'team.dissolved'
   | 'match.scheduled'
@@ -236,6 +248,7 @@ export interface Notification {
     tournamentId?: string;
     matchId?: string;
     teamId?: string;
+    fromUserId?: string;
   } & Record<string, unknown>;
   readAt?: string | null;
   createdAt: string;

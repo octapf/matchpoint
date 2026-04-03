@@ -3,7 +3,7 @@ import { entriesApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
 import { hapticSuccess } from '@/lib/haptics';
 import { MOCK_DEV_ENTRIES } from '@/lib/mocks/devTournamentMocks';
-import type { Entry, Tournament } from '@/types';
+import type { Entry } from '@/types';
 
 export function useEntries(
   params?: { tournamentId?: string; userId?: string; teamId?: string; inTeamOnly?: boolean },
@@ -58,7 +58,10 @@ export function useUpdateEntry() {
       entriesApi.updateOne(id, update) as Promise<Entry>,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['entries'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['waitlist', data.tournamentId] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data.tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ['tournaments'] });
     },
   });
 }

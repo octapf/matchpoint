@@ -42,7 +42,12 @@
     "cannotDeleteWithPlayers": "No se puede eliminar si hay jugadores. Quitá a todos del roster primero.",
     "matchLockedByOtherReferee": "Este partido está controlado por otro árbitro.",
     "refereeChanged": "Cambió el control del árbitro. Actualizando…",
+    "allTeamSlotsForGroups": "Tenés que completar todos los cupos de equipos antes de crear grupos.",
+    "distributeGroupsBeforeStart": "Creá los grupos y asigná equipos antes de iniciar el torneo.",
     "bothPlayersMustBeOnWaitlist": "Ambos jugadores deben estar en la lista de espera.",
+    "waitlistInviteMustBeOnList": "Tenés que estar en la lista de espera para invitar a alguien.",
+    "waitlistInviteTargetNotOnList": "Ese jugador no está en la lista de espera.",
+    "waitlistInviteSelf": "No podés invitarte a vos mismo.",
     "playersAlreadyInTeam": "Uno o más jugadores ya están en un equipo.",
     "divisionNotEnabledForPair": "La división de esta pareja no está habilitada en este torneo.",
     "internal": "Algo salió mal. Intentá de nuevo más tarde.",
@@ -82,6 +87,12 @@
       "dissolved": {
         "title": "Equipo disuelto",
         "body": "Tu equipo se disolvió. Volviste a la lista de espera de %{tournament}."
+      }
+    },
+    "waitlist": {
+      "teamInvite": {
+        "title": "Invitación desde lista de espera",
+        "body": "%{fromName} quiere formar equipo contigo en %{tournament}."
       }
     },
     "match": {
@@ -444,7 +455,7 @@
     "genderRequired": "Configura tu género en Perfil para unirte a torneos.",
     "joinTournament": "Unirse al torneo",
     "joinFailed": "No se pudo unir al torneo. Inténtalo de nuevo.",
-    "waitlistExplainer": "Primero entrás a la lista de espera. Solo juegan los equipos completos; tu posición en la lista no garantiza lugar.",
+    "waitlistExplainer": "Cuando el torneo está lleno o todavía estás armando pareja, unite acá como jugador. Jugadores sueltos y parejas que esperan cupo usan esta lista. Tocá Invitar en otro jugador en lista para proponerle armar equipo. Solo juegan equipos completos; tu posición no garantiza lugar.",
     "onWaitlistFormTeam": "Estás en la lista de espera — formá un equipo para jugar.",
     "joinedBadge": "Te has unido a este torneo",
     "createTeam": "Crear equipo",
@@ -475,7 +486,9 @@
     "noLiveMatches": "No hay partidos en curso.",
     "noPlayersYet": "Aún no hay jugadores inscritos.",
     "fixturePlaceholder": "El calendario y el cuadro aparecerán aquí cuando el organizador los publique.",
-    "waitinglistPlaceholder": "Las entradas de la lista de espera se gestionan con los botones de abajo.",
+    "waitinglistPlaceholder": "Todavía no hay nadie en la lista de espera de esta división.",
+    "waitlistInvitePartner": "Invitar",
+    "waitlistInvitePartnerHint": "Pedile a este jugador que armen equipo (recibe una notificación).",
     "rebalanceGroupsHint": "Los equipos están amontonados en un grupo (a menudo por datos antiguos). Repártelos en rotación entre grupos — como máximo %{max} por grupo.",
     "rebalanceGroups": "Repartir equipos entre grupos",
     "rebalanceGroupsConfirm": "Asignar equipos a grupos en orden (rotación). Se actualizarán las asignaciones actuales. ¿Continuar?",
@@ -517,6 +530,12 @@
     "menuReorganizeGroups": "Reorganizar grupos",
     "reorganizeGroupsConfirm": "¿Reorganizar aleatoriamente los grupos antes de que empiece el torneo?",
     "reorganizeGroupsHint": "Mantiene la misma cantidad de grupos y respeta el máximo de equipos por grupo.",
+    "menuCreateGroups": "Crear grupos",
+    "createGroupsButton": "Crear grupos",
+    "createGroupsConfirm": "¿Asignar todos los equipos a grupos ahora? Se colocan al azar respetando divisiones y cupos por grupo.",
+    "createGroupsHint": "Hacelo cuando el cupo de equipos esté completo. Hasta entonces, los equipos aparecen acá sin grupos.",
+    "groupsPendingBucketTitle": "Equipos (aún sin grupo)",
+    "groupsNeedFullRoster": "%{current}/%{max} equipos — el cupo debe estar lleno antes de crear grupos.",
     "menuGenerateCategoryMatches": "Publicar partidos de categorías",
     "generateCategoryMatchesConfirm": "¿Generar los partidos de la fase de categorías según la clasificación actual? Esto cambiará el torneo a la fase de Categorías.",
     "progressLabel": "%{done}/%{total} partidos completados",
@@ -547,8 +566,8 @@
     "organizerCreateTeamHint": "Elegí 2 jugadores en la lista de espera que todavía no estén en un equipo.",
     "reorderTeam": "Mover equipo a otro grupo",
     "leaveTournament": "Salir del torneo",
-    "leaveWaitlistConfirm": "¿Salir de la lista de espera? Podés volver a unirte si la inscripción sigue abierta.",
     "leaveTournamentConfirm": "¿Salir de este torneo? Puedes volver con el enlace de invitación si sigue abierto.",
+    "leaveTournamentStateError": "No pudimos cargar tu inscripción. Deslizá para actualizar y probá de nuevo.",
     "organizerActionFailed": "No se pudo completar la acción."
   },
   "team": {

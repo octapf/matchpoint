@@ -50,6 +50,9 @@ function TournamentListRowInner({
   const currentGroups = tournament.groupsWithTeamsCount ?? 0;
   const waitlistCount = tournament.waitlistCount ?? 0;
   const waitlistByDivision = tournament.waitlistCountByDivision;
+  const playersByDivision = tournament.entriesCountByDivision;
+  const teamsByDivision = tournament.teamsCountByDivision;
+  const groupsByDivision = tournament.groupsWithTeamsCountByDivision;
 
   const formattedDate = formatTournamentDate(dateLabel) || '—';
   const pointsConfigText = `${t('tournaments.pointsToWin')}: ${tournament.pointsToWin ?? 21}`;
@@ -147,11 +150,17 @@ function TournamentListRowInner({
                   compact
                   horizontal
                   muted={isCancelled}
-                  currentPlayers={splitAcrossDivisions(currentPlayers, divisionCount, idx)}
+                  currentPlayers={
+                    playersByDivision?.[division] ?? splitAcrossDivisions(currentPlayers, divisionCount, idx)
+                  }
                   totalPlayers={splitAcrossDivisions(totalPlayers, divisionCount, idx)}
-                  currentTeams={splitAcrossDivisions(currentTeams, divisionCount, idx)}
+                  currentTeams={
+                    teamsByDivision?.[division] ?? splitAcrossDivisions(currentTeams, divisionCount, idx)
+                  }
                   totalTeams={splitAcrossDivisions(totalTeams, divisionCount, idx)}
-                  currentGroups={splitAcrossDivisions(currentGroups, divisionCount, idx)}
+                  currentGroups={
+                    groupsByDivision?.[division] ?? splitAcrossDivisions(currentGroups, divisionCount, idx)
+                  }
                   totalGroups={splitAcrossDivisions(totalGroups, divisionCount, idx)}
                   waitlistCount={
                     waitlistByDivision?.[division] ??

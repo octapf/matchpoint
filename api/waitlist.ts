@@ -3,7 +3,9 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { waitlistPostSchema } from '../server/lib/schemas/waitlistPost';
+import { waitlistInvitePartnerPostSchema } from '../server/lib/schemas/waitlistInvitePartnerPost';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { notifyOne } from '../server/lib/notify';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -53,6 +55,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+
+      if (raw && typeof raw === 'object' && (raw as { action?: unknown }).action === 'invitePartner') {
+        const parsedInvite = waitlistInvitePartnerPostSchema.safeParse(raw);
+        if (!parsedInvite.success) {
+          return corsRes.status(400).json({ error: 'Invalid payload' });
+        }
+        const { tournamentId, division, toUserId } = parsedInvite.data;
+        if (toUserId === actorId) {
+          return corsRes.status(400).json({ error: 'Cannot invite yourself' });
+        }
+
+        const entriesCol = db.collection('entries');
+        const playingActor = await entriesCol.findOne({ tournamentId, userId: actorId, teamId: { $ne: null } });
+        const playingTarget = await entriesCol.findOne({ tournamentId, userId: toUserId, teamId: { $ne: null } });
+        if (playingActor || playingTarget) {
+          return corsRes.status(400).json({ error: 'One or more players are already in a team' });
+        }
+
+        const actorRow = await col.findOne({ tournamentId, division, userId: actorId });
+        const targetRow = await col.findOne({ tournamentId, division, userId: toUserId });
+        if (!actorRow) {
+          return corsRes.status(400).json({ error: 'You must be on the waiting list to invite someone' });
+        }
+        if (!targetRow) {
+          return corsRes.status(400).json({ error: 'That player is not on the waiting list' });
+        }
+
+        const tournamentsCol = db.collection('tournaments');
+        const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
+        if (!tournament) {
+          return corsRes.status(404).json({ error: 'Tournament not found' });
+        }
+        if (String((tournament as { status?: unknown }).status ?? '') === 'cancelled') {
+          return corsRes.status(400).json({ error: 'Tournament is cancelled' });
+        }
+
+        const usersCol = db.collection('users');
+        const fromUser = await usersCol.findOne({ _id: new ObjectId(actorId) });
+        const fn = String((fromUser as { firstName?: unknown } | null)?.firstName ?? '').trim();
+        const ln = String((fromUser as { lastName?: unknown } | null)?.lastName ?? '').trim();
+        const fromName = [fn, ln].filter(Boolean).join(' ') || 'Player';
+        const tournamentName = String((tournament as { name?: unknown }).name ?? '').trim() || 'Tournament';
+
+        await notifyOne(db, {
+          userId: toUserId,
+          type: 'waitlist.teamInvite',
+          params: { fromName, tournament: tournamentName },
+          data: { tournamentId, fromUserId: actorId },
+          dedupeKey: `waitlist.invite:${tournamentId}:${actorId}:${toUserId}`,
+        });
+
+        return corsRes.status(200).json({ ok: true });
+      }
+
       const parsed = waitlistPostSchema.safeParse(raw);
       if (!parsed.success) {
         return corsRes.status(400).json({ error: 'Invalid payload' });

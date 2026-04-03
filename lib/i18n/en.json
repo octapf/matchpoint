@@ -42,7 +42,12 @@
     "cannotDeleteWithPlayers": "Cannot delete while players are registered. Remove all players from the roster first.",
     "matchLockedByOtherReferee": "This match is currently controlled by another referee.",
     "refereeChanged": "Referee control changed. Refreshing…",
+    "allTeamSlotsForGroups": "All team slots must be filled before creating groups.",
+    "distributeGroupsBeforeStart": "Create groups and assign teams before starting the tournament.",
     "bothPlayersMustBeOnWaitlist": "Both players must be on the waiting list.",
+    "waitlistInviteMustBeOnList": "You must be on the waiting list to invite someone.",
+    "waitlistInviteTargetNotOnList": "That player is not on the waiting list.",
+    "waitlistInviteSelf": "You can't invite yourself.",
     "playersAlreadyInTeam": "One or more players are already in a team.",
     "divisionNotEnabledForPair": "This pair's division is not enabled for this tournament.",
     "internal": "Something went wrong. Try again later.",
@@ -82,6 +87,12 @@
       "dissolved": {
         "title": "Team dissolved",
         "body": "Your team was dissolved. You're back on the waiting list for %{tournament}."
+      }
+    },
+    "waitlist": {
+      "teamInvite": {
+        "title": "Waiting list invite",
+        "body": "%{fromName} wants to form a team with you in %{tournament}."
       }
     },
     "match": {
@@ -463,6 +474,12 @@
     "menuReorganizeGroups": "Reorganize groups",
     "reorganizeGroupsConfirm": "Randomly reorganize team groups before the tournament starts?",
     "reorganizeGroupsHint": "Keeps the same number of groups and respects the max teams per group.",
+    "menuCreateGroups": "Create groups",
+    "createGroupsButton": "Create groups",
+    "createGroupsConfirm": "Assign all teams to groups now? Teams are placed randomly while respecting division rules and group capacity.",
+    "createGroupsHint": "Run this once the roster is full. Until then, teams are listed here without group slots.",
+    "groupsPendingBucketTitle": "Teams (not yet assigned to groups)",
+    "groupsNeedFullRoster": "%{current}/%{max} teams — the roster must be full before creating groups.",
     "menuGenerateCategoryMatches": "Publish category matches",
     "generateCategoryMatchesConfirm": "Generate the category stage matches from current standings? This will switch the tournament to the Categories phase.",
     "progressLabel": "%{done}/%{total} matches completed",
@@ -485,7 +502,7 @@
     "genderRequired": "Set your gender in Profile to join tournaments.",
     "joinTournament": "Join tournament",
     "joinFailed": "Could not join this tournament. Try again.",
-    "waitlistExplainer": "You join the waiting list first. Only full teams play; your position on the list does not guarantee a spot.",
+    "waitlistExplainer": "When the tournament is full or you're still forming a pair, join as a player here. Solo players and pairs waiting for a spot use this list. Tap Invite on another waitlisted player to ask them to team up. Only full teams play; your position does not guarantee a spot.",
     "onWaitlistFormTeam": "On the waiting list — form a team to play.",
     "joinedBadge": "You've joined this tournament",
     "createTeam": "Create team",
@@ -516,7 +533,9 @@
     "noLiveMatches": "No matches in progress right now.",
     "noPlayersYet": "No players registered yet.",
     "fixturePlaceholder": "Schedule and bracket will appear here when the organizer publishes them.",
-    "waitinglistPlaceholder": "Waiting list entries are managed using the buttons below.",
+    "waitinglistPlaceholder": "No one on the waiting list for this division yet.",
+    "waitlistInvitePartner": "Invite",
+    "waitlistInvitePartnerHint": "Ask this player to form a team with you (they get a notification).",
     "rebalanceGroupsHint": "Teams are bunched in one group (often from older data). Redistribute them round-robin across groups — at most %{max} per group.",
     "rebalanceGroups": "Redistribute teams across groups",
     "rebalanceGroupsConfirm": "Assign teams to groups in order (round-robin). Existing group assignments will be updated. Continue?",
@@ -547,8 +566,8 @@
     "organizerCreateTeamHint": "Pick 2 players on the waiting list who are not yet in a team.",
     "reorderTeam": "Move team to another group",
     "leaveTournament": "Leave tournament",
-    "leaveWaitlistConfirm": "Leave the waiting list? You can join again if registration is still open.",
     "leaveTournamentConfirm": "Leave this tournament? You can rejoin with the invite link if it is still open.",
+    "leaveTournamentStateError": "We couldn't load your registration. Pull to refresh and try again.",
     "organizerActionFailed": "Could not complete this action."
   },
   "team": {

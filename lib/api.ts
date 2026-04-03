@@ -155,6 +155,17 @@ export const waitlistApi = {
       method: 'DELETE',
       params: { tournamentId, division },
     }),
+
+  invitePartner: (tournamentId: string, division: 'men' | 'women' | 'mixed', toUserId: string) =>
+    apiRequest<{ ok: boolean }>('/api/waitlist', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'invitePartner',
+        tournamentId,
+        division,
+        toUserId,
+      }),
+    }),
 };
 
 // Teams

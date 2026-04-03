@@ -38,6 +38,9 @@ export async function randomizeTeamGroups(
   if (teams.length > capacity) {
     throw new Error('Too many teams for configured groups');
   }
+  if (teams.length !== maxT) {
+    throw new Error('All team slots must be filled before creating groups');
+  }
 
   const divisionsRaw = Array.isArray((t as { divisions?: unknown }).divisions)
     ? ((t as { divisions?: unknown }).divisions as unknown[])
@@ -62,7 +65,7 @@ export async function randomizeTeamGroups(
     .project({ gender: 1 })
     .toArray();
   const genderById = new Map<string, string>();
-  for (const u of users as unknown as Array<{ _id: ObjectId; gender?: unknown }>) {
+  for (const u of users as unknown as { _id: ObjectId; gender?: unknown }[]) {
     genderById.set(u._id.toString(), typeof u.gender === 'string' ? u.gender : '');
   }
   const divisionIndexByKey = new Map<TournamentDivision, number>();
@@ -123,11 +126,15 @@ export async function randomizeTeamGroups(
     }
   }
   if (ops.length > 0) await teamsCol.bulkWrite(ops, { ordered: false });
+  await tournamentsCol.updateOne(
+    { _id: new ObjectId(tournamentId) },
+    { $set: { groupsDistributedAt: now, updatedAt: now } }
+  );
   return { updated, teams: teams.length };
 }
 
-export function buildClassificationPairs(teamIds: string[], matchesPerOpponent: number): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
+export function buildClassificationPairs(teamIds: string[], matchesPerOpponent: number): [string, string][] {
+  const out: [string, string][] = [];
   const m = Math.max(1, Math.floor(matchesPerOpponent));
   for (let i = 0; i < teamIds.length; i++) {
     for (let j = i + 1; j < teamIds.length; j++) {
