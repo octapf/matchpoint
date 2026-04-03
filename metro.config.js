@@ -4,6 +4,8 @@ const config = getSentryExpoConfig(__dirname);
 
 // Optional native packages (Rollup/Esbuild) for other OS/arch can leave stale paths or
 // symlinks on Windows; Metro's FallbackWatcher then throws ENOENT when calling fs.watch.
+// If you see ENOENT on @tybys/wasm-util/.../wasi, ensure devDependency @tybys/wasm-util is installed
+// (npm omits it when @napi-rs/wasm-runtime is skipped as optional).
 // These patterns match absolute paths (backslashes normalized to / before test).
 const optionalNativeToolingBlockList = [
   /[/\\]node_modules[/\\]@rollup[/\\]rollup-(linux|darwin|android|freebsd|openbsd|openharmony)-/,

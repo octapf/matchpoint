@@ -27,6 +27,7 @@ import {
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
 import { ClassificationSettingsAutosave } from '@/components/tournament/ClassificationSettingsForm';
+import { TournamentLocationField } from '@/components/location/TournamentLocationField';
 
 const MIN_DATE = new Date(2000, 0, 1);
 const SAVE_DEBOUNCE_MS = 750;
@@ -558,19 +559,19 @@ export default function AdminEditTournamentScreen() {
 
         <View style={styles.field}>
           <Text style={styles.label}>
-            {t('tournaments.location')}
+            {t('tournaments.tournamentLocationTitle')}
             {t('common.requiredSuffix')}
           </Text>
-          <TextInput
-            style={styles.input}
-            placeholder={t('tournaments.locationPlaceholder')}
-            placeholderTextColor={Colors.textMuted}
+          <TournamentLocationField
             value={location}
             onChangeText={(v) => {
               setLocation(v);
               scheduleSave();
             }}
             onBlur={flushSave}
+            onLocationCommitted={scheduleSave}
+            placeholder={t('tournaments.locationPlaceholder')}
+            inputStyle={styles.input}
           />
         </View>
 

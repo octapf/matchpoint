@@ -5,6 +5,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
 import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
+import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
 import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
 import {
@@ -16,6 +17,14 @@ import {
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
 type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
 
+/**
+ * Tournament lifecycle (see `Tournament` in `types/index.ts`): `phase` is
+ * `registration` | `classification` | `categories` | `completed`; `startedAt` / `groupsDistributedAt`
+ * mark real milestones. Fixture legends use `groupsDistributionPending` (from
+ * `tournamentGroupPlacementPending`: no ISO `groupsDistributedAt` and no numeric `groupIndex` on teams)
+ * plus `divisionHasTeams` — not `phase` alone, so UI matches “groups exist or not”.
+ */
+
 const BRONZE = '#cd7f32';
 
 const WASH_PEAK: Record<MatchCategoryTab, number> = {
@@ -23,6 +32,9 @@ const WASH_PEAK: Record<MatchCategoryTab, number> = {
   Silver: 0.24,
   Bronze: 0.27,
 };
+
+/** Same wash strength as medal tabs — violet for classification + live fixture tabs. */
+const WASH_PEAK_VIOLET = 0.27;
 
 /** Many opacity stops + smooth curve → less banding than few flat steps (esp. Android). */
 function washStops(peak: number, stopColor: string, keyPrefix: string) {
@@ -53,6 +65,22 @@ function CategoryTabContentGradient({ category }: { category: MatchCategoryTab }
       <Defs>
         <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
           {washStops(peak, color, prefix)}
+        </SvgLinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={1} height={1} fill={`url(#${gradId})`} />
+    </Svg>
+  );
+}
+
+/** Horizontal violet wash — classification + En vivo (same as classification). */
+function VioletFixtureTabGradient({ stopKeyPrefix }: { stopKeyPrefix: string }) {
+  const uid = useId().replace(/:/g, '');
+  const gradId = `fxViolet${stopKeyPrefix}${uid}`;
+  return (
+    <Svg style={StyleSheet.absoluteFillObject} viewBox="0 0 1 1" preserveAspectRatio="none" pointerEvents="none">
+      <Defs>
+        <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+          {washStops(WASH_PEAK_VIOLET, Colors.violet, stopKeyPrefix)}
         </SvgLinearGradient>
       </Defs>
       <Rect x={0} y={0} width={1} height={1} fill={`url(#${gradId})`} />
@@ -167,6 +195,10 @@ export function FixtureTab({
   tournamentId,
   opponentTbdLabel,
   categoryTeamIdsByCategory,
+  divisionHasTeams,
+  /** True while organizer has not created groups (`groupsDistributedAt` + no `groupIndex`) — classification cannot start. */
+  groupsDistributionPending,
+  fixtureClassificationEmptyLegendStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   matchCategoryTabs: MatchSubTab[];
@@ -206,6 +238,11 @@ export function FixtureTab({
   tournamentId: string;
   opponentTbdLabel: string;
   categoryTeamIdsByCategory: Partial<Record<MatchCategoryTab, string[]>>;
+  /** At least one team in the current division (fixture scope). */
+  divisionHasTeams: boolean;
+  groupsDistributionPending: boolean;
+  /** Centered legend (no teams yet vs groups not created). */
+  fixtureClassificationEmptyLegendStyle: unknown;
 }) {
   const safeOpenMatch =
     onOpenMatch &&
@@ -444,39 +481,59 @@ export function FixtureTab({
         })}
       </View>
 
+      <View style={fixtureSubtabContentWrap}>
       {selectedMatchesSubtab === 'live' ? (
-        liveMatches.length === 0 ? (
-          <Text style={emptyTextStyle as never}>{t('tournamentDetail.noLiveMatches')}</Text>
-        ) : (
-          <View style={groupBlockStyle as never}>
-            <FlashList
-              data={sortMatches(liveMatches)}
-              keyExtractor={(m) => m.id}
-              renderItem={({ item }) => renderMatchRow(item) as never}
-            />
-          </View>
-        )
-      ) : selectedMatchesSubtab === 'classification' ? (
-        classificationData.length === 0 ? (
-          <Text style={emptyTextStyle as never}>{t('tournamentDetail.fixturePlaceholder')}</Text>
-        ) : (
-          <>
-          <FlashList
-            data={classificationData}
-            keyExtractor={(_g, gi) => `class-group-${gi}`}
-            renderItem={({ item: groupData, index: gi }) => (
+        <View style={fixtureCategoryContentShell}>
+          <VioletFixtureTabGradient stopKeyPrefix="lv" />
+          <View style={fixtureCategoryContentInner}>
+            <Text style={fixtureBracketSectionTitleStyle as never}>
+              {t('tournamentDetail.liveCurrentGames')}
+            </Text>
+            {liveMatches.length === 0 ? (
+              <Text style={emptyTextStyle as never}>{t('tournamentDetail.noLiveMatches')}</Text>
+            ) : (
               <View style={groupBlockStyle as never}>
-                <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
                 <FlashList
-                  data={sortMatches(groupData.matches)}
+                  data={sortMatches(liveMatches)}
                   keyExtractor={(m) => m.id}
                   renderItem={({ item }) => renderMatchRow(item) as never}
                 />
               </View>
             )}
-          />
-          </>
-        )
+          </View>
+        </View>
+      ) : selectedMatchesSubtab === 'classification' ? (
+        <View style={fixtureCategoryContentShell}>
+          <VioletFixtureTabGradient stopKeyPrefix="cl" />
+          <View style={fixtureCategoryContentInner}>
+            {!divisionHasTeams || groupsDistributionPending ? (
+              <Text style={fixtureClassificationEmptyLegendStyle as never}>
+                {t(
+                  !divisionHasTeams
+                    ? 'tournamentDetail.fixtureClassificationNoTeamsShort'
+                    : 'tournamentDetail.fixtureClassificationEmptyShort'
+                )}
+              </Text>
+            ) : classificationData.length === 0 ? (
+              <Text style={emptyTextStyle as never}>{t('tournamentDetail.fixturePlaceholder')}</Text>
+            ) : (
+              <FlashList
+                data={classificationData}
+                keyExtractor={(_g, gi) => `class-group-${gi}`}
+                renderItem={({ item: groupData, index: gi }) => (
+                  <View style={groupBlockStyle as never}>
+                    <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
+                    <FlashList
+                      data={sortMatches(groupData.matches)}
+                      keyExtractor={(m) => m.id}
+                      renderItem={({ item }) => renderMatchRow(item) as never}
+                    />
+                  </View>
+                )}
+              />
+            )}
+          </View>
+        </View>
       ) : (
         <View style={fixtureCategoryContentShell}>
           <CategoryTabContentGradient category={selectedMatchesSubtab as MatchCategoryTab} />
@@ -539,39 +596,59 @@ export function FixtureTab({
               );
             })()
           ) : (
-            <FlashList
-              data={classificationData}
-              keyExtractor={(_g, gi) => `cat-group-${selectedMatchesSubtab}-${gi}`}
-              renderItem={({ item: groupData, index: gi }) => {
-                const categoryRows = groupData.categories[selectedMatchesSubtab as MatchCategoryTab] ?? [];
+            (() => {
+              const catTab = selectedMatchesSubtab as MatchCategoryTab;
+              const categoryHasAssignedTeams =
+                (categoryTeamIdsByCategory[catTab]?.filter(Boolean).length ?? 0) > 0;
+              if (
+                !categoryHasAssignedTeams &&
+                (!divisionHasTeams || groupsDistributionPending)
+              ) {
                 return (
-                  <View style={groupBlockStyle as never}>
-                    <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
-                    {categoryRows.length === 0 ? (
-                      <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
-                    ) : (
-                      <FlashList
-                        data={[...categoryRows]}
-                        keyExtractor={(row, idx) => `${row.team._id}-${idx}`}
-                        renderItem={({ item: row, index: idx }) => (
-                          <View style={matchStandingRowStyle as never}>
-                            <Text style={matchStandingRankStyle as never}>#{idx + 1}</Text>
-                            <Text style={matchStandingTeamStyle as never}>{row.team.name}</Text>
-                            <Text style={matchStandingMetaStyle as never}>
-                              {row.wins}W · {row.points}pts
-                            </Text>
-                          </View>
-                        )}
-                      />
-                    )}
-                  </View>
+                  <Text style={fixtureClassificationEmptyLegendStyle as never}>
+                    {t('tournamentDetail.fixtureCategoryEmptyShort', {
+                      category: t(tournamentCategoryI18nKey(catTab)),
+                    })}
+                  </Text>
                 );
-              }}
-            />
+              }
+              return (
+                <FlashList
+                  data={classificationData}
+                  keyExtractor={(_g, gi) => `cat-group-${selectedMatchesSubtab}-${gi}`}
+                  renderItem={({ item: groupData, index: gi }) => {
+                    const categoryRows = groupData.categories[selectedMatchesSubtab as MatchCategoryTab] ?? [];
+                    return (
+                      <View style={groupBlockStyle as never}>
+                        <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
+                        {categoryRows.length === 0 ? (
+                          <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
+                        ) : (
+                          <FlashList
+                            data={[...categoryRows]}
+                            keyExtractor={(row, idx) => `${row.team._id}-${idx}`}
+                            renderItem={({ item: row, index: idx }) => (
+                              <View style={matchStandingRowStyle as never}>
+                                <Text style={matchStandingRankStyle as never}>#{idx + 1}</Text>
+                                <Text style={matchStandingTeamStyle as never}>{row.team.name}</Text>
+                                <Text style={matchStandingMetaStyle as never}>
+                                  {row.wins}W · {row.points}pts
+                                </Text>
+                              </View>
+                            )}
+                          />
+                        )}
+                      </View>
+                    );
+                  }}
+                />
+              );
+            })()
           )}
           </View>
         </View>
       )}
+      </View>
     </View>
   );
 }
@@ -579,12 +656,17 @@ export function FixtureTab({
 /** Must match `styles.content` horizontal padding on `app/tournament/[id].tsx` FlashList. */
 const TOURNAMENT_CONTENT_PAD = 20;
 
+/** Space between the fixture subtab bar (Clasificación / Oro / … / En vivo) and each tab’s body. */
+const fixtureSubtabContentWrap: ViewStyle = {
+  marginTop: 14,
+};
+
 const fixtureCategoryContentShell: ViewStyle = {
   position: 'relative',
   alignSelf: 'stretch',
   overflow: 'hidden',
   borderRadius: 12,
-  marginTop: 2,
+  marginTop: 0,
   /** Bleed gradient to the full screen width (edge to edge of the scroll). */
   marginHorizontal: -TOURNAMENT_CONTENT_PAD,
 };

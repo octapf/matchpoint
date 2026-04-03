@@ -3,6 +3,8 @@
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '911980711702-2uoiec7qjhdqumf7ia1noa3u000qpklr.apps.googleusercontent.com';
 const clientIdPart = webClientId.replace(/\.apps\.googleusercontent\.com$/, '');
 const iosUrlScheme = `com.googleusercontent.apps.${clientIdPart}`;
+/** Injected for Android Google MapView (venue detail). Enable Maps SDK for Android on this key. */
+const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 module.exports = {
   expo: {
@@ -70,9 +72,19 @@ module.exports = {
         'expo-location',
         {
           locationWhenInUsePermission:
-            'Matchpoint uses your location to show today’s weather on the Feed.',
+            'Matchpoint uses your location for weather on the Feed and to set tournament venues.',
         },
       ],
+      ...(googleMapsApiKey
+        ? [
+            [
+              'react-native-maps',
+              {
+                androidGoogleMapsApiKey: googleMapsApiKey,
+              },
+            ],
+          ]
+        : []),
       [
         '@react-native-google-signin/google-signin',
         iosUrlScheme ? { iosUrlScheme } : {},

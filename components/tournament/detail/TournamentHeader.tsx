@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { openVenueInMaps } from '@/components/tournament/venueMapShared';
 import type { OrganizerMenuItem } from '@/components/tournament/TournamentOrganizerMenu';
 import { TournamentOrganizerMenu } from '@/components/tournament/TournamentOrganizerMenu';
 import Colors from '@/constants/Colors';
@@ -29,7 +30,14 @@ export function TournamentHeader({
   headerTopActionsStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
-  tournament: { location?: string; date?: string; startDate?: string; pointsToWin?: number; setsPerMatch?: number; visibility?: string };
+  tournament: {
+    location?: string;
+    date?: string;
+    startDate?: string;
+    pointsToWin?: number;
+    setsPerMatch?: number;
+    visibility?: string;
+  };
   dateLabel: string | undefined;
   isCancelled: boolean;
   canManageTournament: boolean;
@@ -71,7 +79,22 @@ export function TournamentHeader({
             <View style={dateLocationLeftStyle as never}>
               <View style={dateLocationRowStyle as never}>
                 <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
-                <Text style={locationStyle as never}>{tournament.location?.trim() || '—'}</Text>
+                {tournament.location?.trim() ? (
+                  <Pressable
+                    onPress={() => openVenueInMaps(tournament.location!.trim())}
+                    accessibilityRole="link"
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <Text
+                      style={[locationStyle as never, { color: Colors.yellow, textDecorationLine: 'underline' }]}
+                      numberOfLines={2}
+                    >
+                      {tournament.location.trim()}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text style={locationStyle as never}>—</Text>
+                )}
                 <Text style={dateLocationSepStyle as never}>·</Text>
                 <Text style={dateStyle as never}>{formatTournamentDate(dateLabel) || '—'}</Text>
               </View>

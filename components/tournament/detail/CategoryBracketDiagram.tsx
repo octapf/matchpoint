@@ -18,6 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Defs, Ellipse, G, Line, LinearGradient, Path, RadialGradient, Stop, Text as SvgText } from 'react-native-svg';
 import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
+import { fixtureBracketSectionTitleStyle, FIXTURE_BRACKET_SECTION_TITLE_FS } from '@/constants/fixtureSectionTitle';
 import { Avatar } from '@/components/ui/Avatar';
 import {
   bracketMatchShouldShowVsPlaceholder,
@@ -33,9 +34,9 @@ const B_COL_GAP  = 16;
 const B_ROW_GAP  = 96;
 const B_EDGE_PAD = 8;
 /** Height reserved above each column for the round name (matches `B_BRACKET_ROUND_LABEL_FS`, up to 2 lines). */
-const B_COL_LABEL_H = 32;
-/** Round column titles — slightly smaller than section “Cuadro” title; matches list headings. */
-const B_BRACKET_ROUND_LABEL_FS = 12;
+const B_COL_LABEL_H = 36;
+/** Column round labels — same base size as `fixtureBracketSectionTitleStyle` (“Cuadro”). */
+const B_BRACKET_ROUND_LABEL_FS = FIXTURE_BRACKET_SECTION_TITLE_FS;
 const B_BRZ_GAP  = 40;
 const B_BRZ_BLW  = 72;
 /** Team names in bracket cards (aligned with fixture list ~13). */
@@ -671,7 +672,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{t('tournamentDetail.bracketDiagramTitle')}</Text>
+      <Text style={fixtureBracketSectionTitleStyle}>{t('tournamentDetail.bracketDiagramTitle')}</Text>
       <ScrollView
         horizontal
         nestedScrollEnabled
@@ -828,16 +829,6 @@ const styles = StyleSheet.create({
   hScrollContent: {
     paddingBottom: 14,
     alignItems: 'flex-start',
-  },
-  /** Same size as column round labels (`B_BRACKET_ROUND_LABEL_FS`). */
-  title: {
-    fontSize: B_BRACKET_ROUND_LABEL_FS,
-    fontWeight: '700',
-    fontStyle: 'italic',
-    color: Colors.violet,
-    marginBottom: 14,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
   canvas: {
     position: 'relative',

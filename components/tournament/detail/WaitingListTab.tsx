@@ -29,10 +29,15 @@ export function WaitingListTab({
   playerRowNameStyle,
   orgBadgeStyle,
   waitlistRankTextStyle,
+  userHasTeam,
+  alreadyInTeamHintStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   filteredWaitlist: { userId: string }[];
   userMap: Record<string, User>;
+  /** When true, show "already in a team" below the empty placeholder or above the list. */
+  userHasTeam: boolean;
+  alreadyInTeamHintStyle: unknown;
   organizerIds: string[];
   /** Subset of organizers who are organize-only (same as Players tab). */
   organizerOnlyIds?: string[];
@@ -55,12 +60,27 @@ export function WaitingListTab({
 }) {
   const onlySet = React.useMemo(() => new Set(organizerOnlyIds ?? []), [organizerOnlyIds]);
   if (filteredWaitlist.length === 0) {
-    return <Text style={emptyTextStyle as never}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>;
+    return (
+      <View>
+        <Text style={emptyTextStyle as never}>{t('tournamentDetail.waitinglistPlaceholder')}</Text>
+        {userHasTeam ? (
+          <Text style={alreadyInTeamHintStyle as never}>{t('tournamentDetail.alreadyInTeam')}</Text>
+        ) : null}
+      </View>
+    );
   }
+
+  const header =
+    userHasTeam ? (
+      <Text style={[alreadyInTeamHintStyle as never, { marginBottom: 12 } as never]}>
+        {t('tournamentDetail.alreadyInTeam')}
+      </Text>
+    ) : null;
 
   return (
     <FlashList
       data={filteredWaitlist}
+      ListHeaderComponent={header}
       keyExtractor={(row, idx) => `${row.userId}-${idx}`}
       renderItem={({ item: row, index: idx }) => {
         const u = userMap[row.userId];

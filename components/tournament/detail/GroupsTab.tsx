@@ -14,8 +14,8 @@ export function GroupsTab({
   primaryGroupAction,
   onPrimaryGroupAction,
   primaryGroupPending,
-  rosterTeamsTotal,
-  maxTeams,
+  rosterTeamsTotal: _rosterTeamsTotal,
+  maxTeams: _maxTeams,
   offerGroupRebalance,
   groupMetaTeamsPerGroup: _groupMetaTeamsPerGroup,
   onRebalancePress,
@@ -35,6 +35,7 @@ export function GroupsTab({
   groupHeadingStyle,
   emptyGroupStyle,
   teamCardStyle,
+  groupsPendingLegendStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   loadingTeams: boolean;
@@ -65,6 +66,8 @@ export function GroupsTab({
   groupHeadingStyle: unknown;
   emptyGroupStyle: unknown;
   teamCardStyle: unknown;
+  /** Centered italic line when groups are not created yet (same look as fixture legends). */
+  groupsPendingLegendStyle: unknown;
 }) {
   if (loadingTeams) {
     return (
@@ -78,13 +81,18 @@ export function GroupsTab({
     );
   }
 
-  const showRebalance = offerGroupRebalance && !groupsDistributionPending;
-  const rosterFull = maxTeams > 0 && rosterTeamsTotal >= maxTeams;
-  const showNeedMoreRosterHint = groupsDistributionPending && canManageTournament && !rosterFull;
+  /** Grupos aún no creados: solo la leyenda (crear grupos sigue en el menú del organizador). */
+  if (groupsDistributionPending) {
+    return (
+      <Text style={groupsPendingLegendStyle as never}>{t('tournamentDetail.groupsTabNoGroupsLegend')}</Text>
+    );
+  }
+
+  const showRebalance = offerGroupRebalance;
 
   return (
     <>
-      {canManageTournament && (primaryGroupAction != null || showRebalance || showNeedMoreRosterHint) ? (
+      {canManageTournament && (primaryGroupAction != null || showRebalance) ? (
         <View style={{ flexDirection: 'column', gap: 10, marginBottom: 12 }}>
           {primaryGroupAction ? (
             <View style={{ gap: 6 }}>
@@ -119,12 +127,6 @@ export function GroupsTab({
             </View>
           ) : null}
 
-          {showNeedMoreRosterHint ? (
-            <Text style={rebalanceHintStyle as never}>
-              {t('tournamentDetail.groupsNeedFullRoster', { current: rosterTeamsTotal, max: maxTeams })}
-            </Text>
-          ) : null}
-
           {showRebalance ? (
             <Button
               title={t('tournamentDetail.rebalanceGroups')}
@@ -154,7 +156,7 @@ export function GroupsTab({
         divisionTeamsByGroup.map((groupTeams, gi) => (
           <View key={`g-${gi}`} style={groupBlockStyle as never}>
             <Text style={groupHeadingStyle as never}>{t('tournamentDetail.groupTitle', { n: gi + 1 })}</Text>
-            {!groupsDistributionPending && groupTeams.length === 0 ? (
+            {groupTeams.length === 0 ? (
               <Text style={emptyGroupStyle as never}>{t('tournamentDetail.noTeamsInGroup')}</Text>
             ) : null}
             {groupTeams.map((team) => (

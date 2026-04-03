@@ -60,22 +60,13 @@ import {
 } from '@/lib/tournamentOrganizerCoverage';
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
+import { openVenueInMaps } from '@/components/tournament/venueMapShared';
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 
 /** Same default asset as `TournamentListRow` / tournament cards in the list. */
 const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg.png');
 /** Icon + text on card image (matches `TournamentListRow` `CARD_CONFIG_ICON_COLOR`). */
 const TOURNAMENT_CONFIG_ON_CARD = 'rgba(255, 255, 255, 0.92)';
-
-/** "BARCELONETA" / "summer beach" → "Barceloneta" / "Summer Beach" for the info card (no CSS all-caps). */
-function formatTournamentLocationDisplay(raw: string | undefined | null): string {
-  const s = String(raw ?? '').trim();
-  if (!s) return '—';
-  return s
-    .split(/\s+/)
-    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
-    .join(' ');
-}
 
 function TeamCard({
   team,
@@ -1613,6 +1604,22 @@ export default function TournamentDetailScreen() {
     }
   };
 
+  const tournamentCardMenuItems: OrganizerMenuItem[] = [
+    ...(canManageTournament ? organizerMenuItems : []),
+    ...(canEnroll && !isCancelled && !isOrganizeOnlyOrganizer && isRegistered
+      ? ([
+          {
+            key: 'leaveTournament',
+            label: t('tournamentDetail.leaveTournament'),
+            icon: 'log-out-outline' as const,
+            color: Colors.danger,
+            onPress: () => confirmLeave(),
+            disabled: leaveWaitlist.isPending || deleteEntry.isPending,
+          },
+        ] satisfies OrganizerMenuItem[])
+      : []),
+  ];
+
   const confirmRemoveTeam = (team: Team) => {
     if (!userId || !id) return;
     if (!requireOnline()) return;
@@ -1695,11 +1702,11 @@ export default function TournamentDetailScreen() {
             >
               <View style={styles.tournamentConfigScrim} pointerEvents="none" />
               <View style={styles.tournamentConfigContent}>
-                {canManageTournament ? (
+                {tournamentCardMenuItems.length > 0 ? (
                   <View style={styles.tournamentConfigMenuAbs}>
                     <TournamentOrganizerMenu
                       menuLabel={t('tournamentDetail.actionsMenu')}
-                      items={organizerMenuItems}
+                      items={tournamentCardMenuItems}
                     />
                   </View>
                 ) : null}
@@ -1708,9 +1715,19 @@ export default function TournamentDetailScreen() {
                 </Text>
                 <View style={styles.tournamentConfigRow}>
                   <Ionicons name="location-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
-                  <Text style={styles.tournamentConfigText}>
-                    {formatTournamentLocationDisplay(tournament.location)}
-                  </Text>
+                  {tournament.location?.trim() ? (
+                    <Pressable
+                      onPress={() => openVenueInMaps(tournament.location!.trim())}
+                      accessibilityRole="link"
+                      style={styles.tournamentConfigLocationPress}
+                    >
+                      <Text style={[styles.tournamentConfigText, styles.tournamentLocationLink]} numberOfLines={3}>
+                        {tournament.location.trim()}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={styles.tournamentConfigText}>—</Text>
+                  )}
                 </View>
                 <View style={styles.tournamentConfigRow}>
                   <Ionicons name="calendar-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
@@ -1738,8 +1755,8 @@ export default function TournamentDetailScreen() {
               {onWaitlist && !userHasTeam ? (
                 <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
               ) : null}
-              <View style={styles.waitlistActions}>
-                {!isRegistered ? (
+              {!isRegistered ? (
+                <View style={styles.waitlistActions}>
                   <Button
                     title={t('tournamentDetail.joinTournament')}
                     variant="secondary"
@@ -1755,17 +1772,8 @@ export default function TournamentDetailScreen() {
                     size="sm"
                     fullWidth
                   />
-                ) : (
-                  <Button
-                    title={t('tournamentDetail.leaveTournament')}
-                    variant="outline"
-                    onPress={confirmLeave}
-                    disabled={leaveWaitlist.isPending || deleteEntry.isPending}
-                    size="sm"
-                    fullWidth
-                  />
-                )}
-              </View>
+                </View>
+              ) : null}
             </>
           ) : null}
 
@@ -1960,6 +1968,7 @@ export default function TournamentDetailScreen() {
             groupHeadingStyle={styles.groupHeading}
             emptyGroupStyle={styles.emptyGroup}
             teamCardStyle={styles.teamCard}
+            groupsPendingLegendStyle={styles.fixtureClassificationEmptyLegend}
           />
         ) : null}
 
@@ -1988,6 +1997,8 @@ export default function TournamentDetailScreen() {
                 : undefined
             }
             invitePending={invitePartnerFromWaitlist.isPending}
+            userHasTeam={userHasTeam}
+            alreadyInTeamHintStyle={styles.waitlistAlreadyInTeamHint}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
             playerRowOrganizerStyle={styles.playerRowOrganizer}
@@ -2013,6 +2024,9 @@ export default function TournamentDetailScreen() {
               tournamentId={id ?? ''}
               opponentTbdLabel={opponentTbdLabel}
               categoryTeamIdsByCategory={categoryTeamIdsByCategory}
+              divisionHasTeams={filteredTeams.length > 0}
+              groupsDistributionPending={groupsDistributionPending}
+              fixtureClassificationEmptyLegendStyle={styles.fixtureClassificationEmptyLegend}
               onOpenMatch={(matchId) => {
                 if (!id) return;
                 router.push(`/tournament/${id}/match/${matchId}` as never);
@@ -2043,9 +2057,6 @@ export default function TournamentDetailScreen() {
           <View style={styles.actions}>
         {!canEnroll && (
           <Text style={styles.genderRequired}>{t('tournamentDetail.genderRequired')}</Text>
-        )}
-        {userHasTeam && (
-          <Text style={styles.joinedBadge}>{t('tournamentDetail.alreadyInTeam')}</Text>
         )}
           </View>
         </>
@@ -2391,9 +2402,9 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textTransform: 'uppercase',
   },
-  /** Knockout round titles in fixture list — same size as bracket diagram column labels (smaller than group). */
+  /** Knockout round titles in fixture list — same size as bracket diagram column labels and “Grupo n”. */
   bracketRoundHeading: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: Colors.yellow,
     marginBottom: 8,
@@ -2515,7 +2526,26 @@ const styles = StyleSheet.create({
   actions: { gap: 12 },
   errorText: { fontSize: 16, color: Colors.textSecondary, textAlign: 'center' },
   emptyText: { fontSize: 14, color: Colors.textMuted, fontStyle: 'italic' },
-  joinedBadge: { fontSize: 14, color: Colors.yellow, textAlign: 'center', marginBottom: 8 },
+  /** Fixture + Groups tab: centered italic legend (pre–groups / empty category). */
+  fixtureClassificationEmptyLegend: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: 20,
+    alignSelf: 'stretch',
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    marginTop: 4,
+  },
+  /** Shown in Waiting list tab below the empty-state placeholder (or above the list). */
+  waitlistAlreadyInTeamHint: {
+    fontSize: 14,
+    color: Colors.yellow,
+    marginTop: 12,
+    textAlign: 'left',
+    fontStyle: 'italic',
+  },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
   waitlistExplainer: { fontSize: 13, color: Colors.textMuted, lineHeight: 18, marginBottom: 12 },
   waitlistOnWaitlistHint: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 8 },
@@ -2565,6 +2595,14 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontWeight: '700',
     textTransform: 'none',
+  },
+  tournamentConfigLocationPress: {
+    flex: 1,
+    minWidth: 0,
+  },
+  tournamentLocationLink: {
+    color: Colors.yellow,
+    textDecorationLine: 'underline',
   },
   playerRow: {
     backgroundColor: Colors.surface,

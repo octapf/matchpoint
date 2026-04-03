@@ -6,7 +6,7 @@ import Colors from '@/constants/Colors';
 type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'dangerOutline';
   fullWidth?: boolean;
   size?: 'md' | 'sm';
   iconLeft?: keyof typeof Ionicons.glyphMap;
@@ -17,13 +17,16 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
   const isDanger = variant === 'danger';
+  const isDangerOutline = variant === 'dangerOutline';
   const isSmall = size === 'sm';
   const iconColor =
     variant === 'outline'
       ? Colors.text
-      : isPrimary
-        ? '#1a1a1a'
-        : '#fff';
+      : isDangerOutline
+        ? Colors.danger
+        : isPrimary
+          ? '#1a1a1a'
+          : '#fff';
 
   return (
     <Pressable
@@ -37,6 +40,7 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
         isSecondary && styles.secondary,
         variant === 'outline' && styles.outline,
         isDanger && styles.danger,
+        isDangerOutline && styles.dangerOutline,
         (isPrimary || isSecondary || isDanger) && styles.elevated,
         pressed && !disabled && styles.pressed,
         disabled && styles.disabled,
@@ -59,6 +63,7 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
             isSecondary && styles.secondaryText,
             variant === 'outline' && styles.outlineText,
             isDanger && styles.dangerText,
+            isDangerOutline && styles.dangerOutlineText,
           ]}
         >
           {title}
@@ -105,6 +110,12 @@ const styles = StyleSheet.create({
   danger: {
     backgroundColor: Colors.danger,
   },
+  /** Same `Colors.danger` as profile delete account — transparent fill, border only. */
+  dangerOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: Colors.danger,
+  },
   elevated: {
     shadowColor: '#000',
     shadowOpacity: 0.18,
@@ -138,5 +149,8 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#fff',
+  },
+  dangerOutlineText: {
+    color: Colors.danger,
   },
 });

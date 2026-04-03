@@ -21,6 +21,7 @@ import {
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
 import { ClassificationSettingsFormFields } from '@/components/tournament/ClassificationSettingsForm';
+import { TournamentLocationField } from '@/components/location/TournamentLocationField';
 
 const MIN_DATE = new Date(2000, 0, 1);
 
@@ -60,7 +61,6 @@ export default function CreateTournamentScreen() {
   const [clsMatches, setClsMatches] = useState('1');
   const [clsAdvance, setClsAdvance] = useState('0.5');
   const [clsFractions, setClsFractions] = useState({ Gold: '', Silver: '', Bronze: '' });
-
   const maxTeamsForSelect = useMemo(() => {
     const n = parseInt(maxTeams, 10);
     return Number.isFinite(n) && n >= 2 && n <= 64 ? n : 16;
@@ -373,15 +373,14 @@ export default function CreateTournamentScreen() {
 
       <View style={styles.field}>
         <Text style={styles.label}>
-          {t('tournaments.location')}
+          {t('tournaments.tournamentLocationTitle')}
           {t('common.requiredSuffix')}
         </Text>
-        <TextInput
-          style={styles.input}
-          placeholder={t('tournaments.locationPlaceholder')}
-          placeholderTextColor={Colors.textMuted}
+        <TournamentLocationField
           value={location}
           onChangeText={setLocation}
+          placeholder={t('tournaments.locationPlaceholder')}
+          inputStyle={styles.input}
         />
       </View>
 

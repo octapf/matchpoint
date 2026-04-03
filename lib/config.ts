@@ -15,6 +15,12 @@ const DEV_MOCK_DATA =
 const WEATHER_DEFAULT_LAT = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LAT || '41.3851');
 const WEATHER_DEFAULT_LON = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LON || '2.1734');
 
+/**
+ * Maps Platform key: Places (autocomplete), Geocoding (validate/save), Maps SDK (Android map).
+ * Billing must be enabled; usage is metered — set budgets in Google Cloud. No usage = no charge beyond free tiers when applicable.
+ */
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
 export const config = {
   api: {
     baseUrl: API_URL,
@@ -33,6 +39,9 @@ export const config = {
     /** Required on Android for expo-auth-session. Falls back to web clientId to avoid crash. */
     androidClientId: GOOGLE_ANDROID_CLIENT_ID || GOOGLE_CLIENT_ID,
     isConfigured: !!GOOGLE_CLIENT_ID,
+    /** Native: Places autocomplete + Geocoding validation + Android Maps SDK when set. Web search still uses OSM (Places REST is not callable from browsers without a backend). */
+    mapsApiKey: GOOGLE_MAPS_API_KEY,
+    mapsConfigured: !!GOOGLE_MAPS_API_KEY,
   },
   invite: {
     baseUrl: INVITE_BASE_URL,
