@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Image,
   Animated,
   Easing,
   Platform,
@@ -18,6 +17,7 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useTranslation } from '@/lib/i18n';
+import { useTheme } from '@/lib/theme/useTheme';
 import { useTournament } from '@/lib/hooks/useTournaments';
 import { useClaimReferee, useMatches, useRefereeHeartbeat, useRefereePoint, useSetServeOrder, useStartMatch } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
@@ -27,11 +27,14 @@ import { alertApiError } from '@/lib/utils/apiError';
 import { isMongoObjectId, teamDisplayName } from '@/lib/tournamentMatchDisplay';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
+import { MPMark } from '@/components/ui/MPMark';
+import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
 
 export default function EditMatchScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const { id, matchId } = useLocalSearchParams<{ id: string; matchId: string }>();
   const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
@@ -482,7 +485,7 @@ export default function EditMatchScreen() {
                     disabled={!canEditServeSetup}
                     accessibilityRole="button"
                   >
-                    <Text style={[styles.serveSlotName, styles.serveSlotNameA]} numberOfLines={3}>
+                    <Text style={[styles.serveSlotName, styles.serveSlotNameA, { color: tokens.accent }]} numberOfLines={3}>
                       {label}
                     </Text>
                   </Pressable>
@@ -533,7 +536,10 @@ export default function EditMatchScreen() {
                     disabled={!canEditServeSetup}
                     accessibilityRole="button"
                   >
-                    <Text style={[styles.serveSlotName, styles.serveSlotNameB]} numberOfLines={3}>
+                    <Text
+                      style={[styles.serveSlotName, styles.serveSlotNameB, { color: tokens.accentSecondary }]}
+                      numberOfLines={3}
+                    >
                       {label}
                     </Text>
                   </Pressable>
@@ -615,6 +621,7 @@ export default function EditMatchScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: topPad }]}>
+      <AppBackgroundGradient />
       <Stack.Screen
         options={{
           headerShown: false,
@@ -625,12 +632,9 @@ export default function EditMatchScreen() {
 
       {/* Match the Tournament screen top-left logo placement + centered header */}
       <View style={styles.topBar}>
-        <Image
-          source={require('@/assets/images/android-icon-foreground.png')}
-          style={styles.topLeftLogo}
-          resizeMode="contain"
-          accessibilityLabel="Matchpoint"
-        />
+        <View style={styles.topLeftLogo} pointerEvents="none">
+          <MPMark size={50} accessibilityLabel="Matchpoint" />
+        </View>
         <View style={styles.topBarCenter}>
           <View style={styles.timerLabels}>
             <Text style={styles.timerLabel}>{t('tournamentDetail.timeLabel')}</Text>
@@ -647,9 +651,9 @@ export default function EditMatchScreen() {
         </View>
       ) : null}
       <Text style={styles.vsHeadline} accessibilityRole="header">
-        <Text style={styles.vsTeamA}>{teamAName}</Text>
+        <Text style={[styles.vsTeamA, { color: tokens.accent }]}>{teamAName}</Text>
         <Text style={styles.vsSep}> VS </Text>
-        <Text style={styles.vsTeamB}>{teamBName}</Text>
+        <Text style={[styles.vsTeamB, { color: tokens.accentSecondary }]}>{teamBName}</Text>
       </Text>
       <Text style={styles.setsIndicator}>SET {currentSet}/{totalSets}</Text>
       {isCompleted ? (
@@ -662,7 +666,14 @@ export default function EditMatchScreen() {
       ) : null}
       <>
           <View style={styles.scoreBoard}>
-            <View style={[styles.scoreSide, isCompleted ? styles.scoreSideLeftFinished : styles.scoreSideLeft]}>
+            <View
+              style={[
+                styles.scoreSide,
+                isCompleted ? styles.scoreSideLeftFinished : styles.scoreSideLeft,
+                !isCompleted ? ({ backgroundColor: tokens.accentMuted } as never) : null,
+                isCompleted ? ({ borderColor: tokens.accentOutline } as never) : null,
+              ]}
+            >
               <View
                 style={styles.scorePointsArea}
                 collapsable={false}
@@ -678,6 +689,7 @@ export default function EditMatchScreen() {
                     style={[
                       styles.scorePoints,
                       isCompleted && winnerSide === 'B' ? styles.scorePointsLoser : null,
+                      { color: tokens.accent },
                       {
                         transform: [
                           {
@@ -692,8 +704,26 @@ export default function EditMatchScreen() {
                 </View>
                 {!isCompleted ? (
                   <View style={styles.scoreArrowsLayer} pointerEvents="none">
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowA, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
+                    <Text
+                      style={[
+                        styles.scoreOverlayArrow,
+                        styles.scoreOverlayArrowA,
+                        styles.scoreOverlayArrowNudgeTop,
+                        { color: tokens.accent },
+                      ]}
+                    >
+                      ˄
+                    </Text>
+                    <Text
+                      style={[
+                        styles.scoreOverlayArrow,
+                        styles.scoreOverlayArrowA,
+                        styles.scoreOverlayArrowNudgeBottom,
+                        { color: tokens.accent },
+                      ]}
+                    >
+                      ˅
+                    </Text>
                   </View>
                 ) : null}
                 <GHPressable
@@ -713,7 +743,14 @@ export default function EditMatchScreen() {
 
             <View style={styles.scoreDivider} />
 
-            <View style={[styles.scoreSide, isCompleted ? styles.scoreSideRightFinished : styles.scoreSideRight]}>
+            <View
+              style={[
+                styles.scoreSide,
+                isCompleted ? styles.scoreSideRightFinished : styles.scoreSideRight,
+                !isCompleted ? ({ backgroundColor: tokens.accentSecondaryMuted } as never) : null,
+                isCompleted ? ({ borderColor: tokens.accentSecondaryOutline } as never) : null,
+              ]}
+            >
               <View
                 style={styles.scorePointsArea}
                 collapsable={false}
@@ -730,6 +767,7 @@ export default function EditMatchScreen() {
                       styles.scorePoints,
                       styles.scorePointsRight,
                       isCompleted && winnerSide === 'A' ? styles.scorePointsLoser : null,
+                      { color: tokens.accentSecondary },
                       {
                         transform: [
                           {
@@ -744,8 +782,26 @@ export default function EditMatchScreen() {
                 </View>
                 {!isCompleted ? (
                   <View style={styles.scoreArrowsLayer} pointerEvents="none">
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeTop]}>˄</Text>
-                    <Text style={[styles.scoreOverlayArrow, styles.scoreOverlayArrowB, styles.scoreOverlayArrowNudgeBottom]}>˅</Text>
+                    <Text
+                      style={[
+                        styles.scoreOverlayArrow,
+                        styles.scoreOverlayArrowB,
+                        styles.scoreOverlayArrowNudgeTop,
+                        { color: tokens.accentSecondary },
+                      ]}
+                    >
+                      ˄
+                    </Text>
+                    <Text
+                      style={[
+                        styles.scoreOverlayArrow,
+                        styles.scoreOverlayArrowB,
+                        styles.scoreOverlayArrowNudgeBottom,
+                        { color: tokens.accentSecondary },
+                      ]}
+                    >
+                      ˅
+                    </Text>
                   </View>
                 ) : null}
                 <GHPressable
@@ -863,12 +919,12 @@ export default function EditMatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.background },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   // content padding like other screens
   // Extra horizontal inset on Android: system edge-back gesture competes with taps on the left (team A) panel.
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
     paddingHorizontal: Platform.OS === 'android' ? 24 : 16,
     paddingVertical: 12,
     gap: 10,
@@ -926,8 +982,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 2,
   },
-  vsTeamA: { color: Colors.yellow, fontWeight: '900' },
-  vsTeamB: { color: Colors.violet, fontWeight: '900' },
+  vsTeamA: { color: Colors.text, fontWeight: '900' },
+  vsTeamB: { color: Colors.text, fontWeight: '900' },
   vsSep: { color: Colors.textMuted, fontWeight: '900' },
   setsIndicator: {
     marginTop: -2,
@@ -978,9 +1034,9 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     overflow: 'hidden',
   },
-  // Match the "violetMuted" panel intensity for yellow.
-  scoreSideLeft: { backgroundColor: 'rgba(251, 191, 36, 0.22)' },
-  scoreSideRight: { backgroundColor: Colors.violetMuted },
+  // Accent-tinted live panel (left).
+  scoreSideLeft: { backgroundColor: 'rgba(255, 255, 255, 0.08)' },
+  scoreSideRight: { backgroundColor: Colors.surfaceLight },
   /** Completed: no fill — outline uses same hues as the live panels */
   scoreSideLeftFinished: {
     backgroundColor: 'transparent',
@@ -988,7 +1044,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderBottomWidth: 2,
     borderRightWidth: 0,
-    borderColor: 'rgba(251, 191, 36, 0.45)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
   },
   scoreSideRightFinished: {
     backgroundColor: 'transparent',
@@ -996,7 +1052,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 2,
     borderBottomWidth: 2,
     borderLeftWidth: 0,
-    borderColor: Colors.violetOutline,
+    borderColor: Colors.surfaceLight,
   },
   scoreTeam: { fontSize: 13, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', textAlign: 'center' },
   scorePoints: {
@@ -1004,11 +1060,11 @@ const styles = StyleSheet.create({
     fontSize: 144,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: Colors.yellow,
+    color: Colors.text,
     textAlign: 'center',
     includeFontPadding: false,
   },
-  scorePointsRight: { color: Colors.violet },
+  scorePointsRight: { color: Colors.text },
   scorePointsLoser: { opacity: 0.3 },
   // Avoid flex collapse in auto-height container: give scores a real box.
   scorePointsArea: {
@@ -1058,8 +1114,8 @@ const styles = StyleSheet.create({
     transform: [{ scaleX: 2.6 }],
     includeFontPadding: false,
   },
-  scoreOverlayArrowA: { color: Colors.yellow, opacity: 0.62 },
-  scoreOverlayArrowB: { color: Colors.violet, opacity: 0.62 },
+  scoreOverlayArrowA: { color: Colors.text, opacity: 0.62 },
+  scoreOverlayArrowB: { color: Colors.text, opacity: 0.62 },
   scoreOverlayArrowNudgeTop: { marginTop: -10 },
   scoreOverlayArrowNudgeBottom: { marginBottom: -26 },
   serveRow: { gap: 8, paddingVertical: 4 },
@@ -1093,12 +1149,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
   },
   serveSlotNameWrap: { alignSelf: 'stretch' },
   serveSlotName: { fontSize: 13, fontWeight: '900', fontStyle: 'italic', lineHeight: 16 },
-  serveSlotNameA: { color: Colors.yellow },
-  serveSlotNameB: { color: Colors.violet },
+  serveSlotNameA: { color: Colors.text },
+  serveSlotNameB: { color: Colors.text },
   countdownOverlay: {
     position: 'absolute',
     left: 0,

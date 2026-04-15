@@ -30,6 +30,7 @@ import {
   validateTournamentGroups,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
+import { useTheme } from '@/lib/theme/useTheme';
 
 const MAX_TEAM_PLAYERS = 2;
 
@@ -44,6 +45,7 @@ function sortEntriesByUser(entries: Entry[], userMap: Record<string, User | unde
 export default function AdminTournamentRosterScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const adminId = useUserStore((s) => s.user?._id ?? null);
 
   const { data: tournament, isLoading: loadingT } = useTournament(id);
@@ -273,7 +275,7 @@ export default function AdminTournamentRosterScreen() {
       <Stack.Screen options={{ title: tournament?.name ? `${t('admin.rosterTitle')}: ${tournament.name}` : t('admin.rosterTitle') }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {loading && !tournament ? (
-          <ActivityIndicator color={Colors.yellow} style={{ marginTop: 24 }} />
+          <ActivityIndicator color={tokens.accent} style={{ marginTop: 24 }} />
         ) : null}
 
         <Text style={styles.hint}>{t('admin.rosterHint')}</Text>
@@ -386,7 +388,7 @@ export default function AdminTournamentRosterScreen() {
                         icon="create-outline"
                         onPress={() => openEdit(team)}
                         accessibilityLabel={t('admin.edit')}
-                        color={Colors.yellow}
+                        color={tokens.accent}
                       />
                       <IconButton
                         icon="trash-outline"
@@ -525,7 +527,7 @@ const styles = StyleSheet.create({
   teamCardHeaderLeft: { flex: 1, minWidth: 0 },
   teamCardHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   teamName: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  teamGroupMeta: { fontSize: 12, color: Colors.violet, fontWeight: '600', marginBottom: 4 },
+  teamGroupMeta: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   teamPlayers: { fontSize: 14, color: Colors.textSecondary },
   groupRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   groupChip: {
@@ -536,7 +538,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     backgroundColor: Colors.surfaceLight,
   },
-  groupChipOn: { backgroundColor: Colors.violet, borderColor: Colors.violet },
+  groupChipOn: { backgroundColor: Colors.surfaceLight, borderColor: Colors.surfaceLight },
   groupChipText: { fontSize: 14, fontWeight: '600', color: Colors.text },
   groupChipTextOn: { color: '#fff' },
   rowActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'center' },
@@ -549,6 +551,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
-  chipOn: { backgroundColor: Colors.yellow, borderColor: Colors.yellow },
+  chipOn: { backgroundColor: Colors.surfaceLight, borderColor: Colors.surfaceLight },
   chipText: { fontSize: 14, fontWeight: '600', color: Colors.text },
 });

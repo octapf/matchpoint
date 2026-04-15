@@ -14,6 +14,8 @@ import { NotificationsInboxButton } from '@/components/notifications/Notificatio
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { TournamentListRow } from '@/components/tournament/TournamentListRow';
+import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
+import { useTheme } from '@/lib/theme/useTheme';
 import { useWeather } from '@/lib/hooks/useWeather';
 import { useTournaments } from '@/lib/hooks/useTournaments';
 import type { Tournament } from '@/types';
@@ -107,6 +109,7 @@ function WeatherGlyph({
 export default function FeedScreen() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const language = useLanguageStore((s) => s.language ?? 'en');
@@ -289,13 +292,13 @@ export default function FeedScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('feed.goTournaments')}
         >
-          <Ionicons name="trophy-outline" size={22} color={Colors.yellow} />
+          <Ionicons name="trophy-outline" size={22} color={tokens.accent} />
           <Text style={styles.linkCardText}>{t('feed.goTournaments')}</Text>
           <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
         </Pressable>
       </View>
     ),
-    [t, router],
+    [t, router, tokens.accent],
   );
 
   const listEmpty = useMemo(() => {
@@ -339,6 +342,7 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.screenRoot}>
+      <AppBackgroundGradient />
       <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
         <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
       </View>
@@ -356,7 +360,7 @@ export default function FeedScreen() {
           <RefreshControl
             refreshing={isFetchingTournaments}
             onRefresh={() => void refetchTournaments()}
-            tintColor={Colors.yellow}
+            tintColor={tokens.accent}
           />
         }
       />
@@ -365,7 +369,7 @@ export default function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  screenRoot: { flex: 1, backgroundColor: Colors.background },
+  screenRoot: { flex: 1, backgroundColor: 'transparent' },
   flashFill: { flex: 1 },
   stickyScreenHeader: {
     paddingHorizontal: 16,
@@ -497,7 +501,7 @@ const styles = StyleSheet.create({
   },
   updating: {
     fontSize: 13,
-    color: Colors.yellow,
+    color: Colors.textMuted,
     marginTop: 6,
   },
   errorText: {

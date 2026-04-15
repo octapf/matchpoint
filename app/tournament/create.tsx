@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { MaxTeamsSelect } from '@/components/ui/MaxTeamsSelect';
+import { useTheme } from '@/lib/theme/useTheme';
 import { useCreateTournament } from '@/lib/hooks/useTournaments';
 import { useUserStore } from '@/store/useUserStore';
 import type { TournamentCategory, TournamentDivision } from '@/types';
@@ -41,6 +42,7 @@ const BRONZE = '#cd7f32';
 
 export default function CreateTournamentScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const userId = useUserStore((s) => s.user?._id ?? null);
   const createTournament = useCreateTournament();
@@ -247,7 +249,7 @@ export default function CreateTournamentScreen() {
           </View>
           <Switch
             value={visibilityPrivate}
-            trackColor={{ false: Colors.surfaceLight, true: Colors.violet }}
+            trackColor={{ false: Colors.surfaceLight, true: tokens.accentHover }}
             thumbColor="#f4f4f5"
             onValueChange={setVisibilityPrivate}
           />
@@ -270,7 +272,12 @@ export default function CreateTournamentScreen() {
             return (
               <Pressable
                 key={opt.id}
-                style={[styles.chip, styles.chipFlex, selected && styles.chipSelected]}
+                style={[
+                  styles.chip,
+                  styles.chipFlex,
+                  selected && styles.chipSelected,
+                  selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
+                ]}
                 onPress={() => {
                   setDivisions((prev) => {
                     if (prev.includes(opt.id)) {
@@ -306,7 +313,12 @@ export default function CreateTournamentScreen() {
             return (
               <Pressable
                 key={opt.id}
-                style={[styles.chip, styles.chipFlex, selected && styles.chipSelected]}
+                style={[
+                  styles.chip,
+                  styles.chipFlex,
+                  selected && styles.chipSelected,
+                  selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
+                ]}
                 onPress={() => setCategoryPreset(opt.id)}
                 accessibilityRole="button"
                 accessibilityLabel={opt.label}
@@ -472,8 +484,8 @@ const styles = StyleSheet.create({
   },
   chipFlex: { flex: 1, minWidth: 0 },
   chipSelected: {
-    borderColor: Colors.violet,
-    backgroundColor: Colors.violetMuted,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surfaceLight,
   },
   chipText: {
     fontSize: 12,
@@ -482,7 +494,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: Colors.textSecondary,
   },
-  chipTextSelected: { color: Colors.violet },
+  chipTextSelected: { color: Colors.text },
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },

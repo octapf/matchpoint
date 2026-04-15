@@ -232,6 +232,6 @@ const styles = StyleSheet.create({
   genderBtnActive: { backgroundColor: Colors.yellow },
   genderBtnInactive: { backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.surfaceLight },
   genderBtnText: { fontSize: 16, fontWeight: '600', color: Colors.text },
-  genderBtnTextActive: { color: '#1a1a1a' },
+  genderBtnTextActive: { color: Colors.text },
   idFooter: { fontSize: 12, color: Colors.textMuted, marginBottom: 20 },
 });

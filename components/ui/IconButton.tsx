@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 type IconButtonProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -20,11 +21,13 @@ export function IconButton({
   onPress,
   accessibilityLabel,
   disabled,
-  color = Colors.yellow,
+  color,
   size = 22,
   compact,
   style,
 }: IconButtonProps) {
+  const { tokens } = useTheme();
+  const effectiveColor = color ?? tokens.accent;
   return (
     <Pressable
       accessibilityRole="button"
@@ -39,7 +42,7 @@ export function IconButton({
         style,
       ]}
     >
-      <Ionicons name={icon} size={size} color={color} />
+      <Ionicons name={icon} size={size} color={effectiveColor} />
     </Pressable>
   );
 }

@@ -7,9 +7,11 @@ import { useTranslation } from '@/lib/i18n';
 import { useUserStore } from '@/store/useUserStore';
 import { useNotifications } from '@/lib/hooks/useNotifications';
 import { NotificationsInboxPanel } from '@/components/notifications/NotificationsInboxPanel';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export function NotificationsInboxButton() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const user = useUserStore((s) => s.user);
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
@@ -34,7 +36,7 @@ export function NotificationsInboxButton() {
       >
         <Ionicons name="notifications-outline" size={22} color="#ffffff" />
         {unreadCount > 0 ? (
-          <View style={styles.badge} accessibilityElementsHidden>
+          <View style={[styles.badge, { backgroundColor: tokens.accent }]} accessibilityElementsHidden>
             <Text style={styles.badgeText}>{badgeLabel}</Text>
           </View>
         ) : null}
@@ -70,7 +72,6 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.yellow,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,

@@ -6,6 +6,7 @@ import Colors from '@/constants/Colors';
 import { IconButton } from '@/components/ui/IconButton';
 import { TournamentStatsBlock } from '@/components/ui/TournamentStatsBlock';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
+import { useTheme } from '@/lib/theme/useTheme';
 import {
   maxPlayerSlotsForTournament,
   normalizeGroupCount,
@@ -37,6 +38,7 @@ function TournamentListRowInner({
   onSharePress,
 }: TournamentListRowProps) {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const dateLabel = tournament.date || tournament.startDate;
   const totalGroups = normalizeGroupCount(tournament.groupCount);
   const hasInvite = !!tournament.inviteLink;
@@ -143,7 +145,13 @@ function TournamentListRowInner({
                   : t('tournaments.divisionMixed');
             return (
               <View key={`${tournament._id}-${division}`} style={styles.divisionStatsSection}>
-                <Text style={[styles.divisionStatsTitle, isCancelled && styles.divisionStatsTitleMuted]}>
+                <Text
+                  style={[
+                    styles.divisionStatsTitle,
+                    !isCancelled ? ({ color: tokens.accentSecondary } as never) : null,
+                    isCancelled && styles.divisionStatsTitleMuted,
+                  ]}
+                >
                   {divisionLabel}
                 </Text>
                 <TournamentStatsBlock
@@ -205,7 +213,7 @@ function TournamentListRowInner({
               icon="share-outline"
               onPress={() => onSharePress(tournament)}
               accessibilityLabel={t('tournamentDetail.shareInvite')}
-              color={Colors.yellow}
+              color={tokens.accent}
               compact
             />
           </View>
@@ -332,14 +340,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.45)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
   },
   privateBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.violet,
+    color: Colors.text,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
@@ -404,7 +412,7 @@ const styles = StyleSheet.create({
   divisionStatsTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.violet,
+    color: Colors.textSecondary,
     textTransform: 'uppercase',
     fontStyle: 'italic',
   },

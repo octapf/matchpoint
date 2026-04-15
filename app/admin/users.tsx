@@ -15,6 +15,7 @@ import Colors from '@/constants/Colors';
 import { adminApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import type { User } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 function isUserDoc(x: unknown): x is User {
   return (
@@ -27,6 +28,7 @@ function isUserDoc(x: unknown): x is User {
 
 export default function AdminUsersScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const [items, setItems] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ export default function AdminUsersScreen() {
         {error ? <Text style={styles.err}>{error}</Text> : null}
         {loading && items.length === 0 ? (
           <View style={styles.loadingBlock}>
-            <ActivityIndicator size="large" color={Colors.yellow} />
+            <ActivityIndicator size="large" color={tokens.accent} />
             <Text style={styles.muted}>{t('common.loading')}</Text>
           </View>
         ) : (
@@ -83,7 +85,7 @@ export default function AdminUsersScreen() {
             keyExtractor={(row) => row._id}
             contentContainerStyle={styles.listContent}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.yellow} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.accent} />
             }
             ListEmptyComponent={
               !loading ? (
@@ -104,7 +106,7 @@ export default function AdminUsersScreen() {
                     {item.email}
                   </Text>
                 </View>
-                <View style={[styles.badge, item.role === 'admin' && styles.badgeAdmin]}>
+                <View style={[styles.badge, item.role === 'admin' && styles.badgeAdmin, item.role === 'admin' && { backgroundColor: tokens.accentHover }]}>
                   <Text style={[styles.badgeText, item.role === 'admin' && styles.badgeTextOnAccent]}>
                     {item.role === 'admin' ? t('admin.badgeAdmin') : t('admin.badgeUser')}
                   </Text>
@@ -151,7 +153,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceLight,
   },
   badgeAdmin: {
-    backgroundColor: Colors.violet,
+    backgroundColor: Colors.surfaceLight,
   },
   badgeText: {
     fontSize: 11,

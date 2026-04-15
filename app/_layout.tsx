@@ -13,8 +13,11 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { queryClient } from '@/lib/queryClient';
 import { I18nProvider, i18n, useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
+import { useUserStore } from '@/store/useUserStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { initAppObservability } from '@/lib/observability/app';
+import { useThemeStore } from '@/store/useThemeStore';
+import { DEFAULT_THEME_PRESET_ID, THEME_PRESETS, type ThemePresetId } from '@/lib/theme/colors';
 
 // Dev-only: prevent a known noisy unhandled rejection from crashing the app
 // when Android's Activity is restarting (dev-client / reload race).
@@ -53,6 +56,14 @@ SplashScreen.preventAutoHideAsync();
 
 initAppObservability();
 
+if (__DEV__) {
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  import('@/lib/theme/verifyThemeA11y').then(({ verifyThemeA11y }) => {
+    // eslint-disable-next-line no-console
+    console.log('[theme.a11y]', verifyThemeA11y());
+  });
+}
+
 export default function RootLayout() {
   // Required for OAuth: closes auth browser when redirect returns to app
   useEffect(() => {
@@ -70,6 +81,7 @@ function RootLayoutNav() {
   const { t } = useTranslation();
   const language = useLanguageStore((s) => s.language);
   const hasHydrated = useLanguageStore((s) => s._hasHydrated);
+  const themeHydrated = useThemeStore((s) => s._hasHydrated);
 
   useEffect(() => {
     if (!hasHydrated || !language) return;
@@ -85,6 +97,21 @@ function RootLayoutNav() {
     }
     i18n.locale = language;
   }, [hasHydrated, language]);
+
+  // Keep theme in sync with the signed-in user (server persisted).
+  useEffect(() => {
+    if (!themeHydrated) return;
+    const u = useUserStore.getState().user as unknown as { themePresetId?: unknown } | null;
+    const raw = u?.themePresetId;
+    const presetId = (typeof raw === 'string' ? raw : null) as ThemePresetId | null;
+    if (presetId && presetId in THEME_PRESETS) {
+      useThemeStore.getState().setPresetId(presetId);
+    } else {
+      // Ensure we always have a valid preset when store is empty.
+      const cur = useThemeStore.getState().presetId;
+      if (!cur) useThemeStore.getState().setPresetId(DEFAULT_THEME_PRESET_ID);
+    }
+  }, [themeHydrated]);
 
   const Wrapper = Platform.OS === 'web' ? View : GestureHandlerRootView;
 

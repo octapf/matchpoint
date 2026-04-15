@@ -6,9 +6,11 @@ import Colors from '@/constants/Colors';
 import { authApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export default function TabLayout() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +34,7 @@ export default function TabLayout() {
       initialRouteName="feed"
       screenOptions={{
         tabBarShowLabel: true,
-        tabBarActiveTintColor: Colors.tabIconSelected,
+        tabBarActiveTintColor: tokens.tabIconSelected,
         tabBarInactiveTintColor: Colors.tabIconDefault,
         tabBarStyle: { backgroundColor: Colors.surface },
         headerStyle: { backgroundColor: Colors.background },

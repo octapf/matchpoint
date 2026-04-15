@@ -277,7 +277,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Invalid payload' });
       }
       const body = parsed.data as Record<string, unknown>;
-      const allowed = ['firstName', 'lastName', 'phone', 'gender'];
+      const allowed = ['firstName', 'lastName', 'phone', 'gender', 'themePresetId'];
       if (admin) allowed.push('role');
       const update: Record<string, unknown> = {};
       if (body.username !== undefined) {

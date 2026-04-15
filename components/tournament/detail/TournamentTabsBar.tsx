@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export type TournamentTabId = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
 
@@ -61,6 +62,7 @@ export function TournamentTabsBar({
   tabLabelStyle: unknown;
   tabLabelSelectedStyle: unknown;
 }) {
+  const { tokens } = useTheme();
   return (
     <View style={tabsSectionStyle as never}>
       <View style={divisionTabBarStyle as never} accessibilityRole="tablist">
@@ -80,7 +82,15 @@ export function TournamentTabsBar({
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Text style={[divisionTabLabelStyle as never, selected ? (divisionTabLabelSelectedStyle as never) : null]}>{label}</Text>
+              <Text
+                style={[
+                  divisionTabLabelStyle as never,
+                  selected ? (divisionTabLabelSelectedStyle as never) : null,
+                  selected ? ({ color: tokens.accentSecondary } as never) : null,
+                ]}
+              >
+                {label}
+              </Text>
             </Pressable>
           );
         })}
@@ -90,7 +100,13 @@ export function TournamentTabsBar({
         {matchProgress ? (
           <View style={[progressWrapStyle as never, { marginTop: 0, marginBottom: 10 } as never]} accessibilityRole="text">
             <View style={progressTrackStyle as never}>
-              <View style={[progressFillStyle as never, { width: `${Math.round(matchProgress.ratio * 100)}%` }]} />
+              <View
+                style={[
+                  progressFillStyle as never,
+                  { backgroundColor: tokens.accent } as never,
+                  { width: `${Math.round(matchProgress.ratio * 100)}%` },
+                ]}
+              />
             </View>
             <Text style={progressLabelStyle as never}>
               {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
@@ -105,15 +121,19 @@ export function TournamentTabsBar({
             const isWaitingListTab = tabId === 'waitinglist';
             const tabValueColor = selected
               ? isWaitingListTab
-                ? Colors.violet
-                : Colors.tabIconSelected
+                ? tokens.accentHover
+                : tokens.tabIconSelected
               : Colors.textMuted;
             const tabIconColor = selected
               ? isWaitingListTab
-                ? Colors.violet
-                : Colors.tabIconSelected
+                ? tokens.accentHover
+                : tokens.tabIconSelected
               : Colors.tabIconDefault;
-            const tabLabelColorOverride = selected && isWaitingListTab ? Colors.violet : undefined;
+            const tabLabelColorOverride = selected
+              ? isWaitingListTab
+                ? tokens.accentSecondary
+                : tokens.tabIconSelected
+              : undefined;
 
             return (
               <Pressable

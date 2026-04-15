@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import type { TournamentDivision } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 const DIV_KEYS: TournamentDivision[] = ['men', 'women', 'mixed'];
 
@@ -35,6 +36,7 @@ export function OrganizeOnlyDivisionsModal({
   confirmDisabled?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const { tokens } = useTheme();
   const list = DIV_KEYS.filter((d) => divisionsEnabled.includes(d));
 
   return (
@@ -58,7 +60,7 @@ export function OrganizeOnlyDivisionsModal({
                 <Ionicons
                   name={on ? 'checkbox' : 'square-outline'}
                   size={24}
-                  color={on ? Colors.yellow : Colors.textMuted}
+                  color={on ? tokens.accent : Colors.textMuted}
                 />
               </Pressable>
             );
@@ -142,7 +144,7 @@ const styles = StyleSheet.create({
   confirmBtn: {
     paddingVertical: 10,
     paddingHorizontal: 18,
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 10,
   },
   confirmDisabled: {

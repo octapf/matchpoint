@@ -5,9 +5,11 @@ import { useRouter, usePathname } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export default function SplashScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const hasHydratedUser = useUserStore((s) => s._hasHydrated);
@@ -58,8 +60,8 @@ export default function SplashScreen() {
     <View style={styles.container}>
       <Animated.View style={{ opacity, transform: [{ translateY }] }}>
         <View style={styles.wordmarkRow}>
-          <Text style={styles.wordmarkMatch}>MATCH</Text>
-          <Text style={styles.wordmarkPoint}>POINT</Text>
+          <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>MATCH</Text>
+          <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>POINT</Text>
         </View>
         <Text style={styles.slogan}>Play it as it is.</Text>
       </Animated.View>
@@ -84,14 +86,14 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: Colors.yellow,
+    color: Colors.text,
     letterSpacing: -1,
   },
   wordmarkPoint: {
     fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: Colors.violet,
+    color: Colors.text,
     letterSpacing: -1,
   },
   slogan: {

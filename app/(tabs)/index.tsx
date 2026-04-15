@@ -11,6 +11,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { TournamentListRow } from '@/components/tournament/TournamentListRow';
+import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
+import { useTheme } from '@/lib/theme/useTheme';
 import { useTournaments } from '@/lib/hooks/useTournaments';
 import { config } from '@/lib/config';
 import { useLanguageStore } from '@/store/useLanguageStore';
@@ -21,6 +23,7 @@ export default function TournamentsScreen() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const storedLanguage = useLanguageStore((s) => s.language);
   const insets = useSafeAreaInsets();
   const { data: tournaments = [], isLoading, isError, error, refetch, isFetching } = useTournaments();
@@ -107,6 +110,7 @@ export default function TournamentsScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
+        <AppBackgroundGradient />
         <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         </View>
@@ -129,6 +133,7 @@ export default function TournamentsScreen() {
   if (isError) {
     return (
       <View style={[styles.container, styles.errorOuter]}>
+        <AppBackgroundGradient />
         <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         </View>
@@ -141,6 +146,7 @@ export default function TournamentsScreen() {
 
   return (
     <View style={styles.container}>
+      <AppBackgroundGradient />
       <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
         <TabScreenHeader title={t('tournaments.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
       </View>
@@ -149,17 +155,20 @@ export default function TournamentsScreen() {
         keyExtractor={(item) => item._id}
         ListEmptyComponent={listEmpty}
         renderItem={renderTournamentItem}
-        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={Colors.yellow} />}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => void refetch()} tintColor={tokens.accent} />}
         contentContainerStyle={scrollContentStyle}
         style={styles.scroll}
       />
       <Pressable
-        style={styles.fab}
+        style={[
+          styles.fab,
+          { backgroundColor: tokens.accentSecondaryMuted, borderColor: tokens.accentSecondaryOutline },
+        ]}
         onPress={() => router.push('/tournament/create')}
         accessibilityRole="button"
         accessibilityLabel={t('tournaments.create')}
       >
-        <Text style={styles.fabText}>{t('tournaments.createButton')}</Text>
+        <Text style={[styles.fabText, { color: tokens.accent }]}>{t('tournaments.createButton')}</Text>
         <View style={styles.fabShineClip} pointerEvents="none">
           <Animated.View
             style={[
@@ -192,7 +201,7 @@ export default function TournamentsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   /** Logo + title + notifications — fixed above scroll so they stay visible. */
   stickyScreenHeader: {
@@ -222,9 +231,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    backgroundColor: 'rgba(139, 92, 246, 0.5)',
     borderWidth: 2,
-    borderColor: Colors.violet,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
@@ -233,7 +240,7 @@ const styles = StyleSheet.create({
   fabText: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.yellow,
+    color: Colors.text,
     textTransform: 'uppercase',
     fontStyle: 'italic',
   },
@@ -277,7 +284,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 6 },
   emptySubtitle: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
   emptyCta: {
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: 12,

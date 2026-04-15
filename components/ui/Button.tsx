@@ -2,6 +2,8 @@ import React from 'react';
 import { Pressable, Text, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
+import { readableTextOnBackground } from '@/lib/theme/colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 type ButtonProps = {
   title: string;
@@ -14,19 +16,26 @@ type ButtonProps = {
 };
 
 export function Button({ title, onPress, variant = 'primary', fullWidth, size = 'md', iconLeft, disabled }: ButtonProps) {
+  const { tokens } = useTheme();
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
   const isDanger = variant === 'danger';
   const isDangerOutline = variant === 'dangerOutline';
   const isSmall = size === 'sm';
+  const primaryTextTone = readableTextOnBackground(tokens.accent, tokens);
+  const primaryTextColor = primaryTextTone === 'light' ? tokens.lightText : tokens.darkTextSecondary;
+  const secondaryTextTone = readableTextOnBackground(tokens.accentHover, tokens);
+  const secondaryTextColor = secondaryTextTone === 'light' ? tokens.lightText : tokens.darkTextSecondary;
   const iconColor =
     variant === 'outline'
       ? Colors.text
       : isDangerOutline
         ? Colors.danger
         : isPrimary
-          ? '#1a1a1a'
-          : '#fff';
+          ? primaryTextColor
+          : isSecondary
+            ? secondaryTextColor
+            : '#fff';
 
   return (
     <Pressable
@@ -36,8 +45,8 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
         styles.button,
         isSmall && styles.buttonSm,
         fullWidth && styles.fullWidth,
-        isPrimary && styles.primary,
-        isSecondary && styles.secondary,
+        isPrimary && { backgroundColor: tokens.accent },
+        isSecondary && { backgroundColor: tokens.accentHover },
         variant === 'outline' && styles.outline,
         isDanger && styles.danger,
         isDangerOutline && styles.dangerOutline,
@@ -59,8 +68,8 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
           style={[
             styles.text,
             isSmall && styles.textSm,
-            isPrimary && styles.primaryText,
-            isSecondary && styles.secondaryText,
+            isPrimary && { color: primaryTextColor },
+            isSecondary && { color: secondaryTextColor },
             variant === 'outline' && styles.outlineText,
             isDanger && styles.dangerText,
             isDangerOutline && styles.dangerOutlineText,
@@ -95,12 +104,6 @@ const styles = StyleSheet.create({
   },
   fullWidth: {
     width: '100%',
-  },
-  primary: {
-    backgroundColor: Colors.yellow,
-  },
-  secondary: {
-    backgroundColor: Colors.violet,
   },
   outline: {
     backgroundColor: 'transparent',
@@ -137,12 +140,6 @@ const styles = StyleSheet.create({
   textSm: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  primaryText: {
-    color: '#1a1a1a',
-  },
-  secondaryText: {
-    color: '#fff',
   },
   outlineText: {
     color: Colors.text,

@@ -1,5 +1,8 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
+import { MPMark } from '@/components/ui/MPMark';
 
 type TabScreenHeaderProps = {
   title: string;
@@ -8,15 +11,13 @@ type TabScreenHeaderProps = {
 };
 
 export function TabScreenHeader({ title, rightAccessory }: TabScreenHeaderProps) {
+  const { tokens } = useTheme();
   return (
     <View style={styles.row}>
-      <Image
-        source={require('@/assets/images/android-icon-foreground.png')}
-        style={styles.logo}
-        resizeMode="contain"
-        accessibilityLabel={title}
-      />
-      <Text style={styles.title} accessible={false}>
+      <View style={styles.logo} pointerEvents="none">
+        <MPMark size={50} accessibilityLabel={title} />
+      </View>
+      <Text style={[styles.title, { color: tokens.lightText }]} accessible={false}>
         {title}
       </Text>
       {rightAccessory ? <View style={styles.rightAccessory}>{rightAccessory}</View> : null}
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     fontStyle: 'italic',
-    color: '#ffffff',
+    color: Colors.text,
     letterSpacing: 0.2,
     flexShrink: 0,
   },

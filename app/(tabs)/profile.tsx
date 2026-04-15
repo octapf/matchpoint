@@ -10,11 +10,16 @@ import { NotificationsInboxButton } from '@/components/notifications/Notificatio
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { ThemePresetSelect } from '@/components/ui/ThemePresetSelect';
+import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
 import { getUserDisplayName } from '@/lib/utils/userDisplay';
 import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
+import { useThemeStore } from '@/store/useThemeStore';
+import type { ThemePresetId } from '@/lib/theme/colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 function isAdminUser(role: string | undefined): boolean {
   return role === 'admin';
@@ -22,18 +27,22 @@ function isAdminUser(role: string | undefined): boolean {
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const topPad = Math.max(insets.top, 12) + 8;
   const user = useUserStore((s) => s.user);
   const hasHydrated = useUserStore((s) => s._hasHydrated);
+  const setUser = useUserStore((s) => s.setUser);
   const signOut = useUserStore((s) => s.signOut);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
+  const setPresetId = useThemeStore((s) => s.setPresetId);
 
   const handleSignOut = async () => {
     try {
       await GoogleSignin.signOut();
-    } catch (_) {}
+    } catch {}
     signOut();
     router.replace('/(auth)/sign-in');
   };
@@ -48,10 +57,10 @@ export default function ProfileScreen() {
       await usersApi.deleteOne(user._id);
       try {
         await GoogleSignin.signOut();
-      } catch (_) {}
+      } catch {}
       signOut();
       router.replace('/(auth)/sign-in');
-    } catch (e) {
+    } catch {
       Alert.alert(t('common.error'), t('profile.deleteAccountFailed'));
     } finally {
       setDeletingAccount(false);
@@ -65,9 +74,32 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const persistThemePreset = async (presetId: ThemePresetId) => {
+    if (!user?._id || !config.api.isConfigured) {
+      setPresetId(presetId);
+      return;
+    }
+    setSavingTheme(true);
+    try {
+      // Optimistic UI
+      setPresetId(presetId);
+      const updated = (await usersApi.updateOne(user._id, { themePresetId: presetId })) as typeof user;
+      setUser({ ...user, ...updated });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to save theme';
+      // If the client is ahead of the deployed backend schema, the server may reject the payload
+      // with "No valid fields to update". Keep the local preset and avoid noisy alerts.
+      if (msg === 'No valid fields to update') return;
+      Alert.alert(t('common.error'), msg);
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
   if (!hasHydrated) {
     return (
       <View style={styles.container}>
+        <AppBackgroundGradient />
         <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         </View>
@@ -87,6 +119,7 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={styles.container}>
+        <AppBackgroundGradient />
         <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         </View>
@@ -102,6 +135,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
+        <AppBackgroundGradient />
         <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
           <TabScreenHeader title={t('profile.screenTitle')} rightAccessory={<NotificationsInboxButton />} />
         </View>
@@ -135,7 +169,7 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('tabs.myEntries')}
         >
-          <Ionicons name="trophy-outline" size={18} color={Colors.yellow} />
+          <Ionicons name="trophy-outline" size={18} color={tokens.accent} />
           <Text style={styles.menuRowText}>{t('tabs.myEntries')}</Text>
           <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </Pressable>
@@ -146,21 +180,35 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('profile.myData')}
         >
-          <Ionicons name="id-card-outline" size={18} color={Colors.yellow} />
+          <Ionicons name="id-card-outline" size={18} color={tokens.accent} />
           <Text style={styles.menuRowText}>{t('profile.myData')}</Text>
           <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </Pressable>
 
+        <View style={styles.themeSection}>
+          <ThemePresetSelect
+            label="Theme"
+            onChange={(id) => {
+              void persistThemePreset(id);
+            }}
+          />
+          {savingTheme ? <Text style={styles.themeHint}>Saving…</Text> : null}
+        </View>
+
         {isAdminUser(user.role) ? (
           <Pressable
-            style={[styles.menuRow, styles.menuRowAdmin]}
+            style={[
+              styles.menuRow,
+              styles.menuRowAdmin,
+              { backgroundColor: tokens.accentMuted, borderColor: tokens.accentOutline },
+            ]}
             onPress={() => router.push('/admin' as never)}
             accessibilityRole="button"
             accessibilityLabel={t('profile.openAdmin')}
           >
-            <Ionicons name="settings-outline" size={18} color={Colors.violet} />
+            <Ionicons name="settings-outline" size={18} color={tokens.accentHover} />
             <Text style={[styles.menuRowText, styles.menuRowTextAdmin]}>{t('profile.openAdmin')}</Text>
-            <Ionicons name="chevron-forward" size={18} color={Colors.violetOutline} />
+            <Ionicons name="chevron-forward" size={18} color={tokens.accentOutline} />
           </Pressable>
         ) : null}
 
@@ -192,7 +240,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   stickyScreenHeader: {
     paddingHorizontal: 16,
@@ -209,6 +257,16 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 8,
     gap: 12,
+  },
+  themeSection: {
+    marginTop: 18,
+    marginBottom: 6,
+  },
+  themeHint: {
+    marginTop: -8,
+    marginBottom: 6,
+    fontSize: 12,
+    color: Colors.textMuted,
   },
   noUserOuter: {
     paddingHorizontal: 16,
@@ -270,8 +328,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   menuRowAdmin: {
-    backgroundColor: Colors.violetMuted,
-    borderColor: Colors.violetOutline,
+    backgroundColor: Colors.surface,
+    borderColor: Colors.surfaceLight,
   },
   menuRowTextAdmin: {
     color: '#ffffff',

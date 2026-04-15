@@ -5,6 +5,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
 import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
 import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
@@ -74,13 +75,14 @@ function CategoryTabContentGradient({ category }: { category: MatchCategoryTab }
 
 /** Horizontal violet wash — classification + En vivo (same as classification). */
 function VioletFixtureTabGradient({ stopKeyPrefix }: { stopKeyPrefix: string }) {
+  const { tokens } = useTheme();
   const uid = useId().replace(/:/g, '');
   const gradId = `fxViolet${stopKeyPrefix}${uid}`;
   return (
     <Svg style={StyleSheet.absoluteFillObject} viewBox="0 0 1 1" preserveAspectRatio="none" pointerEvents="none">
       <Defs>
         <SvgLinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
-          {washStops(WASH_PEAK_VIOLET, Colors.violet, stopKeyPrefix)}
+          {washStops(WASH_PEAK_VIOLET, tokens.accentHover, stopKeyPrefix)}
         </SvgLinearGradient>
       </Defs>
       <Rect x={0} y={0} width={1} height={1} fill={`url(#${gradId})`} />
@@ -244,6 +246,7 @@ export function FixtureTab({
   /** Centered legend (no teams yet vs groups not created). */
   fixtureClassificationEmptyLegendStyle: unknown;
 }) {
+  const { tokens } = useTheme();
   const safeOpenMatch =
     onOpenMatch &&
     ((mid: string) => {
@@ -330,16 +333,16 @@ export function FixtureTab({
       m.status === 'completed'
         ? 'rgba(34,197,94,0.15)'
         : m.status === 'in_progress'
-          ? 'rgba(250,204,21,0.16)'
+          ? tokens.accentMuted
           : 'rgba(148,163,184,0.12)';
     const statusBorder =
       m.status === 'completed'
         ? 'rgba(34,197,94,0.35)'
         : m.status === 'in_progress'
-          ? 'rgba(250,204,21,0.35)'
+          ? tokens.accentOutline
           : 'rgba(148,163,184,0.25)';
     const statusColor =
-      m.status === 'completed' ? '#22c55e' : m.status === 'in_progress' ? Colors.yellow : Colors.textMuted;
+      m.status === 'completed' ? '#22c55e' : m.status === 'in_progress' ? tokens.accent : Colors.textMuted;
 
     const liveIcon =
       m.liveStage === 'category' && m.liveCategory ? (
@@ -370,13 +373,25 @@ export function FixtureTab({
             gap: 8,
           }}
         >
-          <Text style={[matchTeamNameStyle as never, m.winnerId === m.teamA._id ? (matchWinnerStyle as never) : null]}>
+          <Text
+            style={[
+              matchTeamNameStyle as never,
+              m.winnerId === m.teamA._id ? (matchWinnerStyle as never) : null,
+              m.winnerId === m.teamA._id ? ({ color: tokens.accent } as never) : null,
+            ]}
+          >
             {m.teamA.name}
           </Text>
           <Text style={matchScoreStyle as never}>
             {m.pointsA} - {m.pointsB}
           </Text>
-          <Text style={[matchTeamNameStyle as never, m.winnerId === m.teamB._id ? (matchWinnerStyle as never) : null]}>
+          <Text
+            style={[
+              matchTeamNameStyle as never,
+              m.winnerId === m.teamB._id ? (matchWinnerStyle as never) : null,
+              m.winnerId === m.teamB._id ? ({ color: tokens.accent } as never) : null,
+            ]}
+          >
             {m.teamB.name}
           </Text>
         </View>
@@ -453,7 +468,11 @@ export function FixtureTab({
                   }}
                 >
                   <Text
-                    style={[matchesSubtabLabelStyle as never, selected ? (matchesSubtabLabelSelectedStyle as never) : null]}
+                    style={[
+                      matchesSubtabLabelStyle as never,
+                      selected ? (matchesSubtabLabelSelectedStyle as never) : null,
+                      selected ? ({ color: tokens.tabIconSelected } as never) : null,
+                    ]}
                     numberOfLines={1}
                     ellipsizeMode="clip"
                     adjustsFontSizeToFit
@@ -461,11 +480,15 @@ export function FixtureTab({
                   >
                     {label}
                   </Text>
-                  <LiveMatchStatusIcon color={Colors.yellow} size={12} />
+                  <LiveMatchStatusIcon color={tokens.tabIconSelected} size={12} />
                 </View>
               ) : tab === 'classification' ? (
                 <Text
-                  style={[matchesSubtabLabelStyle as never, selected ? (matchesSubtabLabelSelectedStyle as never) : null]}
+                  style={[
+                    matchesSubtabLabelStyle as never,
+                    selected ? (matchesSubtabLabelSelectedStyle as never) : null,
+                    selected ? ({ color: tokens.accentSecondary } as never) : null,
+                  ]}
                   numberOfLines={1}
                   ellipsizeMode="clip"
                   adjustsFontSizeToFit

@@ -28,6 +28,7 @@ import {
 import { alertApiError } from '@/lib/utils/apiError';
 import { ClassificationSettingsAutosave } from '@/components/tournament/ClassificationSettingsForm';
 import { TournamentLocationField } from '@/components/location/TournamentLocationField';
+import { useTheme } from '@/lib/theme/useTheme';
 
 const MIN_DATE = new Date(2000, 0, 1);
 const SAVE_DEBOUNCE_MS = 750;
@@ -139,6 +140,7 @@ function serverMatchesForm(
 export default function AdminEditTournamentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
 
   const { data: tournament, isLoading, isError, error: loadError } = useTournament(id);
@@ -439,7 +441,7 @@ export default function AdminEditTournamentScreen() {
             </View>
             <Switch
               value={visibilityPrivate}
-              trackColor={{ false: Colors.surfaceLight, true: Colors.violet }}
+              trackColor={{ false: Colors.surfaceLight, true: tokens.accentHover }}
               thumbColor="#f4f4f5"
               onValueChange={(v) => {
                 setVisibilityPrivate(v);
@@ -465,7 +467,12 @@ export default function AdminEditTournamentScreen() {
               return (
                 <Pressable
                   key={opt.id}
-                  style={[styles.chip, styles.chipFlex, selected && styles.chipSelected]}
+                  style={[
+                    styles.chip,
+                    styles.chipFlex,
+                    selected && styles.chipSelected,
+                    selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
+                  ]}
                   onPress={() => {
                     setDivisions((prev) => {
                       if (prev.includes(opt.id)) {
@@ -503,7 +510,12 @@ export default function AdminEditTournamentScreen() {
               return (
                 <Pressable
                   key={opt.id}
-                  style={[styles.chip, styles.chipFlex, selected && styles.chipSelected]}
+                  style={[
+                    styles.chip,
+                    styles.chipFlex,
+                    selected && styles.chipSelected,
+                    selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
+                  ]}
                   onPress={() => {
                     setCategoryPreset(opt.id);
                     setTimeout(() => flushSave(), 0);
@@ -648,7 +660,7 @@ export default function AdminEditTournamentScreen() {
           </View>
           <Switch
             value={cancelledLocal}
-            trackColor={{ false: Colors.surfaceLight, true: Colors.yellow }}
+            trackColor={{ false: Colors.surfaceLight, true: tokens.accent }}
             thumbColor="#f4f4f5"
             onValueChange={(v) => {
               setCancelledLocal(v);
@@ -659,7 +671,7 @@ export default function AdminEditTournamentScreen() {
 
         {saving ? (
           <View style={styles.savingRow}>
-            <ActivityIndicator size="small" color={Colors.yellow} />
+            <ActivityIndicator size="small" color={tokens.accent} />
             <Text style={styles.savingText}>{t('editProfile.saving')}</Text>
           </View>
         ) : null}
@@ -706,8 +718,8 @@ const styles = StyleSheet.create({
   },
   chipFlex: { flex: 1, minWidth: 0 },
   chipSelected: {
-    borderColor: Colors.violet,
-    backgroundColor: Colors.violetMuted,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surfaceLight,
   },
   chipText: {
     fontSize: 12,
@@ -716,7 +728,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: Colors.textSecondary,
   },
-  chipTextSelected: { color: Colors.violet },
+  chipTextSelected: { color: Colors.text },
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },

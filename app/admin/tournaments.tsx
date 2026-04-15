@@ -9,6 +9,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { adminApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import type { Tournament } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 function isTournament(x: unknown): x is Tournament {
   return (
@@ -21,6 +22,7 @@ function isTournament(x: unknown): x is Tournament {
 
 export default function AdminTournamentsScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const [items, setItems] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export default function AdminTournamentsScreen() {
         {error ? <Text style={styles.err}>{error}</Text> : null}
         {loading && items.length === 0 ? (
           <View style={styles.loadingBlock}>
-            <ActivityIndicator size="large" color={Colors.yellow} />
+            <ActivityIndicator size="large" color={tokens.accent} />
             <Text style={styles.muted}>{t('common.loading')}</Text>
           </View>
         ) : (
@@ -76,7 +78,7 @@ export default function AdminTournamentsScreen() {
             data={items}
             keyExtractor={(row) => row._id}
             contentContainerStyle={styles.listContent}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.yellow} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.accent} />}
             ListEmptyComponent={
               !loading ? (
                 <Text style={styles.muted}>{t('admin.noTournaments')}</Text>
@@ -103,7 +105,7 @@ export default function AdminTournamentsScreen() {
                     icon="create-outline"
                     onPress={() => router.push(`/admin/tournament/${item._id}` as never)}
                     accessibilityLabel={t('admin.edit')}
-                    color={Colors.yellow}
+                    color={tokens.accent}
                   />
                 </View>
               </View>

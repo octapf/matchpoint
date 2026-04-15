@@ -13,6 +13,17 @@ export interface User {
   username?: string;
   firstName: string;
   lastName: string;
+  /** User-selected accent theme preset (server persisted). */
+  themePresetId?:
+    | 'classic'
+    | 'sport_blue'
+    | 'sport_orange'
+    | 'neon_pop'
+    | 'lavender_mist'
+    | 'blush_ice'
+    | 'candy_pink'
+    | 'forest_lime'
+    | 'sand_rose';
   /** @deprecated Legacy field; prefer `username`. Cleared when username is updated. */
   displayName?: string;
   phone?: string;

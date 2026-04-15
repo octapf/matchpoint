@@ -6,6 +6,7 @@ import type { OrganizerMenuItem } from '@/components/tournament/TournamentOrgani
 import { TournamentOrganizerMenu } from '@/components/tournament/TournamentOrganizerMenu';
 import Colors from '@/constants/Colors';
 import { formatTournamentDate } from '@/lib/utils/dateFormat';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export function TournamentHeader({
   t,
@@ -57,6 +58,7 @@ export function TournamentHeader({
   matchRulesTextStyle: unknown;
   headerTopActionsStyle: unknown;
 }) {
+  const { tokens } = useTheme();
   return (
     <View style={headerStyle as never}>
       {isCancelled ? (
@@ -68,7 +70,7 @@ export function TournamentHeader({
 
       {(tournament.visibility ?? 'public') === 'private' ? (
         <View style={privateBannerStyle as never} accessibilityRole="text">
-          <Ionicons name="lock-closed-outline" size={20} color={Colors.violet} />
+          <Ionicons name="lock-closed-outline" size={20} color={tokens.accentHover} />
           <Text style={privateBannerTextStyle as never}>{t('tournamentDetail.privateVisibilityBanner')}</Text>
         </View>
       ) : null}
@@ -86,7 +88,7 @@ export function TournamentHeader({
                     style={{ flex: 1, minWidth: 0 }}
                   >
                     <Text
-                      style={[locationStyle as never, { color: Colors.yellow, textDecorationLine: 'underline' }]}
+                      style={[locationStyle as never, { color: tokens.accent, textDecorationLine: 'underline' }]}
                       numberOfLines={2}
                     >
                       {tournament.location.trim()}

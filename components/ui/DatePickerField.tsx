@@ -13,6 +13,7 @@ import {
 import Colors from '@/constants/Colors';
 import { useTranslation } from '@/lib/i18n';
 import { formatTournamentDate, toISODate } from '@/lib/utils/dateFormat';
+import { useTheme } from '@/lib/theme/useTheme';
 
 type DatePickerFieldProps = {
   value: string;
@@ -41,6 +42,7 @@ export function DatePickerField({
   fieldStyle,
 }: DatePickerFieldProps) {
   const { t, i18n } = useTranslation();
+  const { tokens } = useTheme();
   const [show, setShow] = useState(false);
   const [mode, setMode] = useState<'calendar' | 'year'>('calendar');
   const locale = i18n.locale || 'en';
@@ -139,7 +141,7 @@ export function DatePickerField({
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('common.selectDate')}</Text>
               <Pressable onPress={() => setShow(false)}>
-                <Text style={styles.modalDone}>{t('common.done')}</Text>
+                <Text style={[styles.modalDone, { color: tokens.accent }]}>{t('common.done')}</Text>
               </Pressable>
             </View>
 
@@ -186,7 +188,7 @@ export function DatePickerField({
                   return (
                     <Pressable
                       key={y}
-                      style={[styles.yearCell, selected && styles.yearCellSelected]}
+                      style={[styles.yearCell, selected && styles.yearCellSelected, selected && { backgroundColor: tokens.accent }]}
                       onPress={() => {
                         setViewYear(y);
                         setMode('calendar');
@@ -222,6 +224,7 @@ export function DatePickerField({
                           styles.cell,
                           styles.cellDay,
                           selected && styles.cellSelected,
+                          selected && { backgroundColor: tokens.accent },
                           disabled && styles.cellDisabled,
                         ]}
                         onPress={() => !disabled && selectDay(day)}
@@ -272,7 +275,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: { fontSize: 18, fontWeight: '600', color: Colors.text },
-  modalDone: { fontSize: 16, fontWeight: '600', color: Colors.yellow },
+  modalDone: { fontSize: 16, fontWeight: '600', color: Colors.textSecondary },
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -318,7 +321,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   cellSelected: {
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
   },
   cellDisabled: {
     opacity: 0.3,
@@ -336,7 +339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  yearCellSelected: { backgroundColor: Colors.yellow },
+  yearCellSelected: { backgroundColor: Colors.surfaceLight },
   yearCellText: { fontSize: 14, fontWeight: '700', color: Colors.text },
   yearCellTextSelected: { color: '#1a1a1a' },
 });

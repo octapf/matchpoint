@@ -23,6 +23,7 @@ import { config } from '@/lib/config';
 import { queryClient } from '@/lib/queryClient';
 import type { Gender, User } from '@/types';
 import { normalizeUsername, isValidUsername } from '@/lib/validation/username';
+import { useTheme } from '@/lib/theme/useTheme';
 
 const SAVE_DEBOUNCE_MS = 750;
 
@@ -53,6 +54,7 @@ function profileMatchesUser(
 
 export default function MyDataScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const setUser = useUserStore((s) => s.setUser);
@@ -234,7 +236,7 @@ export default function MyDataScreen() {
         </View>
         <Switch
           value={phoneVisible}
-          trackColor={{ false: Colors.surfaceLight, true: Colors.yellow }}
+          trackColor={{ false: Colors.surfaceLight, true: tokens.accent }}
           thumbColor="#f4f4f5"
           onValueChange={(v) => {
             setPhoneVisible(v);
@@ -256,6 +258,7 @@ export default function MyDataScreen() {
               style={[
                 styles.genderBtn,
                 gender === g ? styles.genderBtnActive : styles.genderBtnInactive,
+                gender === g ? { backgroundColor: tokens.accentMuted } : null,
               ]}
             >
               <Text style={[styles.genderBtnText, gender === g && styles.genderBtnTextActive]}>
@@ -276,6 +279,7 @@ export default function MyDataScreen() {
               style={({ pressed }) => [
                 styles.langPill,
                 language === lang && styles.langPillActive,
+                language === lang ? { backgroundColor: tokens.accentMuted } : null,
                 pressed && styles.langPillPressed,
               ]}
             >
@@ -289,7 +293,7 @@ export default function MyDataScreen() {
 
       {saving ? (
         <View style={styles.savingRow}>
-          <ActivityIndicator size="small" color={Colors.yellow} />
+          <ActivityIndicator size="small" color={tokens.accent} />
           <Text style={styles.savingText}>{t('editProfile.saving')}</Text>
         </View>
       ) : null}
@@ -376,7 +380,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   genderBtnActive: {
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
   },
   genderBtnInactive: {
     backgroundColor: Colors.surface,
@@ -389,7 +393,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   genderBtnTextActive: {
-    color: '#1a1a1a',
+    color: Colors.text,
   },
   langSegment: {
     width: '100%',
@@ -410,7 +414,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   langPillActive: {
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
   },
   langPillPressed: {
     opacity: 0.85,
@@ -421,7 +425,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   langPillTextActive: {
-    color: '#1a1a1a',
+    color: Colors.text,
   },
   savingRow: {
     flexDirection: 'row',

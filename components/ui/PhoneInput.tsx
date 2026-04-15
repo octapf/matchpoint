@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 import {
   buildE164,
   findCountryByIso2,
@@ -32,6 +33,7 @@ type PhoneInputProps = {
 
 export function PhoneInput({ value, onChange }: PhoneInputProps) {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const fallbackIso = useMemo(() => getDefaultCountryCode(), []);
   const [iso2, setIso2] = useState(fallbackIso);
@@ -130,7 +132,7 @@ export function PhoneInput({ value, onChange }: PhoneInputProps) {
                 </View>
                 <Text style={styles.countryRowDial}>+{item.countryCallingCode}</Text>
                 {item.countryCode === iso2 ? (
-                  <Ionicons name="checkmark-circle" size={22} color={Colors.yellow} />
+                  <Ionicons name="checkmark-circle" size={22} color={tokens.accent} />
                 ) : (
                   <View style={{ width: 22 }} />
                 )}

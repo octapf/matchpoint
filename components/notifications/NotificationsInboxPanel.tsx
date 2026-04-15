@@ -8,6 +8,7 @@ import { useUserStore } from '@/store/useUserStore';
 import { useNotifications, useMarkNotificationsRead, useMarkAllNotificationsRead } from '@/lib/hooks/useNotifications';
 import { IconButton } from '@/components/ui/IconButton';
 import type { Notification } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 function notificationLabel(
   n: Notification,
@@ -28,6 +29,7 @@ type NotificationsInboxPanelProps = {
 
 export function NotificationsInboxPanel({ onClose }: NotificationsInboxPanelProps) {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const user = useUserStore((s) => s.user);
   const { data: notifications = [], isLoading } = useNotifications({ limit: 50, enabled: !!user });
@@ -58,7 +60,7 @@ export function NotificationsInboxPanel({ onClose }: NotificationsInboxPanelProp
             onPress={() => markAllRead.mutate()}
             disabled={markAllRead.isPending || unreadCount === 0}
             accessibilityLabel={t('notifications.markAllRead')}
-            color={Colors.yellow}
+            color={tokens.accent}
             size={24}
           />
           {onClose ? (
@@ -90,18 +92,18 @@ export function NotificationsInboxPanel({ onClose }: NotificationsInboxPanelProp
             return (
               <Pressable
                 onPress={() => open(item)}
-                style={[styles.row, unread ? styles.rowUnread : null]}
+                style={[styles.row, unread ? styles.rowUnread : null, unread ? { borderColor: tokens.accent } : null]}
                 accessibilityRole="button"
               >
                 <View style={styles.rowText}>
-                  <Text style={[styles.rowTitle, unread ? styles.rowTitleUnread : null]} numberOfLines={1}>
+                  <Text style={[styles.rowTitle, unread ? styles.rowTitleUnread : null, unread ? { color: tokens.accent } : null]} numberOfLines={1}>
                     {title}
                   </Text>
                   <Text style={styles.rowBody} numberOfLines={2}>
                     {body}
                   </Text>
                 </View>
-                {unread ? <View style={styles.dot} /> : null}
+                {unread ? <View style={[styles.dot, { backgroundColor: tokens.accent }]} /> : null}
               </Pressable>
             );
           }}
@@ -149,10 +151,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  rowUnread: { borderWidth: 1, borderColor: Colors.yellow },
+  rowUnread: { borderWidth: 1, borderColor: Colors.surfaceLight },
   rowText: { flex: 1, minWidth: 0 },
   rowTitle: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  rowTitleUnread: { color: Colors.yellow },
+  rowTitleUnread: { color: Colors.text },
   rowBody: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
-  dot: { width: 10, height: 10, borderRadius: 999, backgroundColor: Colors.yellow },
+  dot: { width: 10, height: 10, borderRadius: 999, backgroundColor: Colors.surfaceLight },
 });

@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 const MIN = 2;
 const MAX = 64;
@@ -32,6 +33,7 @@ type MaxTeamsSelectProps = {
 
 export function MaxTeamsSelect({ label, value, onChange }: MaxTeamsSelectProps) {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const [open, setOpen] = useState(false);
   const listRef = useRef<FlatList<number>>(null);
 
@@ -94,11 +96,11 @@ export function MaxTeamsSelect({ label, value, onChange }: MaxTeamsSelectProps) 
           }}
         >
           <Text style={[styles.optionText, isSel && styles.optionTextSelected]}>{line}</Text>
-          {isSel ? <Ionicons name="checkmark" size={22} color={Colors.yellow} /> : null}
+          {isSel ? <Ionicons name="checkmark" size={22} color={tokens.accent} /> : null}
         </Pressable>
       );
     },
-    [onChange, selected, t],
+    [onChange, selected, t, tokens.accent],
   );
 
   return (
@@ -123,7 +125,7 @@ export function MaxTeamsSelect({ label, value, onChange }: MaxTeamsSelectProps) 
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('tournaments.selectMaxTeams')}</Text>
               <Pressable onPress={() => setOpen(false)} hitSlop={12}>
-                <Text style={styles.modalDone}>{t('common.done')}</Text>
+                <Text style={[styles.modalDone, { color: tokens.accent }]}>{t('common.done')}</Text>
               </Pressable>
             </View>
             <FlatList
@@ -179,7 +181,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.surfaceLight,
   },
   modalTitle: { fontSize: 17, fontWeight: '600', color: Colors.text },
-  modalDone: { fontSize: 16, fontWeight: '600', color: Colors.yellow },
+  modalDone: { fontSize: 16, fontWeight: '600', color: Colors.textSecondary },
   listScroll: { maxHeight: 360 },
   optionRow: {
     flexDirection: 'row',
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.surfaceLight,
   },
-  optionRowSelected: { backgroundColor: 'rgba(251, 191, 36, 0.08)' },
+  optionRowSelected: { backgroundColor: 'rgba(255, 255, 255, 0.06)' },
   optionText: { fontSize: 16, color: Colors.text, flex: 1, paddingRight: 12 },
   optionTextSelected: { fontWeight: '600' },
 });

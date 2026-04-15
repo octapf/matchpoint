@@ -13,9 +13,11 @@ import { authApi } from '@/lib/api';
 import { parseAuthPayload } from '@/lib/authClient';
 import { useUserStore } from '@/store/useUserStore';
 import type { User } from '@/types';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export default function SignInScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const setSession = useUserStore((s) => s.setSession);
@@ -105,8 +107,8 @@ export default function SignInScreen() {
         <View style={styles.logoSection}>
           <View>
             <View style={styles.wordmarkRow}>
-              <Text style={styles.wordmarkMatch}>MATCH</Text>
-              <Text style={styles.wordmarkPoint}>POINT</Text>
+              <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>MATCH</Text>
+              <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>POINT</Text>
             </View>
             <Text style={styles.slogan}>Play it as it is.</Text>
           </View>
@@ -146,11 +148,15 @@ export default function SignInScreen() {
           </View>
 
           <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
-            <Text style={styles.forgotText}>{t('auth.recoverPassword')}</Text>
+            <Text style={[styles.forgotText, { color: tokens.accent }]}>{t('auth.recoverPassword')}</Text>
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.primaryButton, (pressed || loading) && styles.primaryButtonPressed]}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: tokens.accent },
+              (pressed || loading) && styles.primaryButtonPressed,
+            ]}
             onPress={handleEmailLogin}
             disabled={loading}
           >
@@ -229,20 +235,20 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: Colors.yellow,
+    color: Colors.text,
     letterSpacing: -1,
   },
   wordmarkPoint: {
     fontSize: 48,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: Colors.violet,
+    color: Colors.text,
     letterSpacing: -1,
   },
   logoText: {
     fontSize: 34,
     fontWeight: '700',
-    color: Colors.yellow,
+    color: Colors.text,
   },
   form: {
     gap: 14,
@@ -275,13 +281,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   forgotText: {
-    color: Colors.yellow,
+    color: Colors.text,
     textAlign: 'center',
     fontSize: 14,
     fontWeight: '500',
   },
   primaryButton: {
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 50,
     height: 52,
     alignItems: 'center',
@@ -359,7 +365,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   termsText: {
-    color: Colors.yellow,
+    color: Colors.textMuted,
     textAlign: 'center',
     fontSize: 13,
   },

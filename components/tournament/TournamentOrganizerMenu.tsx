@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { IconButton } from '@/components/ui/IconButton';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export type OrganizerMenuItem = {
   key: string;
@@ -29,6 +30,7 @@ const ROW_ICON = 22;
 export function TournamentOrganizerMenu({ items, menuLabel }: Props) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const { tokens } = useTheme();
 
   const close = () => setOpen(false);
 
@@ -38,7 +40,7 @@ export function TournamentOrganizerMenu({ items, menuLabel }: Props) {
         icon="menu-outline"
         onPress={() => setOpen(true)}
         accessibilityLabel={menuLabel}
-        color={Colors.yellow}
+        color={tokens.accent}
         compact
       />
       <Modal visible={open} transparent animationType="slide" onRequestClose={close}>

@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: Colors.surface,
   },
-  partnerRowSelected: { borderWidth: 1, borderColor: Colors.yellow },
+  partnerRowSelected: { borderWidth: 1, borderColor: Colors.surfaceLight },
   partnerName: { fontSize: 16, color: Colors.text, fontWeight: '600' },
   emptyPartners: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', padding: 12 },
 });

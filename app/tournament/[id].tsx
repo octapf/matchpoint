@@ -44,6 +44,7 @@ import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
 import { resolveTeamForFixture } from '@/lib/tournamentMatchDisplay';
 import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
+import { useTheme } from '@/lib/theme/useTheme';
 import {
   maxPlayerSlotsForTournament,
   normalizeGroupCount,
@@ -61,6 +62,7 @@ import {
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { openVenueInMaps } from '@/components/tournament/venueMapShared';
+import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 
 /** Same default asset as `TournamentListRow` / tournament cards in the list. */
@@ -271,6 +273,7 @@ const TAB_CONFIG: {
 
 export default function TournamentDetailScreen() {
   const { t, i18n } = useTranslation();
+  const { tokens } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
@@ -455,14 +458,14 @@ export default function TournamentDetailScreen() {
           key: 'edit',
           label: t('tournamentDetail.menuEdit'),
           icon: 'create-outline',
-          color: Colors.yellow,
+          color: tokens.accent,
           onPress: () => router.push(`/admin/tournament/${id}` as never),
         },
         {
           key: 'roster',
           label: t('tournamentDetail.menuAdd'),
           icon: 'person-add-outline',
-          color: Colors.yellow,
+          color: tokens.accent,
           onPress: () => router.push(`/admin/tournament/${id}/roster` as never),
         }
       );
@@ -502,7 +505,7 @@ export default function TournamentDetailScreen() {
           key: 'distributeGroups',
           label: t('tournamentDetail.menuCreateGroups'),
           icon: 'grid-outline',
-          color: Colors.violet,
+          color: tokens.accentHover,
           disabled: randomizeGroupsMutation.isPending,
           onPress: () =>
             Alert.alert(
@@ -526,7 +529,7 @@ export default function TournamentDetailScreen() {
           key: 'randomizeGroups',
           label: t('tournamentDetail.menuReorganizeGroups'),
           icon: 'shuffle-outline',
-          color: Colors.violet,
+          color: tokens.accentHover,
           disabled: randomizeGroupsMutation.isPending,
           onPress: () =>
             Alert.alert(
@@ -553,7 +556,7 @@ export default function TournamentDetailScreen() {
         key: 'share',
         label: t('tournamentDetail.menuShare'),
         icon: 'share-outline',
-        color: Colors.yellow,
+        color: tokens.accent,
         onPress: handleShareInvite,
       });
     }
@@ -566,7 +569,7 @@ export default function TournamentDetailScreen() {
         key: 'finalizeClassification',
         label: t('tournamentDetail.menuGenerateCategoryMatches'),
         icon: 'trophy-outline',
-        color: Colors.violet,
+        color: tokens.accentHover,
         disabled: finalizeClassificationMutation.isPending,
         onPress: () =>
           Alert.alert(
@@ -1160,7 +1163,7 @@ export default function TournamentDetailScreen() {
         key: 'organizeOnly',
         label: t('tournamentDetail.menuOrganizeOnly'),
         icon: 'clipboard-outline',
-        color: Colors.yellow,
+        color: tokens.accent,
         onPress: () =>
           setOrganizeOnlyModal({
             mode: 'self',
@@ -1662,14 +1665,15 @@ export default function TournamentDetailScreen() {
   })();
 
   return (
-    <>
+    <View style={styles.container}>
+      <AppBackgroundGradient />
     <FlashList
       data={[0]}
       keyExtractor={() => 'tournament-detail'}
       contentContainerStyle={styles.content as never}
       ListHeaderComponent={
         <>
-          <TournamentHeader
+            <TournamentHeader
             t={t}
             tournament={tournament}
             dateLabel={dateLabel}
@@ -1680,7 +1684,7 @@ export default function TournamentDetailScreen() {
             headerStyle={styles.header}
             cancelledBannerStyle={styles.cancelledBanner}
             cancelledBannerTextStyle={styles.cancelledBannerText}
-            privateBannerStyle={styles.privateBanner}
+              privateBannerStyle={[styles.privateBanner, { backgroundColor: tokens.accentMuted, borderColor: tokens.accentOutline }]}
             privateBannerTextStyle={styles.privateBannerText}
             headerTopRowStyle={styles.headerTopRow}
             dateLocationLeftStyle={styles.dateLocationLeft}
@@ -2094,12 +2098,12 @@ export default function TournamentDetailScreen() {
       onConfirm={submitOrganizeOnlyModal}
       confirmDisabled={!(organizeOnlyModal?.selected.length)}
     />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: 'transparent' },
   content: { padding: 20, paddingBottom: 40 },
   centered: { justifyContent: 'center', padding: 24 },
   skeletonBlock: { marginBottom: 24 },
@@ -2123,7 +2127,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: 6,
-    backgroundColor: Colors.yellow,
+    backgroundColor: Colors.text,
     borderRadius: 999,
   },
   progressLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' },
@@ -2169,7 +2173,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: Colors.textMuted,
   },
-  divisionTabLabelSelected: { color: Colors.violet },
+  divisionTabLabelSelected: { color: Colors.text },
   cancelledBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2193,9 +2197,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -2274,7 +2278,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   tabLabelSelected: {
-    color: Colors.yellow,
+    color: Colors.text,
   },
   tabPanel: { marginBottom: 8, minHeight: 80 },
   tabPanelTight: { marginTop: -10 },
@@ -2329,7 +2333,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   matchesSubtabLabelSelected: {
-    color: Colors.violet,
+    color: Colors.text,
   },
   matchRow: {
     flexDirection: 'row',
@@ -2358,7 +2362,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   matchWinner: {
-    color: Colors.yellow,
     fontWeight: '700',
   },
   matchScore: {
@@ -2396,7 +2399,7 @@ const styles = StyleSheet.create({
   groupHeading: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.yellow,
+    color: Colors.text,
     marginBottom: 8,
     marginTop: 4,
     fontStyle: 'italic',
@@ -2406,7 +2409,7 @@ const styles = StyleSheet.create({
   bracketRoundHeading: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.yellow,
+    color: Colors.text,
     marginBottom: 8,
     marginTop: 4,
     fontStyle: 'italic',
@@ -2513,14 +2516,14 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.violetOutline,
+    borderColor: Colors.surfaceLight,
     gap: 12,
   },
   rebalanceHint: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   player: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   playerName: { fontSize: 12, color: Colors.text, lineHeight: 16 },
   playerNameSmall: { fontSize: 11, color: Colors.text, lineHeight: 14 },
-  playerNameHighlight: { color: Colors.yellow, fontWeight: '600' },
+  playerNameHighlight: { color: Colors.text, fontWeight: '600' },
   slot: { paddingVertical: 2, paddingHorizontal: 6, minHeight: 26, justifyContent: 'center', backgroundColor: Colors.surfaceLight, borderRadius: 4 },
   slotText: { fontSize: 11, color: Colors.textMuted },
   actions: { gap: 12 },
@@ -2541,7 +2544,7 @@ const styles = StyleSheet.create({
   /** Shown in Waiting list tab below the empty-state placeholder (or above the list). */
   waitlistAlreadyInTeamHint: {
     fontSize: 14,
-    color: Colors.yellow,
+    color: Colors.textMuted,
     marginTop: 12,
     textAlign: 'left',
     fontStyle: 'italic',
@@ -2601,7 +2604,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   tournamentLocationLink: {
-    color: Colors.yellow,
+    color: TOURNAMENT_CONFIG_ON_CARD,
     textDecorationLine: 'underline',
   },
   playerRow: {
@@ -2615,8 +2618,8 @@ const styles = StyleSheet.create({
   },
   /** Organizers — palette `violet` via `violetMuted` / `violetOutline`. */
   playerRowOrganizer: {
-    backgroundColor: Colors.violetMuted,
-    borderColor: Colors.violetOutline,
+    backgroundColor: Colors.surfaceLight,
+    borderColor: Colors.surfaceLight,
   },
   playerRowTop: {
     flexDirection: 'row',
@@ -2636,7 +2639,7 @@ const styles = StyleSheet.create({
   playerRowName: { fontSize: 13, fontWeight: '700', color: Colors.text },
   orgBadge: {
     fontSize: 10,
-    color: Colors.yellow,
+    color: Colors.textSecondary,
     fontWeight: '600',
     marginTop: 2,
   },

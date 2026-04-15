@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '@/lib/i18n';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 type TournamentStatsBlockProps = {
   currentPlayers: number;
@@ -33,11 +34,12 @@ export function TournamentStatsBlock({
   horizontal,
 }: TournamentStatsBlockProps) {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const iconSize = compact ? 14 : 16;
   /** Same width for every row so glyphs + “WL” line up with the value column. */
   const iconColWidth = compact ? 18 : 20;
-  const accent = muted ? Colors.textSecondary : Colors.yellow;
-  const waitlistColor = muted ? Colors.textSecondary : Colors.violet;
+  const accent = muted ? Colors.textSecondary : tokens.accent;
+  const waitlistColor = muted ? Colors.textSecondary : tokens.accentSecondary;
   const lineStyle = [styles.line, compact && styles.lineCompact, muted && styles.lineMuted];
   const iconColStyle = [styles.iconCol, { width: iconColWidth, minHeight: iconSize }];
 
@@ -81,7 +83,7 @@ export function TournamentStatsBlock({
           accessibilityLabel={t('tournaments.statsWaitlist', { count: waitlistCount })}
         >
           <Text style={[styles.wlMark, compact && styles.wlMarkCompact, { color: waitlistColor }]}>WL</Text>
-          <Text style={[cellLine, !muted && styles.waitlistLine]}>{waitlistCount}</Text>
+          <Text style={[cellLine, { color: muted ? Colors.textSecondary : tokens.accentSecondary }]}>{waitlistCount}</Text>
         </View>
       </View>
     );
@@ -135,7 +137,7 @@ export function TournamentStatsBlock({
             WL
           </Text>
         </View>
-        <Text style={[lineStyle, !muted && styles.waitlistLine]}>{waitlistCount}</Text>
+        <Text style={[lineStyle, { color: muted ? Colors.textSecondary : tokens.accentSecondary }]}>{waitlistCount}</Text>
       </View>
     </View>
   );
@@ -159,7 +161,7 @@ const styles = StyleSheet.create({
   },
   hCellLine: {
     fontSize: 14,
-    color: Colors.yellow,
+    color: Colors.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -174,7 +176,7 @@ const styles = StyleSheet.create({
   },
   line: {
     fontSize: 14,
-    color: Colors.yellow,
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   wlMark: {
@@ -185,9 +187,6 @@ const styles = StyleSheet.create({
   },
   wlMarkCompact: {
     fontSize: 9,
-  },
-  waitlistLine: {
-    color: Colors.violet,
   },
   lineCompact: {
     fontSize: 12,

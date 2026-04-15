@@ -6,6 +6,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import type { Entry, User } from '@/types';
 import Colors from '@/constants/Colors';
+import { useTheme } from '@/lib/theme/useTheme';
 
 export function PlayersTab({
   t,
@@ -59,6 +60,7 @@ export function PlayersTab({
   orgBadgeStyle: unknown;
   playerRowRightStyle: unknown;
 }) {
+  const { tokens } = useTheme();
   const header =
     organizeOnlyUserIds.length > 0 ? (
       <View style={{ marginBottom: 12 }}>
@@ -105,7 +107,7 @@ export function PlayersTab({
                       onPress={() => onDemoteOrganizeOnly(uid, playerName)}
                       disabled={mutationBusy}
                       accessibilityLabel={t('tournamentDetail.removeOrganizer')}
-                      color={Colors.violet}
+                      color={tokens.accentHover}
                       compact
                     />
                   ) : null}
@@ -171,7 +173,7 @@ export function PlayersTab({
                     onPress={() => (isOrg ? onDemoteOrganizer(entry.userId, playerName) : onPromoteOrganizer(entry.userId, playerName))}
                     disabled={mutationBusy}
                     accessibilityLabel={isOrg ? t('tournamentDetail.removeOrganizer') : t('tournamentDetail.makeOrganizer')}
-                    color={isOrg ? Colors.violet : Colors.textMuted}
+                    color={isOrg ? tokens.accentHover : Colors.textMuted}
                     compact
                   />
                 ) : null}

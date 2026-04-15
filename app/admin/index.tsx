@@ -14,6 +14,7 @@ import { adminApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import { Button } from '@/components/ui/Button';
 import { AdminNavRow } from '@/components/admin/AdminNavRow';
+import { useTheme } from '@/lib/theme/useTheme';
 
 function StatTile({ label, value }: { label: string; value: number }) {
   return (
@@ -26,6 +27,7 @@ function StatTile({ label, value }: { label: string; value: number }) {
 
 export default function AdminHomeScreen() {
   const { t } = useTranslation();
+  const { tokens } = useTheme();
   const router = useRouter();
   const [stats, setStats] = useState<{ users: number; tournaments: number; entries: number; teams: number } | null>(
     null
@@ -68,7 +70,7 @@ export default function AdminHomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.yellow} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.accent} />}
     >
       <Text style={styles.subtitle}>{t('admin.overview')}</Text>
       {error ? <Text style={styles.err}>{error}</Text> : null}
@@ -107,7 +109,7 @@ export default function AdminHomeScreen() {
         </>
       ) : loading ? (
         <View style={styles.loadingBlock}>
-          <ActivityIndicator size="large" color={Colors.yellow} />
+          <ActivityIndicator size="large" color={tokens.accent} />
           <Text style={styles.muted}>{t('common.loading')}</Text>
         </View>
       ) : null}
