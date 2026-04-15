@@ -86,6 +86,7 @@ export function useUpdateTournament() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', data._id] });
+      queryClient.invalidateQueries({ queryKey: ['tournament', data._id, 'betting'] });
       queryClient.invalidateQueries({ queryKey: ['entries', { tournamentId: data._id }] });
     },
   });

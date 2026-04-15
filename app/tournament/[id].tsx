@@ -15,8 +15,8 @@ import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES, MOCK_DEV_TOURNAMENT } fro
 import { Avatar } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { GroupsTab } from '@/components/tournament/detail/GroupsTab';
-import { WaitingListTab } from '@/components/tournament/detail/WaitingListTab';
 import { PlayersTab } from '@/components/tournament/detail/PlayersTab';
+import { BetsTab } from '@/components/tournament/detail/BetsTab';
 import { TeamsTab } from '@/components/tournament/detail/TeamsTab';
 import { FixtureTab } from '@/components/tournament/detail/FixtureTab';
 import { TournamentHeader } from '@/components/tournament/detail/TournamentHeader';
@@ -35,10 +35,11 @@ import { useTeams, useDeleteTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useEntries, useCreateEntry, useDeleteEntry } from '@/lib/hooks/useEntries';
 import { useWaitlist, useJoinWaitlist, useLeaveWaitlist, useInvitePartnerFromWaitlist } from '@/lib/hooks/useWaitlist';
 import { useMatches } from '@/lib/hooks/useMatches';
+import { useTournamentBetting, usePlaceTournamentBet } from '@/lib/hooks/useTournamentBetting';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
-import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
+import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
@@ -249,7 +250,7 @@ const tournamentDetailsNavTitleStyle = {
   textTransform: 'uppercase',
 } as const;
 
-type TournamentTab = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
+type TournamentTab = 'players' | 'teams' | 'groups' | 'bets' | 'fixture';
 type DivisionTab = DivisionTabUtil;
 type MatchCategoryTab = 'Gold' | 'Silver' | 'Bronze';
 type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
@@ -261,10 +262,10 @@ const TAB_CONFIG: {
     | 'tournamentDetail.tabPlayers'
     | 'tournamentDetail.tabTeams'
     | 'tournamentDetail.tabGroups'
-    | 'tournamentDetail.tabWaitingList'
+    | 'tournamentDetail.tabBets'
     | 'tournamentDetail.tabFixture';
 }[] = [
-  { id: 'waitinglist', icon: 'time-outline', labelKey: 'tournamentDetail.tabWaitingList' },
+  { id: 'bets', icon: 'stats-chart-outline', labelKey: 'tournamentDetail.tabBets' },
   { id: 'players', icon: 'people-outline', labelKey: 'tournamentDetail.tabPlayers' },
   { id: 'teams', icon: 'shield-outline', labelKey: 'tournamentDetail.tabTeams' },
   { id: 'groups', icon: 'grid-outline', labelKey: 'tournamentDetail.tabGroups' },
@@ -321,10 +322,16 @@ export default function TournamentDetailScreen() {
   const startTournamentMutation = useStartTournament();
   const finalizeClassificationMutation = useFinalizeClassification();
   const removeTournamentPlayer = useRemoveTournamentPlayer();
+  const placeTournamentBetMutation = usePlaceTournamentBet(id);
 
   const { data: allMatches = [] } = useMatches(
     id ? { tournamentId: id } : undefined,
-    id ? { enabled: !!id, refetchIntervalMs: activeTab === 'fixture' ? 7_000 : undefined } : undefined
+    id
+      ? {
+          enabled: !!id,
+          refetchIntervalMs: activeTab === 'fixture' || activeTab === 'bets' ? 7_000 : undefined,
+        }
+      : undefined
   );
   const classificationMatches = useMemo(
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
@@ -653,6 +660,10 @@ export default function TournamentDetailScreen() {
     ? activeDivision
     : availableDivisions[0]!;
   const { data: waitlistInfo } = useWaitlist(id, currentDivision);
+  const { data: bettingSnapshot } = useTournamentBetting(id, currentDivision, {
+    enabled: !!id && activeTab === 'bets',
+    refetchIntervalMs: activeTab === 'bets' ? 7_000 : undefined,
+  });
   const divisionCount = Math.max(1, availableDivisions.length);
   const teamsPerDivisionCap = Math.max(2, Math.floor(((tournament as { maxTeams?: number } | undefined)?.maxTeams ?? 16) / divisionCount));
   const playersPerDivisionCap = maxPlayerSlotsForTournament(teamsPerDivisionCap);
@@ -670,7 +681,13 @@ export default function TournamentDetailScreen() {
   const entryUserIds = entries.map((e) => e.userId);
   const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
   const combinedUserIds = [
-    ...new Set([...allPlayerIds, ...entryUserIds, ...waitlistUserIds, ...(tournament?.organizerIds ?? [])]),
+    ...new Set([
+      ...allPlayerIds,
+      ...entryUserIds,
+      ...waitlistUserIds,
+      ...(tournament?.organizerIds ?? []),
+      ...(bettingSnapshot?.leaderboard?.map((r) => r.userId) ?? []),
+    ]),
   ];
   const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
@@ -705,13 +722,22 @@ export default function TournamentDetailScreen() {
     });
   }, [entries, userMap, teamDivisionById, currentDivision]);
 
+  /** Players tab: A–Z by visible name (same as labels), not raw username. */
   const sortedEntries = useMemo(() => {
     return [...filteredEntries].sort((a, b) => {
-      const na = getPlayerSortKey(userMap[a.userId]);
-      const nb = getPlayerSortKey(userMap[b.userId]);
-      return na.localeCompare(nb);
+      const na = getTournamentPlayerDisplayName(userMap[a.userId]).toLowerCase();
+      const nb = getTournamentPlayerDisplayName(userMap[b.userId]).toLowerCase();
+      return na.localeCompare(nb, undefined, { sensitivity: 'base' });
     });
   }, [filteredEntries, userMap]);
+
+  const canPlaceTournamentBet = useMemo(
+    () =>
+      !!userId &&
+      sortedEntries.some((e) => e.userId === userId && e.teamId) &&
+      !!(tournament as { bettingEnabled?: boolean } | undefined)?.bettingEnabled,
+    [userId, sortedEntries, tournament]
+  );
 
   /**
    * Until organizer runs Create groups (or legacy data has numeric groupIndex), show one bucket — not fake "Grupo 1".
@@ -741,8 +767,6 @@ export default function TournamentDetailScreen() {
   }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset, groupsDistributionPending]);
 
   const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
-  const filteredWaitlist = useMemo(() => waitlistInfo?.users ?? [], [waitlistInfo?.users]);
-
   const matchCategoryTabs = (() => {
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
       (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
@@ -1809,7 +1833,7 @@ export default function TournamentDetailScreen() {
               groups: `${
                 groupsDistributionPending ? `0/${groupsPerDivisionCap}` : `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
               }`,
-              waitinglist: `${filteredWaitlist.length}`,
+              bets: `${bettingSnapshot?.matches?.length ?? 0}`,
             }}
             tabsSectionStyle={styles.tabsSection}
             divisionTabBarStyle={styles.divisionTabBar}
@@ -1838,12 +1862,14 @@ export default function TournamentDetailScreen() {
           <PlayersTab
             t={t}
             sortedEntries={sortedEntries}
+            waitlistUserIds={waitlistUserIds}
             userMap={userMap}
             organizerIds={organizerIds}
+            organizerOnlyIds={tournament?.organizerOnlyIds ?? []}
             currentUserId={userId}
             hasJoined={isRegistered}
             canManageTournament={canManageTournament}
-            mutationBusy={mutationBusy}
+            mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
             onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
             onPromoteOrganizer={promoteOrganizer}
             onDemoteOrganizer={demoteOrganizer}
@@ -1851,6 +1877,20 @@ export default function TournamentDetailScreen() {
             organizeOnlyUserIds={organizeOnlyUserIds}
             onConfirmLeave={confirmLeave}
             onConfirmRemovePlayer={confirmRemovePlayer}
+            onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
+            viewerOnWaitlist={onWaitlist}
+            onInviteWaitlistUser={
+              onWaitlist && id
+                ? (toUserId) => {
+                    if (!requireOnline()) return;
+                    invitePartnerFromWaitlist.mutate(
+                      { tournamentId: id, division: currentDivision, toUserId },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                    );
+                  }
+                : undefined
+            }
+            invitePartnerPending={invitePartnerFromWaitlist.isPending}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
             playerRowOrganizerStyle={styles.playerRowOrganizer}
@@ -1860,6 +1900,7 @@ export default function TournamentDetailScreen() {
             playerRowNameStyle={styles.playerRowName}
             orgBadgeStyle={styles.orgBadge}
             playerRowRightStyle={styles.playerRowRight}
+            waitlistRankTextStyle={styles.waitlistRankText}
           />
         ) : null}
 
@@ -1976,41 +2017,29 @@ export default function TournamentDetailScreen() {
           />
         ) : null}
 
-        {activeTab === 'waitinglist' ? (
-          <WaitingListTab
+        {activeTab === 'bets' ? (
+          <BetsTab
             t={t}
-            filteredWaitlist={filteredWaitlist}
+            snapshot={bettingSnapshot ?? undefined}
             userMap={userMap}
-            organizerIds={organizerIds}
-            organizerOnlyIds={tournament?.organizerOnlyIds ?? []}
-            onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
-            canManageTournament={canManageTournament}
-            mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
-            onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
-            viewerUserId={userId}
-            viewerOnWaitlist={onWaitlist}
-            onInvitePartner={
-              onWaitlist && id
-                ? (toUserId) => {
-                    if (!requireOnline()) return;
-                    invitePartnerFromWaitlist.mutate(
-                      { tournamentId: id, division: currentDivision, toUserId },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                    );
-                  }
-                : undefined
-            }
-            invitePending={invitePartnerFromWaitlist.isPending}
-            userHasTeam={userHasTeam}
-            alreadyInTeamHintStyle={styles.waitlistAlreadyInTeamHint}
+            currentUserId={userId}
+            canBet={canPlaceTournamentBet}
+            onPlaceWinner={(matchId, teamId) => {
+              if (!requireOnline()) return;
+              placeTournamentBetMutation.mutate(
+                { matchId, kind: 'winner', pickWinnerTeamId: teamId },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.bettingPlaceFailed') }
+              );
+            }}
+            onPlaceScore={(matchId, pointsA, pointsB) => {
+              if (!requireOnline()) return;
+              placeTournamentBetMutation.mutate(
+                { matchId, kind: 'score', pickPointsA: pointsA, pickPointsB: pointsB },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.bettingPlaceFailed') }
+              );
+            }}
+            placePending={placeTournamentBetMutation.isPending}
             emptyTextStyle={styles.emptyText}
-            playerRowStyle={styles.playerRow}
-            playerRowOrganizerStyle={styles.playerRowOrganizer}
-            playerRowMainStyle={styles.playerRowMain}
-            playerRowTextStyle={styles.playerRowText}
-            playerRowNameStyle={styles.playerRowName}
-            orgBadgeStyle={styles.orgBadge}
-            waitlistRankTextStyle={styles.waitlistRankText}
           />
         ) : null}
 

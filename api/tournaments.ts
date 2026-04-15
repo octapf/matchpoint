@@ -265,6 +265,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         inviteLink,
         organizerIds,
         visibility: rawVisibility,
+        bettingEnabled: rawBettingEnabled,
+        bettingAllowWinner: rawBettingAllowWinner,
+        bettingAllowScore: rawBettingAllowScore,
+        bettingAnonymous: rawBettingAnonymous,
       } = parsed.data;
       const sDate = (startDate || date)!.trim();
       const eDate = (endDate || date || sDate).trim();
@@ -339,6 +343,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         categoryPhaseFormat: categoryPhaseFormat ?? 'single_elim',
         organizerIds: orgIds,
         groupsDistributedAt: null,
+        bettingEnabled: !!rawBettingEnabled,
+        bettingAllowWinner: rawBettingAllowWinner !== false,
+        bettingAllowScore: rawBettingAllowScore !== false,
+        bettingAnonymous: !!rawBettingAnonymous,
         createdAt: now,
         updatedAt: now,
       };

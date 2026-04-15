@@ -5,7 +5,7 @@ import type { TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
 
-export type TournamentTabId = 'players' | 'teams' | 'groups' | 'waitinglist' | 'fixture';
+export type TournamentTabId = 'players' | 'teams' | 'groups' | 'bets' | 'fixture';
 
 export function TournamentTabsBar({
   t,
@@ -118,22 +118,9 @@ export function TournamentTabsBar({
           {tabConfig.map(({ id: tabId, icon, labelKey }) => {
             const selected = activeTab === tabId;
             const tabValue = tabValueById[tabId] ?? '';
-            const isWaitingListTab = tabId === 'waitinglist';
-            const tabValueColor = selected
-              ? isWaitingListTab
-                ? tokens.accentHover
-                : tokens.tabIconSelected
-              : Colors.textMuted;
-            const tabIconColor = selected
-              ? isWaitingListTab
-                ? tokens.accentHover
-                : tokens.tabIconSelected
-              : Colors.tabIconDefault;
-            const tabLabelColorOverride = selected
-              ? isWaitingListTab
-                ? tokens.accentSecondary
-                : tokens.tabIconSelected
-              : undefined;
+            const tabValueColor = selected ? tokens.tabIconSelected : Colors.textMuted;
+            const tabIconColor = selected ? tokens.tabIconSelected : Colors.tabIconDefault;
+            const tabLabelColorOverride = selected ? tokens.tabIconSelected : undefined;
 
             return (
               <Pressable
@@ -143,9 +130,7 @@ export function TournamentTabsBar({
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
               >
-                {isWaitingListTab ? (
-                  <Text style={[waitingListMarkStyle as never, { color: tabIconColor } as never]}>WL</Text>
-                ) : tabId === 'fixture' ? (
+                {tabId === 'fixture' ? (
                   <MaterialCommunityIcons name="volleyball" size={22} color={tabIconColor} />
                 ) : (
                   <Ionicons name={icon as never} size={22} color={tabIconColor} />

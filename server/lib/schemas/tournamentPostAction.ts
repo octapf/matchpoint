@@ -17,6 +17,7 @@ export const tournamentPostActionSchema = z
       'refereePoint',
       'setServeOrder',
       'auditTournament',
+      'placeTournamentBet',
     ]),
   })
   .passthrough();

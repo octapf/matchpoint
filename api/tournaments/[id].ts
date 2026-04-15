@@ -28,6 +28,11 @@ import {
   normalizeTournamentIdForStats,
   zeroDivisionCounts,
 } from '../../server/lib/tournamentListDivisionCounts';
+import {
+  buildBettingSnapshot,
+  placeTournamentBet,
+  settleBetsForMatch,
+} from '../../server/lib/tournamentBets';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -124,6 +129,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const includeMatches = String(req.query.includeMatches ?? '') === '1';
       const includeStandings = String(req.query.includeStandings ?? '') === '1';
+      const betsDivisionRaw = typeof req.query.betsDivision === 'string' ? req.query.betsDivision.trim() : '';
+      const includeBetting =
+        betsDivisionRaw === 'men' || betsDivisionRaw === 'women' || betsDivisionRaw === 'mixed';
       let matches: unknown[] | undefined = undefined;
       if (includeMatches) {
         matches = await db
@@ -232,6 +240,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
       }
 
+      let bettingSnapshot: unknown = undefined;
+      if (includeBetting) {
+        const actorId = getSessionUserId(req);
+        let viewerIsOrg = false;
+        let viewerIsAdmin = false;
+        if (actorId && ObjectId.isValid(actorId)) {
+          viewerIsOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
+          const au = await loadActorUserWithAdminRefresh(db, actorId);
+          viewerIsAdmin = !!(au && isUserAdmin(au as { role?: string; email?: string }));
+        }
+        bettingSnapshot = await buildBettingSnapshot(
+          db,
+          id,
+          betsDivisionRaw as TournamentDivision,
+          viewerIsOrg || viewerIsAdmin
+        );
+      }
+
       return corsRes.status(200).json({
         ...serialized,
         entriesCount,
@@ -244,6 +270,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         waitlistCountByDivision,
         ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
         ...(includeStandings ? { standings, fixture } : null),
+        ...(includeBetting ? { bettingSnapshot } : null),
       });
     }
 
@@ -271,7 +298,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action !== 'claimReferee' &&
         action !== 'refereeHeartbeat' &&
         action !== 'refereePoint' &&
-        action !== 'setServeOrder'
+        action !== 'setServeOrder' &&
+        action !== 'placeTournamentBet'
       ) {
         if (!isOrg && !actorIsAdmin) {
           return corsRes.status(403).json({ error: 'Only organizers can manage this tournament' });
@@ -376,6 +404,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await removePlayerFromTournament(db, id, uid, { leaveTournament: mode === 'removeFromTournament' });
         await syncTournamentOpenFullStatus(db, id);
         return corsRes.status(200).json({ ok: true });
+      }
+
+      if (action === 'placeTournamentBet') {
+        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
+        const kindRaw = body?.kind === 'score' ? 'score' : body?.kind === 'winner' ? 'winner' : '';
+        if (!matchId || !ObjectId.isValid(matchId) || (kindRaw !== 'winner' && kindRaw !== 'score')) {
+          return corsRes.status(400).json({ error: 'Invalid bet payload' });
+        }
+        const placed = await placeTournamentBet(db, {
+          tournamentId: id,
+          actingUserId,
+          matchId,
+          kind: kindRaw,
+          pickWinnerTeamId: typeof body?.pickWinnerTeamId === 'string' ? body.pickWinnerTeamId.trim() : undefined,
+          pickPointsA: body?.pickPointsA != null ? Number(body.pickPointsA) : undefined,
+          pickPointsB: body?.pickPointsB != null ? Number(body.pickPointsB) : undefined,
+        });
+        if (!placed.ok) {
+          const code = placed.code === 409 ? 409 : 400;
+          return corsRes.status(code).json({ error: placed.error });
+        }
+        return corsRes.status(200).json({ bet: serializeDoc(placed.bet) });
       }
 
       if (action === 'updateMatch') {
@@ -582,6 +632,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const loserId = winnerId === teamAId ? teamBId : teamAId;
             await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
           }
+        }
+
+        try {
+          await settleBetsForMatch(db, id, matchId);
+        } catch (betErr) {
+          console.error('[tournaments] settleBetsForMatch', betErr);
         }
 
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
@@ -1147,6 +1203,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           void tdoc;
         }
+        try {
+          await settleBetsForMatch(db, id, matchId);
+        } catch (betErr) {
+          console.error('[tournaments] settleBetsForMatch refereePoint', betErr);
+        }
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -1316,6 +1377,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'status',
         'organizerIds',
         'visibility',
+        'bettingEnabled',
+        'bettingAllowWinner',
+        'bettingAllowScore',
+        'bettingAnonymous',
       ];
       const update: Record<string, unknown> = {};
       const curStatus = (cur as { status?: string }).status;
@@ -1327,6 +1392,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (s === 'private' || s === 'public') {
             update.visibility = s;
           }
+          continue;
+        }
+        if (
+          k === 'bettingEnabled' ||
+          k === 'bettingAllowWinner' ||
+          k === 'bettingAllowScore' ||
+          k === 'bettingAnonymous'
+        ) {
+          update[k] = !!body[k];
           continue;
         }
         if (k === 'status') {

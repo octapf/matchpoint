@@ -51,6 +51,39 @@ export type TournamentPhase = 'registration' | 'classification' | 'categories' |
 
 export type TournamentCategory = 'Gold' | 'Silver' | 'Bronze';
 
+export type TournamentBetKind = 'winner' | 'score';
+
+export interface TournamentBettingMatchRow {
+  matchId: string;
+  teamAId: string;
+  teamBId: string;
+  teamAName: string;
+  teamBName: string;
+  status: 'scheduled' | 'in_progress' | 'completed';
+  winnerPctA: number | null;
+  winnerPctB: number | null;
+  winnerCountA: number;
+  winnerCountB: number;
+  lines: Array<{
+    userId: string;
+    kind: TournamentBetKind;
+    pickWinnerTeamId?: string;
+    pickPointsA?: number;
+    pickPointsB?: number;
+    pointsAwarded?: number;
+    status?: string;
+  }> | null;
+}
+
+export interface TournamentBettingSnapshot {
+  bettingEnabled: boolean;
+  bettingAllowWinner: boolean;
+  bettingAllowScore: boolean;
+  bettingAnonymous: boolean;
+  leaderboard: { userId: string; points: number; exactHits: number }[];
+  matches: TournamentBettingMatchRow[];
+}
+
 export interface Tournament {
   _id: string;
   name: string;
@@ -143,6 +176,13 @@ export interface Tournament {
    * Populated by GET /api/tournaments list and GET /api/tournaments/:id.
    */
   waitlistCountByDivision?: Partial<Record<TournamentDivision, number>>;
+  /** Internal betting (virtual points); default false for older tournaments. */
+  bettingEnabled?: boolean;
+  bettingAllowWinner?: boolean;
+  bettingAllowScore?: boolean;
+  bettingAnonymous?: boolean;
+  /** Present when loaded with `betsDivision` query. */
+  bettingSnapshot?: TournamentBettingSnapshot;
   createdAt: string;
   updatedAt: string;
 }

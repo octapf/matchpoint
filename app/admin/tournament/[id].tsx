@@ -452,6 +452,38 @@ export default function AdminEditTournamentScreen() {
           <Text style={styles.hintInline}>{t('tournaments.visibilityHint')}</Text>
         </View>
 
+        {id && tournament ? (
+          <View style={styles.field}>
+            <Text style={styles.label}>{t('tournaments.bettingSection')}</Text>
+            {(
+              [
+                { key: 'bettingEnabled', labelKey: 'tournaments.bettingEnabled' as const },
+                { key: 'bettingAllowWinner', labelKey: 'tournaments.bettingAllowWinner' as const },
+                { key: 'bettingAllowScore', labelKey: 'tournaments.bettingAllowScore' as const },
+                { key: 'bettingAnonymous', labelKey: 'tournaments.bettingAnonymous' as const },
+              ] as const
+            ).map(({ key, labelKey }) => (
+              <View key={key} style={styles.switchRow}>
+                <View style={styles.switchTextCol}>
+                  <Text style={styles.label}>{t(labelKey)}</Text>
+                </View>
+                <Switch
+                  value={!!(tournament as unknown as Record<string, boolean>)[key]}
+                  trackColor={{ false: Colors.surfaceLight, true: tokens.accentHover }}
+                  thumbColor="#f4f4f5"
+                  onValueChange={(v) => {
+                    updateTournament.mutate(
+                      { id, [key]: v },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.failedToLoad') }
+                    );
+                  }}
+                />
+              </View>
+            ))}
+            <Text style={styles.hintInline}>{t('tournaments.bettingHint')}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.field}>
           <Text style={styles.label}>
             {t('tournaments.divisions')}

@@ -31,6 +31,10 @@ export const tournamentCreateSchema = z.object({
   inviteLink: z.string().min(1).max(512),
   organizerIds: z.array(z.string().min(1)).min(1),
   visibility: z.enum(['public', 'private']).optional(),
+  bettingEnabled: z.boolean().optional(),
+  bettingAllowWinner: z.boolean().optional(),
+  bettingAllowScore: z.boolean().optional(),
+  bettingAnonymous: z.boolean().optional(),
 })
   .refine((d) => !!(d.startDate?.trim() || d.date?.trim()), {
     message: 'Provide startDate or date',

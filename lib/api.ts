@@ -78,7 +78,10 @@ export const tournamentsApi = {
   find: (params?: { status?: string; organizerId?: string; inviteLink?: string }) =>
     apiRequest<unknown[]>('/api/tournaments', { params: params as Record<string, string> }),
 
-  findOne: (id: string) => apiRequest<unknown>(`/api/tournaments/${id}`),
+  findOne: (id: string, params?: { betsDivision?: string }) =>
+    apiRequest<unknown>(`/api/tournaments/${id}`, {
+      params: params as Record<string, string> | undefined,
+    }),
 
   insertOne: (document: Record<string, unknown>) =>
     apiRequest<unknown>('/api/tournaments', {
