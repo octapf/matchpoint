@@ -438,6 +438,7 @@
     "refereeActual": "Arbitro: %{name}",
     "takeControl": "Prendi controllo",
     "switchSidesReminder": "Cambiate di lato",
+    "matchPointBanner": "MATCH POINT",
     "refereeNotAllowed": "Solo organizzatori/admin o l’arbitro assegnato possono modificare questa partita.",
     "serveOrderTitle": "Ordine di servizio (1 → 4)",
     "swapServeA": "Scambia %{team}",

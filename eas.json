@@ -43,7 +43,7 @@
     "production": {
       "android": {
         "serviceAccountKeyPath": "./credentials/matchpoint-489600-eb02f870bad7.json",
-        "track": "production"
+        "track": "alpha"
       }
     }
   }

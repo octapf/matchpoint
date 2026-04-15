@@ -23,7 +23,9 @@ export interface User {
     | 'blush_ice'
     | 'candy_pink'
     | 'forest_lime'
-    | 'sand_rose';
+    | 'sand_rose'
+    | 'pearl_frost'
+    | 'amber_lagoon';
   /** @deprecated Legacy field; prefer `username`. Cleared when username is updated. */
   displayName?: string;
   phone?: string;
@@ -214,6 +216,8 @@ export interface Match {
     delta: 1 | -1;
     pointsA: number;
     pointsB: number;
+    /** Set on delta +1: serveIndex (0..3) before that point was applied; used to restore serve on undo. */
+    serveIndexBefore?: number;
   }[];
   /** Simple anti-spam / rate limit marker for live scoring. */
   lastPointAt?: string;

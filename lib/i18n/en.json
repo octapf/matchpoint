@@ -438,6 +438,7 @@
     "refereeActual": "Referee: %{name}",
     "takeControl": "Take control",
     "switchSidesReminder": "Switch team sides",
+    "matchPointBanner": "MATCH POINT",
     "refereeNotAllowed": "Only organizers/admins or the assigned referee can edit this match.",
     "serveOrderTitle": "Serve order (1 → 4)",
     "swapServeA": "Swap %{team}",

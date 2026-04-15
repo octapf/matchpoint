@@ -1,3 +1,4 @@
+/** Also update `server/lib/themePresetIds.ts` when adding a preset (API user PATCH allowlist). */
 export type ThemePresetId =
   | 'classic'
   | 'sport_blue'
@@ -7,7 +8,9 @@ export type ThemePresetId =
   | 'blush_ice'
   | 'candy_pink'
   | 'forest_lime'
-  | 'sand_rose';
+  | 'sand_rose'
+  | 'pearl_frost'
+  | 'amber_lagoon';
 
 export type ThemeAccentTokens = {
   /** Primary accent (buttons, highlights). */
@@ -143,8 +146,7 @@ export const THEME_PRESETS: Record<ThemePresetId, { id: ThemePresetId; label: st
   classic: {
     id: 'classic',
     label: 'Retro Duo',
-    // Match legacy palette: primary = yellow, secondary = violet
-    tokens: { ...base, ...text, ...buildAccentPair('#fbbf24', '#8b5cf6') },
+    tokens: { ...base, ...text, ...buildAccentPair('#BC6FF1', '#892CDC') },
   },
   sport_blue: {
     id: 'sport_blue',
@@ -158,8 +160,8 @@ export const THEME_PRESETS: Record<ThemePresetId, { id: ThemePresetId; label: st
   },
   neon_pop: {
     id: 'neon_pop',
-    label: 'Neon Pop',
-    tokens: { ...base, ...text, ...buildAccentPair('#08D9D6', '#FF2E63') },
+    label: 'Warm Cocoa',
+    tokens: { ...base, ...text, ...buildAccentPair('#EAC696', '#765827') },
   },
   lavender_mist: {
     id: 'lavender_mist',
@@ -179,12 +181,22 @@ export const THEME_PRESETS: Record<ThemePresetId, { id: ThemePresetId; label: st
   forest_lime: {
     id: 'forest_lime',
     label: 'Forest Lime',
-    tokens: { ...base, ...text, ...buildAccentPair('#4E9F3D', '#D8E9A8') },
+    tokens: { ...base, ...text, ...buildAccentPair('#9DF3C4', '#1FAB89') },
   },
   sand_rose: {
     id: 'sand_rose',
-    label: 'Sand Rose',
-    tokens: { ...base, ...text, ...buildAccentPair('#F1DBBF', '#AA5656') },
+    label: 'Mulberry Rose',
+    tokens: { ...base, ...text, ...buildAccentPair('#EF9F9F', '#F47C7C') },
+  },
+  pearl_frost: {
+    id: 'pearl_frost',
+    label: 'Pearl Frost',
+    tokens: { ...base, ...text, ...buildAccentPair('#FAFAFA', '#D6E0F0') },
+  },
+  amber_lagoon: {
+    id: 'amber_lagoon',
+    label: 'Amber Lagoon',
+    tokens: { ...base, ...text, ...buildAccentPair('#EE9322', '#219C90') },
   },
 };
 

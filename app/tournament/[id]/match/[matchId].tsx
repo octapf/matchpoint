@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
   Text,
@@ -19,7 +20,15 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme/useTheme';
 import { useTournament } from '@/lib/hooks/useTournaments';
-import { useClaimReferee, useMatches, useRefereeHeartbeat, useRefereePoint, useSetServeOrder, useStartMatch } from '@/lib/hooks/useMatches';
+import {
+  applyRefereeDeltaToMatch,
+  useClaimReferee,
+  useMatches,
+  useRefereeHeartbeat,
+  useRefereePoint,
+  useSetServeOrder,
+  useStartMatch,
+} from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
@@ -29,12 +38,17 @@ import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
 import { MPMark } from '@/components/ui/MPMark';
 import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
+import type { Match } from '@/types';
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
+
+/** API rate limit (~300ms between points); spacing between queued mutateAsync calls. */
+const REFEREE_POINT_QUEUE_GAP_MS = 320;
 
 export default function EditMatchScreen() {
   const { t } = useTranslation();
   const { tokens } = useTheme();
+  const queryClient = useQueryClient();
   const { id, matchId } = useLocalSearchParams<{ id: string; matchId: string }>();
   const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
@@ -44,17 +58,58 @@ export default function EditMatchScreen() {
 
   const { data: tournament } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined, id ? { enabled: !!id, refetchIntervalMs: 7_000 } : undefined);
+  /** No polling here — periodic refetch was overwriting the score while pending ops were in flight. */
+  const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined, id ? { enabled: !!id } : undefined);
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
   const refereePoint = useRefereePoint();
   const setServeOrder = useSetServeOrder();
   const refereeHeartbeat = useRefereeHeartbeat();
 
+  /** FIFO deltas not yet confirmed by the server; UI = server match + these (see `displayedMatchForPoints`). */
+  const pendingPointOpsRef = useRef<{ side: 'A' | 'B'; delta: 1 | -1 }[]>([]);
+  const [pendingVersion, setPendingVersion] = useState(0);
+  const drainPointQueueRunningRef = useRef(false);
+
+  const bumpPendingVersion = useCallback(() => {
+    setPendingVersion((v) => v + 1);
+  }, []);
+
+  useEffect(() => {
+    pendingPointOpsRef.current = [];
+    setPendingVersion((v) => v + 1);
+  }, [matchId]);
+
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
 
   const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
   const match = useMemo(() => matches.find((m) => m._id === matchId) ?? null, [matches, matchId]);
+
+  /** Same limit resolution as the API (match field, else tournament default) so validation matches the server. */
+  const matchWithPointsLimit = useMemo((): Match | null => {
+    if (!match) return null;
+    const fallbackPts = Math.max(
+      1,
+      Math.min(99, Number((tournament as { pointsToWin?: unknown } | null)?.pointsToWin ?? 21) || 21)
+    );
+    const rawMatchPts = Number((match as { pointsToWin?: unknown }).pointsToWin ?? NaN);
+    const pts = Number.isFinite(rawMatchPts)
+      ? Math.max(1, Math.min(99, rawMatchPts))
+      : fallbackPts;
+    return { ...match, pointsToWin: pts } as Match;
+  }, [match, tournament]);
+
+  /** Server snapshot + in-memory queue — avoids “counting back” when responses arrive out of order. */
+  const displayedMatchForPoints = useMemo((): Match | null => {
+    if (!matchWithPointsLimit) return null;
+    let m: Match = matchWithPointsLimit;
+    for (const op of pendingPointOpsRef.current) {
+      const n = applyRefereeDeltaToMatch(m, op.side, op.delta);
+      if (!n) break;
+      m = n;
+    }
+    return m;
+  }, [matchWithPointsLimit, pendingVersion]);
 
   const teamAPlayerIds = useMemo(() => {
     if (!match) return [] as string[];
@@ -91,7 +146,64 @@ export default function EditMatchScreen() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [startCountdown, setStartCountdown] = useState<{ seconds: number; action: 'startMatch' | 'claimReferee' } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const lastTapRef = useRef(0);
+
+  const drainPointQueue = useCallback(async () => {
+    if (!id || !matchId) return;
+    if (drainPointQueueRunningRef.current) return;
+    drainPointQueueRunningRef.current = true;
+    try {
+      while (pendingPointOpsRef.current.length > 0) {
+        /** Drop queued ops if cache already shows the match ended (avoids 400 after last point). */
+        const cachedRows = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
+        let abortedEarly = false;
+        for (const [, rows] of cachedRows) {
+          if (!rows) continue;
+          const live = rows.find((m) => m._id === matchId);
+          if (live && String((live as { status?: unknown }).status ?? '') !== 'in_progress') {
+            pendingPointOpsRef.current = [];
+            bumpPendingVersion();
+            abortedEarly = true;
+            break;
+          }
+        }
+        if (abortedEarly) break;
+
+        const op = pendingPointOpsRef.current[0]!;
+        const updatedMatch = await refereePoint.mutateAsync({ id: matchId, tournamentId: id, ...op });
+        pendingPointOpsRef.current = pendingPointOpsRef.current.slice(1);
+        bumpPendingVersion();
+        if (String((updatedMatch as { status?: unknown }).status ?? '') === 'completed') {
+          pendingPointOpsRef.current = [];
+          bumpPendingVersion();
+          break;
+        }
+        if (pendingPointOpsRef.current.length > 0) {
+          await new Promise((r) => setTimeout(r, REFEREE_POINT_QUEUE_GAP_MS));
+        }
+      }
+    } catch (err: unknown) {
+      pendingPointOpsRef.current = [];
+      bumpPendingVersion();
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      const msg = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? '');
+      if (msg.includes('slow down')) {
+        setNotice('Más lento');
+        return;
+      }
+      if (String(msg).toLowerCase().includes('concurrent')) {
+        setNotice('Reintentando…');
+        return;
+      }
+      /** Benign races: extra taps after auto-complete or over-limit while queue drains. */
+      if (msg.includes('Match is not in progress') || msg.includes('Score exceeds points limit')) {
+        return;
+      }
+      alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
+    } finally {
+      drainPointQueueRunningRef.current = false;
+    }
+  }, [id, matchId, queryClient, refereePoint, bumpPendingVersion, t]);
+
   const tapPulseA = useRef(new Animated.Value(0)).current;
   const tapPulseB = useRef(new Animated.Value(0)).current;
   /** Full panel height for single-surface +/− split (locationY vs half height) */
@@ -308,24 +420,49 @@ export default function EditMatchScreen() {
   /** Switch sides every (pointsToWin / 3) combined rally points (e.g. 15→every 5, 21→every 7). */
   const showSwitchSidesReminder = useMemo(() => {
     if (!match) return false;
-    const ptw = Math.max(
-      1,
-      Math.min(
-        99,
-        Number((match as { pointsToWin?: unknown }).pointsToWin ?? (tournament as { pointsToWin?: unknown } | null)?.pointsToWin ?? 21) || 21
-      )
-    );
+    const scoreM = displayedMatchForPoints ?? matchWithPointsLimit;
+    if (!scoreM) return false;
+    const ptw = Math.max(1, Math.min(99, Number(scoreM.pointsToWin ?? 21) || 21));
     const interval = Math.max(1, Math.floor(ptw / 3));
-    const a = Number(match.pointsA ?? 0) || 0;
-    const b = Number(match.pointsB ?? 0) || 0;
+    const a = Number(scoreM.pointsA ?? 0) || 0;
+    const b = Number(scoreM.pointsB ?? 0) || 0;
     const total = a + b;
     return (
       String((match as { status?: unknown }).status ?? '') === 'in_progress' && total > 0 && total % interval === 0
     );
-  }, [match, tournament]);
+  }, [match, tournament, displayedMatchForPoints, matchWithPointsLimit]);
+
+  /**
+   * Who would win the match if they score the next point (same rule as API: first to `pointsToWin` wins the set/match).
+   * At deuce (e.g. 20–20 at 21), both sides are on match point → `both`.
+   */
+  const matchPointSide = useMemo((): 'A' | 'B' | 'both' | null => {
+    if (!match) return null;
+    if (String((match as { status?: unknown }).status ?? '') !== 'in_progress') return null;
+    const scoreM = displayedMatchForPoints ?? matchWithPointsLimit;
+    if (!scoreM) return null;
+    const ptw = Math.max(1, Math.min(99, Number(scoreM.pointsToWin ?? 21) || 21));
+    const a = Number(scoreM.pointsA ?? 0) || 0;
+    const b = Number(scoreM.pointsB ?? 0) || 0;
+    const winnerIf = (side: 'A' | 'B'): 'A' | 'B' | null => {
+      const na = side === 'A' ? a + 1 : a;
+      const nb = side === 'B' ? b + 1 : b;
+      if (na < ptw && nb < ptw) return null;
+      if (na >= ptw || nb >= ptw) {
+        if (na === nb) return null;
+        return na > nb ? 'A' : 'B';
+      }
+      return null;
+    };
+    const aScoresWins = winnerIf('A') === 'A';
+    const bScoresWins = winnerIf('B') === 'B';
+    if (!aScoresWins && !bScoresWins) return null;
+    if (aScoresWins && bScoresWins) return 'both';
+    return aScoresWins ? 'A' : 'B';
+  }, [match, tournament, displayedMatchForPoints, matchWithPointsLimit]);
 
   useEffect(() => {
-    if (!showSwitchSidesReminder) {
+    if (!showSwitchSidesReminder && !matchPointSide) {
       switchSidesPulse.setValue(1);
       return;
     }
@@ -348,7 +485,36 @@ export default function EditMatchScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [showSwitchSidesReminder, switchSidesPulse]);
+  }, [showSwitchSidesReminder, matchPointSide, switchSidesPulse]);
+
+  /** Right side of SET row: text (clasificación / división) or medal icon for Gold–Silver–Bronce. */
+  const matchPhaseSuffix = useMemo(():
+    | { mode: 'none' }
+    | { mode: 'text'; label: string }
+    | { mode: 'medal'; category: 'Gold' | 'Silver' | 'Bronze' } => {
+    if (!match) return { mode: 'none' as const };
+    const stage = String((match as { stage?: unknown }).stage ?? '');
+    if (stage === 'classification') {
+      const gi = (match as { groupIndex?: unknown }).groupIndex;
+      const n = typeof gi === 'number' ? gi + 1 : null;
+      const base = t('tournamentDetail.matchesClassification');
+      const label = n != null ? `${base} · ${t('tournamentDetail.groupLabel')} ${n}` : base;
+      return { mode: 'text' as const, label };
+    }
+    if (stage === 'category') {
+      const cat = String((match as { category?: unknown }).category ?? '');
+      if (cat === 'Gold' || cat === 'Silver' || cat === 'Bronze') {
+        return { mode: 'medal' as const, category: cat };
+      }
+      return { mode: 'none' as const };
+    }
+    const div = (match as { division?: unknown }).division;
+    if (div === 'men') return { mode: 'text' as const, label: t('tournaments.divisionMen') };
+    if (div === 'women') return { mode: 'text' as const, label: t('tournaments.divisionWomen') };
+    if (div === 'mixed') return { mode: 'text' as const, label: t('tournaments.divisionMixed') };
+    if (div) return { mode: 'text' as const, label: String(div) };
+    return { mode: 'none' as const };
+  }, [match, t]);
 
   const canEditScore = isReferee || canManageTournament;
 
@@ -377,15 +543,8 @@ export default function EditMatchScreen() {
   const matchTeamsReady =
     isMongoObjectId(match.teamAId) && isMongoObjectId(match.teamBId) && !!teamA && !!teamB;
 
-  const livePointsA = Number(match.pointsA ?? 0) || 0;
-  const livePointsB = Number(match.pointsB ?? 0) || 0;
-  const pointsToWinLimit = Math.max(
-    1,
-    Math.min(
-      99,
-      Number((match as { pointsToWin?: unknown }).pointsToWin ?? (tournament as { pointsToWin?: unknown } | null)?.pointsToWin ?? 21) || 21
-    )
-  );
+  const livePointsA = Number(displayedMatchForPoints?.pointsA ?? match.pointsA ?? 0) || 0;
+  const livePointsB = Number(displayedMatchForPoints?.pointsB ?? match.pointsB ?? 0) || 0;
 
   const formatClock = (totalSeconds: number) => {
     const s = Math.max(0, Math.floor(totalSeconds));
@@ -399,8 +558,11 @@ export default function EditMatchScreen() {
   const clockSeconds = (() => {
     const status = String((match as { status?: unknown }).status ?? 'scheduled');
     if (status === 'completed') {
-      const dur = Number((match as { durationSeconds?: unknown }).durationSeconds ?? 0);
-      return Number.isFinite(dur) ? dur : 0;
+      let dur = Number((match as { durationSeconds?: unknown }).durationSeconds ?? 0);
+      if (!Number.isFinite(dur) || dur < 0) return 0;
+      /** Corrupt or legacy seed `durationSeconds` can be huge; cap so the clock stays readable. */
+      const maxReasonableSeconds = 24 * 3600;
+      return Math.min(dur, maxReasonableSeconds);
     }
     if (status === 'in_progress') {
       const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
@@ -411,9 +573,12 @@ export default function EditMatchScreen() {
     return 0;
   })();
 
-  const serveOrder = (match as { serveOrder?: unknown }).serveOrder as string[] | undefined;
-  const serveIndex = Number((match as { serveIndex?: unknown }).serveIndex ?? 0) || 0;
-  const servingPlayerId = String((match as { servingPlayerId?: unknown }).servingPlayerId ?? '');
+  /** While live, rotation/server follow the same projected state as the score (pending queue). */
+  const matchForServe =
+    (match as { status?: string }).status === 'in_progress' ? (displayedMatchForPoints ?? matchWithPointsLimit) : match;
+  const serveOrder = (matchForServe as { serveOrder?: unknown }).serveOrder as string[] | undefined;
+  const serveIndex = Number((matchForServe as { serveIndex?: unknown }).serveIndex ?? 0) || 0;
+  const servingPlayerId = String((matchForServe as { servingPlayerId?: unknown }).servingPlayerId ?? '');
 
   const order = (Array.isArray(serveOrder) && serveOrder.length === 4 ? serveOrder : defaultServeOrder).slice(0, 4);
 
@@ -572,16 +737,15 @@ export default function EditMatchScreen() {
       setNotice(t('common.networkError'));
       return;
     }
-    if (delta === 1) {
-      const nextA = side === 'A' ? livePointsA + 1 : livePointsA;
-      const nextB = side === 'B' ? livePointsB + 1 : livePointsB;
-      if (nextA > pointsToWinLimit || nextB > pointsToWinLimit) {
-        return;
-      }
+    if ((match as { status?: string }).status !== 'in_progress') {
+      return;
     }
-    const now = Date.now();
-    if (now - lastTapRef.current < 180) return;
-    lastTapRef.current = now;
+    const base = displayedMatchForPoints ?? matchWithPointsLimit;
+    if (!base || !applyRefereeDeltaToMatch(base, side, delta)) {
+      return;
+    }
+    pendingPointOpsRef.current = [...pendingPointOpsRef.current, { side, delta }];
+    bumpPendingVersion();
     void Haptics.selectionAsync();
     const pulse = side === 'A' ? tapPulseA : tapPulseB;
     pulse.stopAnimation();
@@ -590,23 +754,7 @@ export default function EditMatchScreen() {
       Animated.timing(pulse, { toValue: 1, duration: 90, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.timing(pulse, { toValue: 0, duration: 160, easing: Easing.in(Easing.quad), useNativeDriver: true }),
     ]).start();
-    refereePoint.mutate(
-      { id: matchId, tournamentId: id, side, delta },
-      {
-        onError: (err: any) => {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.includes('slow down')) {
-            setNotice('Más lento');
-            return;
-          }
-          if (msg.toLowerCase().includes('concurrent')) {
-            setNotice('Reintentando…');
-            return;
-          }
-          alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
-        },
-      }
-    );
+    void drainPointQueue();
   };
 
   const onScoreHalfPress = (side: 'A' | 'B', e: PressableEvent) => {
@@ -617,7 +765,16 @@ export default function EditMatchScreen() {
     handlePoint(side, delta);
   };
 
-  const topPad = Math.max(insets.top, 12) + 8;
+  const topPad = Math.max(insets.top, 8) + 2;
+
+  const matchPointBannerColor =
+    matchPointSide === 'A'
+      ? tokens.accent
+      : matchPointSide === 'B'
+        ? tokens.accentSecondary
+        : matchPointSide === 'both'
+          ? Colors.yellow
+          : '#ffffff';
 
   return (
     <View style={[styles.screen, { paddingTop: topPad }]}>
@@ -630,17 +787,10 @@ export default function EditMatchScreen() {
         }}
       />
 
-      {/* Match the Tournament screen top-left logo placement + centered header */}
+      {/* Logo only — live clock sits under the VS headline in the scroll body */}
       <View style={styles.topBar}>
         <View style={styles.topLeftLogo} pointerEvents="none">
-          <MPMark size={50} accessibilityLabel="Matchpoint" />
-        </View>
-        <View style={styles.topBarCenter}>
-          <View style={styles.timerLabels}>
-            <Text style={styles.timerLabel}>{t('tournamentDetail.timeLabel')}</Text>
-            {(match as { status?: string }).status === 'in_progress' ? <Text style={styles.timerLabel}>{t('tournamentDetail.liveLabel')}</Text> : null}
-          </View>
-          <Text style={styles.timerValue}>{formatClock(clockSeconds)}</Text>
+          <MPMark size={44} accessibilityLabel="Matchpoint" />
         </View>
       </View>
 
@@ -655,7 +805,49 @@ export default function EditMatchScreen() {
         <Text style={styles.vsSep}> VS </Text>
         <Text style={[styles.vsTeamB, { color: tokens.accentSecondary }]}>{teamBName}</Text>
       </Text>
-      <Text style={styles.setsIndicator}>SET {currentSet}/{totalSets}</Text>
+      <View style={styles.matchMetaTimerBlock}>
+        <View style={styles.timerLabels}>
+          <Text style={styles.timerLabel}>{t('tournamentDetail.timeLabel')}</Text>
+          {(match as { status?: string }).status === 'in_progress' ? (
+            <Text style={styles.timerLabel}>{t('tournamentDetail.liveLabel')}</Text>
+          ) : null}
+        </View>
+        <Text style={styles.timerValue}>{formatClock(clockSeconds)}</Text>
+      </View>
+      <View style={styles.setAndPhaseRow}>
+        <Text style={styles.setPhaseSetText} numberOfLines={1}>
+          SET {currentSet}/{totalSets}
+        </Text>
+        {matchPhaseSuffix.mode !== 'none' ? (
+          <>
+            <Text style={styles.setPhaseSep}>·</Text>
+            {matchPhaseSuffix.mode === 'medal' ? (
+              <MaterialCommunityIcons
+                name="medal-outline"
+                size={18}
+                color={
+                  matchPhaseSuffix.category === 'Gold'
+                    ? Colors.yellow
+                    : matchPhaseSuffix.category === 'Silver'
+                      ? Colors.textSecondary
+                      : '#cd7f32'
+                }
+                accessibilityLabel={t(
+                  matchPhaseSuffix.category === 'Gold'
+                    ? 'tournaments.categoryGold'
+                    : matchPhaseSuffix.category === 'Silver'
+                      ? 'tournaments.categorySilver'
+                      : 'tournaments.categoryBronze'
+                )}
+              />
+            ) : (
+              <Text style={styles.setPhaseContextText} numberOfLines={1}>
+                {matchPhaseSuffix.label}
+              </Text>
+            )}
+          </>
+        ) : null}
+      </View>
       {isCompleted ? (
         <View style={styles.endedLegendWrap}>
           <View style={styles.endedLegendPill}>
@@ -734,7 +926,7 @@ export default function EditMatchScreen() {
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('A', e)}
-                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
+                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
                   accessibilityLabel="Team A score"
                 />
@@ -812,7 +1004,7 @@ export default function EditMatchScreen() {
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('B', e)}
-                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress' || refereePoint.isPending}
+                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
                   accessibilityLabel="Team B score"
                 />
@@ -855,7 +1047,7 @@ export default function EditMatchScreen() {
       ) : null}
 
       {(match as { status?: string }).status === 'in_progress' &&
-      ((match as { refereeUserId?: unknown }).refereeUserId || showSwitchSidesReminder) ? (
+      ((match as { refereeUserId?: unknown }).refereeUserId || showSwitchSidesReminder || matchPointSide) ? (
         <View style={styles.refereeFooterBlock}>
           {(match as { refereeUserId?: unknown }).refereeUserId ? (
             <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
@@ -902,6 +1094,19 @@ export default function EditMatchScreen() {
               </Text>
             </Animated.View>
           ) : null}
+          {matchPointSide ? (
+            <Animated.View
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={t('tournamentDetail.matchPointBanner')}
+              style={[styles.matchPointBannerRow, { transform: [{ scale: switchSidesPulse }] }]}
+            >
+              <MaterialCommunityIcons name="medal" size={25} color={matchPointBannerColor} accessible={false} />
+              <Text accessible={false} style={[styles.centerText, styles.switchSidesReminder, { color: matchPointBannerColor }]}>
+                {t('tournamentDetail.matchPointBanner')}
+              </Text>
+            </Animated.View>
+          ) : null}
         </View>
       ) : null}
       </View>
@@ -926,8 +1131,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     paddingHorizontal: Platform.OS === 'android' ? 24 : 16,
-    paddingVertical: 12,
-    gap: 10,
+    paddingTop: 0,
+    paddingBottom: 12,
+    gap: 8,
   },
   stateTitle: { fontSize: 18, fontWeight: '900', color: Colors.text, textAlign: 'center' },
   hint: { color: Colors.textSecondary, marginBottom: 8 },
@@ -951,6 +1157,14 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 8,
   },
+  matchPointBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+    marginTop: 2,
+  },
   switchSidesReminder: {
     fontSize: 16,
     fontWeight: '900',
@@ -966,35 +1180,66 @@ const styles = StyleSheet.create({
   // Mirror TabScreenHeader layout: logo absolute top-left, centered content
   topBar: {
     width: '100%',
-    minHeight: 50,
-    marginBottom: 8,
+    minHeight: 46,
+    marginBottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
-  topLeftLogo: { position: 'absolute', left: 0, top: 0, height: 50, width: 50 },
-  topBarCenter: { alignItems: 'center', justifyContent: 'center' },
+  topLeftLogo: { position: 'absolute', left: 0, top: 0, height: 46, width: 46 },
   vsHeadline: {
     fontSize: 16,
     fontWeight: '900',
     fontStyle: 'italic',
     textTransform: 'uppercase',
     textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
+    marginTop: -2,
   },
   vsTeamA: { color: Colors.text, fontWeight: '900' },
   vsTeamB: { color: Colors.text, fontWeight: '900' },
   vsSep: { color: Colors.textMuted, fontWeight: '900' },
-  setsIndicator: {
-    marginTop: -2,
+  matchMetaTimerBlock: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
     marginBottom: 6,
-    textAlign: 'center',
+  },
+  setAndPhaseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignSelf: 'stretch',
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  setPhaseSetText: {
     fontSize: 12,
     fontWeight: '900',
     fontStyle: 'italic',
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+    flexShrink: 0,
+  },
+  setPhaseSep: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: Colors.textMuted,
+    opacity: 0.75,
+    flexShrink: 0,
+  },
+  setPhaseContextText: {
+    fontSize: 12,
+    fontWeight: '800',
+    fontStyle: 'italic',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    flexShrink: 1,
+    textAlign: 'center',
+    minWidth: 0,
   },
   endedLegendWrap: { alignItems: 'center', paddingBottom: 8 },
   endedLegendPill: {

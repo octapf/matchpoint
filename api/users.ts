@@ -274,7 +274,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const parsed = userPatchSchema.safeParse(raw);
       if (!parsed.success) {
-        return corsRes.status(400).json({ error: 'Invalid payload' });
+        const first = parsed.error.issues[0];
+        const hint = first ? ` (${first.path.join('.') || 'body'}: ${first.message})` : '';
+        return corsRes.status(400).json({ error: `Invalid payload${hint}` });
       }
       const body = parsed.data as Record<string, unknown>;
       const allowed = ['firstName', 'lastName', 'phone', 'gender', 'themePresetId'];

@@ -5,9 +5,35 @@ import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES } from '@/lib/mocks/devTou
 import type { Match } from '@/types';
 
 /**
+ * Find the +1 event that produced the current score (curA, curB) when `side` scored;
+ * `serveIndexBefore` was stored on new events for undo (see API `refereePoint`).
+ */
+function findServeIndexBeforeForUndo(m: Match, side: 'A' | 'B', curA: number, curB: number): number | null {
+  const events = m.scoreEvents;
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i] as {
+      delta?: unknown;
+      side?: unknown;
+      pointsA?: unknown;
+      pointsB?: unknown;
+      serveIndexBefore?: unknown;
+    };
+    if (Number(e.delta) !== 1) continue;
+    if (e.side !== side) continue;
+    if (Number(e.pointsA) !== curA || Number(e.pointsB) !== curB) continue;
+    const sib = e.serveIndexBefore;
+    if (typeof sib === 'number' && Number.isFinite(sib)) {
+      return Math.floor(sib) % 4;
+    }
+  }
+  return null;
+}
+
+/**
  * Mirrors `api/tournaments/[id].ts` `refereePoint` serve logic: on +1, advance global
- * `serveIndex` only when the receiving team wins the rally (side-out). On −1 the server
- * does not move serve — same here so optimistic rollback matches server state.
+ * `serveIndex` only when the receiving team wins the rally (side-out). On −1, serve is
+ * restored via `scoreEvents[].serveIndexBefore` when present (same as API).
  */
 function computeOptimisticServeAfterRefereePoint(
   m: Match,
@@ -31,6 +57,48 @@ function computeOptimisticServeAfterRefereePoint(
 
   const servingPlayerId = String(order[serveIndex] ?? order[0] ?? '');
   return { serveIndex, servingPlayerId };
+}
+
+/**
+ * Pure “what-if” one referee tap — used to derive UI from server match + pending ops queue.
+ * Returns null if the delta is invalid (e.g. would exceed pointsToWin on +1).
+ */
+export function applyRefereeDeltaToMatch(m: Match, side: 'A' | 'B', delta: 1 | -1): Match | null {
+  const curA = Number(m.pointsA ?? 0) || 0;
+  const curB = Number(m.pointsB ?? 0) || 0;
+  const nextA = side === 'A' ? Math.max(0, curA + delta) : curA;
+  const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
+  const pts = Math.max(1, Math.min(99, Number(m.pointsToWin ?? 21) || 21));
+  if (delta === 1 && (nextA > pts || nextB > pts)) {
+    return null;
+  }
+  if (delta === -1) {
+    const restored = findServeIndexBeforeForUndo(m, side, curA, curB);
+    const order = Array.isArray(m.serveOrder) ? m.serveOrder.map(String).filter(Boolean) : [];
+    if (restored !== null && order.length === 4) {
+      const si = restored;
+      const servingPlayerId = String(order[si] ?? order[0] ?? '');
+      return {
+        ...m,
+        pointsA: nextA,
+        pointsB: nextB,
+        serveIndex: si,
+        servingPlayerId,
+      } as Match;
+    }
+    return {
+      ...m,
+      pointsA: nextA,
+      pointsB: nextB,
+    } as Match;
+  }
+  const servePatch = computeOptimisticServeAfterRefereePoint(m, side, delta);
+  return {
+    ...m,
+    pointsA: nextA,
+    pointsB: nextB,
+    ...(servePatch ? { serveIndex: servePatch.serveIndex, servingPlayerId: servePatch.servingPlayerId } : {}),
+  } as Match;
 }
 
 export function useMatches(
@@ -91,8 +159,21 @@ export function useRefereeHeartbeat() {
   return useMutation({
     mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
       tournamentsApi.action(tournamentId, { action: 'refereeHeartbeat', matchId: id }) as Promise<Match>,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    /** Do not invalidate — refetch would overwrite live score with stale DB while taps are in flight. */
+    onSuccess: (data) => {
+      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
+        if (!old) return old;
+        return old.map((m) =>
+          m._id === data._id
+            ? ({
+                ...m,
+                refereeLockExpiresAt: (data as Match).refereeLockExpiresAt,
+                updatedAt: (data as Match).updatedAt,
+                refereeUserId: (data as Match).refereeUserId ?? m.refereeUserId,
+              } as Match)
+            : m
+        );
+      });
     },
   });
 }
@@ -160,51 +241,26 @@ export function useRefereePoint() {
         side,
         delta,
       }) as Promise<Match>,
-    onMutate: async (vars) => {
-      // Optimistic update: patch any cached match lists.
-      await queryClient.cancelQueries({ queryKey: ['matches'] });
-      const snapshots = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
-      for (const [key, prev] of snapshots) {
-        if (!prev) continue;
-        queryClient.setQueryData<Match[]>(
-          key,
-          prev.map((m) => {
-            if (m._id !== vars.id) return m;
-            const curA = Number(m.pointsA ?? 0) || 0;
-            const curB = Number(m.pointsB ?? 0) || 0;
-            const nextA = vars.side === 'A' ? Math.max(0, curA + vars.delta) : curA;
-            const nextB = vars.side === 'B' ? Math.max(0, curB + vars.delta) : curB;
-            const pts = Math.max(1, Math.min(99, Number(m.pointsToWin ?? 21) || 21));
-            if (vars.delta === 1 && (nextA > pts || nextB > pts)) {
-              return m;
-            }
-            const servePatch = computeOptimisticServeAfterRefereePoint(m, vars.side, vars.delta);
-            return {
-              ...m,
-              pointsA: nextA,
-              pointsB: nextB,
-              updatedAt: new Date().toISOString(),
-              ...(servePatch ? { serveIndex: servePatch.serveIndex, servingPlayerId: servePatch.servingPlayerId } : {}),
-            } as Match;
-          })
-        );
-      }
-      return { snapshots };
-    },
+    /**
+     * No onMutate: UI derives score from server match + pending-ops queue on the match screen.
+     * Each success applies authoritative server state in order (FIFO queue).
+     */
     retry: (failureCount, err: any) => {
       const status = typeof err?.status === 'number' ? err.status : typeof err?.response?.status === 'number' ? err.response.status : null;
+      if (status === 429 && failureCount < 8) return true;
       if (status === 409 && failureCount < 2) return true;
       return false;
     },
-    retryDelay: (attempt) => 120 * attempt,
-    onError: (_err, _vars, ctx) => {
-      // rollback optimistic cache
-      for (const [key, data] of (ctx as any)?.snapshots ?? []) {
-        queryClient.setQueryData(key, data);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    retryDelay: (attemptIndex) => (attemptIndex === 0 ? 360 : 120 * attemptIndex),
+    onSuccess: (data) => {
+      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((m) => m._id === data._id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = data;
+        return next;
+      });
     },
   });
 }

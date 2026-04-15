@@ -12,10 +12,10 @@
  *     boxes (small gap only; no medal height in non-final columns).
  *  6. Optional `userMap`: team A — avatars above the name; team B — avatars below (doubles: two photos).
  */
-import React, { useId, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, Ellipse, G, Line, LinearGradient, Path, RadialGradient, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import type { Team, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { fixtureBracketSectionTitleStyle, FIXTURE_BRACKET_SECTION_TITLE_FS } from '@/constants/fixtureSectionTitle';
@@ -52,10 +52,8 @@ const B_RADIUS   = 6;
 const B_STROKE   = 1.5;
 /** Legacy trophy size when category is unknown. */
 const B_TROPHY = 32;
-/** Large gold medal for Gold bracket (layout + render) — hero size vs Silver/Bronze. */
-const B_MEDAL_GOLD = 78;
-/** Silver / Bronze category medals (slightly smaller than gold). */
-const B_MEDAL_CATEGORY = 42;
+/** Gold / Silver / Bronze: same medal icon size in finale column. */
+const B_MEDAL_CATEGORY = 56;
 /** Gap between round title bottom and match card top (all columns). */
 const B_TRP_AFTER_LABEL = 2;
 /** Same as above — kept for readability; title→match gap is tight everywhere. */
@@ -71,87 +69,39 @@ const B_BRACKET_AVATAR_NAME_GAP = 2;
 
 const STROKE_COLOR = 'rgba(148,163,184,0.9)';
 
-/** Gold finale badge: Matchpoint violet + amber, rays, tilted disc, bold “1”. */
-const GOLD_RAY_DEG = [0, 45, 90, 135, 180, 225, 270, 315] as const;
+/** Dark “extrusion” under the medal glyph (light from top-left). */
+const MEDAL_DEPTH = {
+  Gold: '#92400e',
+  Silver: '#475569',
+  Bronze: '#5c2e0a',
+} as const;
 
-function GoldMedalSvg({ size }: { size: number }) {
-  const uid = useId().replace(/:/g, '');
-  const g = `gm${uid}`;
-  const cx = 50;
-  const cy = 46;
-  const rayLen = 36;
+/**
+ * Same `medal` icon twice: a darker layer offset SE + the face color on top + soft shadow on iOS.
+ * Reads as simple embossed metal without custom SVG.
+ */
+function MedalIcon3D({
+  size,
+  color,
+  depthColor,
+}: {
+  size: number;
+  color: string;
+  depthColor: string;
+}) {
+  const d = Math.max(1, Math.round(size * 0.045));
   return (
-    <Svg width={size} height={size} viewBox="0 0 100 100" accessibilityElementsHidden importantForAccessibility="no">
-      <Defs>
-        <RadialGradient id={`${g}Face`} cx="28%" cy="22%" r="78%" fx="22%" fy="18%">
-          <Stop offset="0%" stopColor="#FFFEF5" />
-          <Stop offset="28%" stopColor="#FFE047" />
-          <Stop offset="52%" stopColor="#F59E0B" />
-          <Stop offset="78%" stopColor="#B45309" />
-          <Stop offset="100%" stopColor="#713F12" />
-        </RadialGradient>
-        <LinearGradient id={`${g}Rim`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor="#FEF9C3" />
-          <Stop offset="40%" stopColor="#EAB308" />
-          <Stop offset="100%" stopColor="#422006" />
-        </LinearGradient>
-        <LinearGradient id={`${g}Ribbon`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor="#a78bfa" />
-          <Stop offset="45%" stopColor="#7c3aed" />
-          <Stop offset="100%" stopColor="#3b0764" />
-        </LinearGradient>
-        <LinearGradient id={`${g}RibbonFold`} x1="0.5" y1="0" x2="0.5" y2="1">
-          <Stop offset="0%" stopColor="#c4b5fd" />
-          <Stop offset="100%" stopColor="#4c1d95" />
-        </LinearGradient>
-      </Defs>
-      {/* Ribbon — brand violet, folds peek below disc */}
-      <Path
-        d="M 12 88 L 24 48 L 38 56 L 50 50 L 62 56 L 76 48 L 88 88 L 72 100 L 50 92 L 28 100 Z"
-        fill={`url(#${g}Ribbon)`}
-      />
-      <Path d="M 24 48 L 50 58 L 38 72 L 22 62 Z" fill={`url(#${g}RibbonFold)`} opacity={0.95} />
-      <Path d="M 76 48 L 50 58 L 62 72 L 78 62 Z" fill={`url(#${g}RibbonFold)`} opacity={0.95} />
-      {/* Champion rays */}
-      {GOLD_RAY_DEG.map((deg) => {
-        const rad = (deg * Math.PI) / 180 - Math.PI / 2;
-        return (
-          <Line
-            key={deg}
-            x1={cx}
-            y1={cy}
-            x2={cx + rayLen * Math.cos(rad)}
-            y2={cy + rayLen * Math.sin(rad)}
-            stroke="#fbbf24"
-            strokeOpacity={0.42}
-            strokeWidth={3.5}
-            strokeLinecap="round"
-          />
-        );
-      })}
-      <Circle cx={cx} cy={cy} r={38} fill="#fbbf24" opacity={0.12} />
-      <G transform={`rotate(-7 ${cx} ${cy})`}>
-        <Circle cx={cx} cy={cy} r={31} fill={`url(#${g}Face)`} stroke={`url(#${g}Rim)`} strokeWidth={3.2} />
-        <Ellipse cx={38} cy={34} rx={18} ry={14} fill="#FFFFFF" opacity={0.3} />
-        <Circle cx={cx} cy={cy} r={22} fill="none" stroke="#FEF3C7" strokeWidth={1.5} opacity={0.55} />
-        <SvgText
-          x={cx}
-          y={cy + 11}
-          fontSize={32}
-          fontWeight="800"
-          fill="#4c1d95"
-          textAnchor="middle"
-          stroke="#fef08a"
-          strokeWidth={1.2}
-        >
-          1
-        </SvgText>
-      </G>
-      {/* Sparkles */}
-      <Path d="M 14 18 L 16 24 L 22 26 L 16 28 L 14 34 L 12 28 L 6 26 L 12 24 Z" fill="#fde68a" opacity={0.95} />
-      <Path d="M 84 22 L 86 27 L 91 29 L 86 31 L 84 36 L 82 31 L 77 29 L 82 27 Z" fill="#fde68a" opacity={0.9} />
-      <Path d="M 78 12 L 79 16 L 83 17 L 79 18 L 78 22 L 77 18 L 73 17 L 77 16 Z" fill="#fff" opacity={0.75} />
-    </Svg>
+    <View style={[styles.medal3DWrap, { width: size, height: size }]}>
+      <View
+        pointerEvents="none"
+        style={[styles.medal3DDepth, { left: d, top: d, width: size, height: size }]}
+      >
+        <MaterialCommunityIcons name="medal" size={size} color={depthColor} />
+      </View>
+      <View style={[styles.medal3DFace, { width: size, height: size }]} pointerEvents="none">
+        <MaterialCommunityIcons name="medal" size={size} color={color} />
+      </View>
+    </View>
   );
 }
 
@@ -330,8 +280,7 @@ type Layout = {
 };
 
 function bracketFinaleIconHeight(category?: 'Gold' | 'Silver' | 'Bronze'): number {
-  if (category === 'Gold') return B_MEDAL_GOLD;
-  if (category === 'Silver' || category === 'Bronze') return B_MEDAL_CATEGORY;
+  if (category === 'Gold' || category === 'Silver' || category === 'Bronze') return B_MEDAL_CATEGORY;
   return B_TROPHY;
 }
 
@@ -785,7 +734,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
           </View>
         ))}
 
-        {/* 4. Finale badge — gold medal (Gold), medals (Silver/Bronze), or trophy */}
+        {/* 4. Finale badge — same medal icon for Gold/Silver/Bronze (gold = app yellow); trophy if unknown */}
         <View
           pointerEvents="none"
           accessible={false}
@@ -798,15 +747,14 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               width: finaleIconSize,
               height: finaleIconSize,
             },
-            category === 'Gold' ? styles.goldMedalGlow : null,
           ]}
         >
           {category === 'Gold' ? (
-            <GoldMedalSvg size={finaleIconSize} />
+            <MedalIcon3D size={finaleIconSize} color={Colors.yellow} depthColor={MEDAL_DEPTH.Gold} />
           ) : category === 'Silver' ? (
-            <MaterialCommunityIcons name="medal" size={finaleIconSize} color="#C8C8D0" />
+            <MedalIcon3D size={finaleIconSize} color="#C8C8D0" depthColor={MEDAL_DEPTH.Silver} />
           ) : category === 'Bronze' ? (
-            <MaterialCommunityIcons name="medal" size={finaleIconSize} color="#CD7F32" />
+            <MedalIcon3D size={finaleIconSize} color="#CD7F32" depthColor={MEDAL_DEPTH.Bronze} />
           ) : (
             <Ionicons name="trophy" size={finaleIconSize} color={Colors.yellow} />
           )}
@@ -906,16 +854,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  /** Soft glow behind Gold medal (iOS shadow + Android elevation). */
-  goldMedalGlow: {
+  medal3DWrap: {
+    position: 'relative',
+  },
+  medal3DDepth: {
+    position: 'absolute',
+    zIndex: 0,
+  },
+  medal3DFace: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 1,
     ...Platform.select({
       ios: {
-        shadowColor: '#f59e0b',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.62,
-        shadowRadius: 14,
+        shadowColor: '#0c0a09',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.38,
+        shadowRadius: 2,
       },
-      android: { elevation: 12 },
+      android: {
+        elevation: 3,
+      },
       default: {},
     }),
   },

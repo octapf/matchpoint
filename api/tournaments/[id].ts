@@ -1028,9 +1028,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!Number.isFinite(serveIndex) || serveIndex < 0) serveIndex = 0;
         serveIndex = Math.floor(serveIndex) % 4;
 
-        // Advance server ONLY when the receiving team wins the rally (side-out).
-        // With our 1→4 global order: indices 0,2 belong to team A; 1,3 belong to team B.
-        if (delta === 1) {
+        /** Captured on +1 for scoreEvents; on -1 we restore serve from the matching +1 event (see below). */
+        let serveIndexBeforeForEvent: number | undefined;
+
+        if (delta === -1) {
+          const events = Array.isArray((match as { scoreEvents?: unknown[] }).scoreEvents)
+            ? ((match as { scoreEvents?: unknown[] }).scoreEvents as Record<string, unknown>[])
+            : [];
+          let restored: number | null = null;
+          for (let i = events.length - 1; i >= 0; i--) {
+            const e = events[i]!;
+            if (e?.delta !== 1) continue;
+            if (e.side !== side) continue;
+            if (Number(e.pointsA) !== curA || Number(e.pointsB) !== curB) continue;
+            const sib = e.serveIndexBefore;
+            if (typeof sib === 'number' && Number.isFinite(sib)) {
+              restored = Math.floor(sib) % 4;
+              break;
+            }
+          }
+          if (restored !== null) {
+            serveIndex = restored;
+          }
+        } else if (delta === 1) {
+          // Advance server ONLY when the receiving team wins the rally (side-out).
+          // With our 1→4 global order: indices 0,2 belong to team A; 1,3 belong to team B.
+          serveIndexBeforeForEvent = serveIndex;
           const servingSide: 'A' | 'B' = serveIndex % 2 === 0 ? 'A' : 'B';
           const scoringSide: 'A' | 'B' = side === 'A' ? 'A' : 'B';
           if (scoringSide !== servingSide) {
@@ -1066,6 +1089,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           delta: delta as 1 | -1,
           pointsA: nextA,
           pointsB: nextB,
+          ...(delta === 1 && typeof serveIndexBeforeForEvent === 'number'
+            ? { serveIndexBefore: serveIndexBeforeForEvent }
+            : {}),
         };
         // Validate event shape before writing.
         if (!event.userId || (event.side !== 'A' && event.side !== 'B') || (event.delta !== 1 && event.delta !== -1)) {
