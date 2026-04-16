@@ -504,6 +504,11 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
     date: '2026-07-15',
     startDate: '2026-07-15',
     endDate: '2026-07-15',
+    divisionDates: {
+      men: { startDate: '2026-07-15', endDate: '2026-07-15' },
+      women: { startDate: '2026-07-15', endDate: '2026-07-15' },
+      mixed: { startDate: '2026-07-15', endDate: '2026-07-15' },
+    },
     location: 'Barceloneta Beach',
     description: 'Seeded data for tournament / team development.',
     // Match tournament creation defaults (per division: 16 teams, 4 groups).
@@ -641,23 +646,45 @@ export async function runDevSeed(db: Db, options: { force: boolean }): Promise<D
   }
   const entryList = entryDocs.map((e) => ({ userId: e.userId, teamId: e.teamId }));
 
-  // Seed waitlist: one row per allowed division.
-  // male -> men + mixed, female -> women + mixed
-  const waitlistDocs = waitingUserIds.flatMap((playerId) => {
+  // Seed waitlist: EXACTLY one row per user, for their seeded division.
+  // This prevents stale/inconsistent states like "in a team in men" while still appearing in WL for mixed.
+  const waitlistDocs = waitingUserIds.map((playerId) => {
     const idx = userIds.indexOf(playerId);
-    const gender = idx >= 0 ? PLAYERS[idx]?.gender : undefined;
-    const divs: ('men' | 'women' | 'mixed')[] =
-      gender === 'male' ? ['men', 'mixed'] : gender === 'female' ? ['women', 'mixed'] : (['mixed'] as const);
-    return divs.map((division) => ({
+    const player = idx >= 0 ? PLAYERS[idx] : undefined;
+    const division: SeedDivision = player?.division ?? 'mixed';
+    const gender = player?.gender;
+    if (gender !== 'male' && gender !== 'female') {
+      throw new Error(`seedDevTournament invariant failed: user ${playerId} missing binary gender`);
+    }
+    if (division !== 'men' && division !== 'women' && division !== 'mixed') {
+      throw new Error(`seedDevTournament invariant failed: user ${playerId} has invalid division "${String(division)}"`);
+    }
+    return {
       tournamentId,
       division,
       userId: playerId,
       createdAt: now,
       updatedAt: now,
-    }));
+    };
   });
   if (waitlistDocs.length) {
     await waitlist.insertMany(waitlistDocs);
+  }
+  // "Registered": explicit invariant check so we don't reintroduce multi-division WL bugs.
+  {
+    const byUser = new Map<string, SeedDivision[]>();
+    for (const w of waitlistDocs) {
+      const arr = byUser.get(w.userId) ?? [];
+      arr.push(w.division);
+      byUser.set(w.userId, arr);
+    }
+    for (const [uid, divs] of byUser) {
+      if (divs.length !== 1) {
+        throw new Error(
+          `seedDevTournament invariant failed: waitlist must be 1 row per user. userId=${uid} divisions=${divs.join(',')}`
+        );
+      }
+    }
   }
 
   // Seed assigns groupIndex directly; set this so DB matches tournaments that completed "Create groups."

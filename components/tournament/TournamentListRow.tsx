@@ -19,7 +19,7 @@ const BRONZE = '#cd7f32';
 /** Matches `cardConfigText` so row icons align with label color on the card image. */
 const CARD_CONFIG_ICON_COLOR = 'rgba(255, 255, 255, 0.92)';
 
-const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg.png');
+const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg-bw.png');
 
 export type TournamentListRowProps = {
   tournament: Tournament;
@@ -157,6 +157,8 @@ function TournamentListRowInner({
                 <TournamentStatsBlock
                   compact
                   horizontal
+                  showLabels={variant === 'home'}
+                  textColor={variant === 'home' ? Colors.text : undefined}
                   muted={isCancelled}
                   currentPlayers={
                     playersByDivision?.[division] ?? splitAcrossDivisions(currentPlayers, divisionCount, idx)
@@ -259,6 +261,7 @@ const styles = StyleSheet.create({
   },
   homeImage: {
     borderRadius: 12,
+    opacity: 1,
   },
   cardBgScrim: {
     ...StyleSheet.absoluteFillObject,
@@ -294,6 +297,7 @@ const styles = StyleSheet.create({
   },
   feedImage: {
     borderRadius: 14,
+    opacity: 1,
   },
   feedPressable: {
     padding: 16,

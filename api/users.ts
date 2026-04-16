@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb, getMongoClient } from '../server/lib/mongodb';
-import { mergedCoverageAfterRemovingOrganizer } from '../server/lib/tournamentOrganizerDivisionCoverage';
+import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isValidUsername, normalizeUsername } from '../server/lib/usernameRules';
@@ -168,90 +167,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const existing = await col.findOne({ _id: oid });
       if (!existing) return corsRes.status(404).json({ error: 'User not found' });
 
+      // Soft-delete: keep historical data so accounts can be recovered later.
       const now = new Date().toISOString();
-      const client = await getMongoClient();
-      const session = client.startSession();
-      try {
-        let deleted = 0;
-        await session.withTransaction(async () => {
-          const tdb = client.db('matchpoint');
-          const entriesCol = tdb.collection('entries');
-          const teamsCol = tdb.collection('teams');
-          const tournamentsCol = tdb.collection('tournaments');
-          const waitlistCol = tdb.collection('waitlist');
-          const matchesCol = tdb.collection('matches');
-          const usersCol = tdb.collection('users');
-
-          await entriesCol.deleteMany({ userId: id }, { session });
-          await waitlistCol.deleteMany({ userId: id }, { session });
-
-          const teamsWithUser = await teamsCol.find({ playerIds: id }, { session }).toArray();
-          for (const team of teamsWithUser) {
-            const tid = team._id as ObjectId;
-            const teamIdStr = tid.toString();
-            await teamsCol.deleteOne({ _id: tid }, { session });
-            await entriesCol.updateMany(
-              { $or: [{ teamId: teamIdStr }, { teamId: tid }] },
-              {
-                $set: {
-                  teamId: null,
-                  status: 'joined',
-                  lookingForPartner: true,
-                  updatedAt: now,
-                },
-              },
-              { session }
-            );
-          }
-
-          const orgCursor = tournamentsCol.find({ organizerIds: id }, { session });
-          for await (const t of orgCursor) {
-            const rawOrg = (t as Record<string, unknown>).organizerIds;
-            const orgIds = Array.isArray(rawOrg) ? rawOrg.map((x) => String(x)) : [];
-            const nextIds = orgIds.filter((x) => x !== id);
-            const merged = mergedCoverageAfterRemovingOrganizer(
-              t as {
-                divisions?: unknown;
-                organizerOnlyIds?: unknown;
-                organizerOnlyCovers?: unknown;
-              },
-              nextIds,
-              id
-            );
-            await tournamentsCol.updateOne(
-              { _id: t._id },
-              {
-                $set: {
-                  organizerIds: nextIds,
-                  organizerOnlyIds: merged.organizerOnlyIds,
-                  organizerOnlyCovers: merged.organizerOnlyCovers,
-                  updatedAt: now,
-                },
-              },
-              { session }
-            );
-          }
-
-          await tournamentsCol.updateMany(
-            { organizerIds: { $size: 0 } },
-            { $set: { status: 'cancelled', updatedAt: now } },
-            { session }
-          );
-
-          await matchesCol.updateMany(
-            { refereeUserId: id },
-            { $unset: { refereeUserId: '', refereeTeamId: '' } },
-            { session }
-          );
-
-          const del = await usersCol.deleteOne({ _id: oid }, { session });
-          deleted = del.deletedCount ?? 0;
-        });
-        if (deleted === 0) return corsRes.status(404).json({ error: 'User not found' });
+      const alreadyDeletedAt = (existing as { deletedAt?: unknown }).deletedAt;
+      if (alreadyDeletedAt) {
         return corsRes.status(204).end();
-      } finally {
-        await session.endSession();
       }
+      await col.updateOne(
+        { _id: oid },
+        {
+          $set: {
+            deletedAt: now,
+            updatedAt: now,
+            deletedBy: admin && actorId !== id ? actorId : id,
+          },
+        }
+      );
+      return corsRes.status(204).end();
     }
 
     if (req.method === 'PATCH') {

@@ -166,7 +166,6 @@ export default function ProfileScreen() {
               return raw.charAt(0).toLocaleUpperCase() + raw.slice(1);
             })()}
           </Text>
-          <Text style={styles.email}>{user.email || '—'}</Text>
         </Pressable>
 
         <Pressable
@@ -191,15 +190,17 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </Pressable>
 
-        <View style={styles.themeSection}>
-          <ThemePresetSelect
-            label="Theme"
-            onChange={(id) => {
-              void persistThemePreset(id);
-            }}
-          />
-          {savingTheme ? <Text style={styles.themeHint}>Saving…</Text> : null}
-        </View>
+        <ThemePresetSelect
+          label="Theme"
+          showFieldLabel={false}
+          showLabelInInput={true}
+          fieldStyle={{ marginBottom: 0 }}
+          inputStyle={styles.menuRow}
+          onChange={(id) => {
+            void persistThemePreset(id);
+          }}
+        />
+        {savingTheme ? <Text style={styles.themeHint}>Saving…</Text> : null}
 
         {isAdminUser(user.role) ? (
           <Pressable
@@ -254,23 +255,19 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   contentBelowSticky: {
-    paddingTop: 0,
+    paddingTop: 12,
   },
   scrollView: {
     flex: 1,
   },
   actionsColumn: {
-    marginTop: 24,
-    marginBottom: 8,
+    marginTop: 0,
+    marginBottom: 10,
     gap: 12,
   },
-  themeSection: {
-    marginTop: 18,
-    marginBottom: 6,
-  },
   themeHint: {
-    marginTop: -8,
-    marginBottom: 6,
+    marginTop: 0,
+    marginBottom: 10,
     fontSize: 12,
     color: Colors.textMuted,
   },
@@ -294,7 +291,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 24,
-    paddingBottom: 48,
+    paddingBottom: 32,
   },
   hydrateSkeleton: {
     alignItems: 'center',
@@ -309,11 +306,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text,
     marginTop: 12,
-  },
-  email: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 4,
   },
   menuRow: {
     flexDirection: 'row',
@@ -344,7 +336,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginTop: 32,
+    marginTop: 18,
   },
   copyright: {
     fontSize: 12,

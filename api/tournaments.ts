@@ -250,6 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         date,
         startDate,
         endDate,
+        divisionDates,
         location,
         description,
         divisions: rawDivisions,
@@ -270,8 +271,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         bettingAllowScore: rawBettingAllowScore,
         bettingAnonymous: rawBettingAnonymous,
       } = parsed.data;
-      const sDate = (startDate || date)!.trim();
-      const eDate = (endDate || date || sDate).trim();
+      const divs = [...new Set(rawDivisions)];
+      const dd = (divisionDates ?? {}) as Record<string, { startDate: string; endDate: string } | undefined>;
+      const ranges = divs
+        .map((d) => dd[d])
+        .filter((r): r is { startDate: string; endDate: string } => !!r?.startDate && !!r?.endDate);
+      const minStart = ranges.map((r) => r.startDate.trim()).sort()[0] ?? (startDate || date || '').trim();
+      const maxEnd = ranges.map((r) => r.endDate.trim()).sort().slice(-1)[0] ?? (endDate || date || minStart).trim();
+      const sDate = minStart;
+      const eDate = maxEnd;
       const pointsToWin = Number(rawPointsToWin ?? 21);
       const setsPerMatch = Number(rawSetsPerMatch ?? 1);
       const gc = normalizeGroupCount(rawGroups);
@@ -324,9 +332,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         date: sDate,
         startDate: sDate,
         endDate: eDate,
+        divisionDates: dd,
         location,
         description: description || '',
-        divisions,
+        divisions: divs,
         categories: validCategories,
         maxTeams: mt,
         pointsToWin: Math.floor(pointsToWin),

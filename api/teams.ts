@@ -212,7 +212,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               { session }
             );
           }
-          await wc.deleteMany({ tournamentId, division: pairDivision, userId: { $in: cleanPlayerIds } }, { session });
+          // Remove from waitlist across ALL divisions for this tournament (prevents stale WL rows after forming a team).
+          await wc.deleteMany({ tournamentId, userId: { $in: cleanPlayerIds } }, { session });
         });
       } finally {
         await session.endSession();

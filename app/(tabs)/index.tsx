@@ -19,6 +19,18 @@ import { useLanguageStore } from '@/store/useLanguageStore';
 import type { Tournament } from '@/types';
 import { prefetchTournament } from '@/lib/prefetchTournament';
 
+function bumpRgbaAlpha(color: string, delta: number): string {
+  const m = color.match(/^rgba\\((\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*([0-9.]+)\\s*\\)$/i);
+  if (!m) return color;
+  const r = Number(m[1]);
+  const g = Number(m[2]);
+  const b = Number(m[3]);
+  const a = Number(m[4]);
+  if (![r, g, b, a].every((n) => Number.isFinite(n))) return color;
+  const nextA = Math.max(0, Math.min(1, a + delta));
+  return `rgba(${r}, ${g}, ${b}, ${nextA})`;
+}
+
 export default function TournamentsScreen() {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -111,7 +123,7 @@ export default function TournamentsScreen() {
   );
 
   const topPad = Math.max(insets.top, 12) + 8;
-  const scrollContentStyle = [styles.scrollContent, { paddingTop: 0 }];
+  const scrollContentStyle = [styles.scrollContent, { paddingTop: 12 }];
 
   if (isLoading) {
     return (
@@ -168,7 +180,10 @@ export default function TournamentsScreen() {
       <Pressable
         style={[
           styles.fab,
-          { backgroundColor: tokens.accentSecondaryMuted, borderColor: tokens.accentSecondaryOutline },
+          {
+            backgroundColor: bumpRgbaAlpha(tokens.accentSecondaryOutline, 0.08),
+            borderColor: tokens.accentSecondaryOutline,
+          },
         ]}
         onPress={() => router.push('/tournament/create')}
         accessibilityRole="button"

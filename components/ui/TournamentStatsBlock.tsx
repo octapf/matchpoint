@@ -19,6 +19,10 @@ type TournamentStatsBlockProps = {
   compact?: boolean;
   /** One row of stats (e.g. tournament detail); default is a vertical stack for list cards. */
   horizontal?: boolean;
+  /** Show labels below values (used on tournament list cards). */
+  showLabels?: boolean;
+  /** Optional override for label/value text color (e.g. match tournament name). */
+  textColor?: string;
 };
 
 export function TournamentStatsBlock({
@@ -32,6 +36,8 @@ export function TournamentStatsBlock({
   muted,
   compact,
   horizontal,
+  showLabels,
+  textColor,
 }: TournamentStatsBlockProps) {
   const { t } = useTranslation();
   const { tokens } = useTheme();
@@ -45,6 +51,9 @@ export function TournamentStatsBlock({
 
   if (horizontal) {
     const cellLine = [styles.hCellLine, compact && styles.lineCompact, muted && styles.lineMuted];
+    const labelStyle = [styles.hCellLabel, compact && styles.hCellLabelCompact, muted && styles.hCellLabelMuted];
+    const baseTextColor = muted ? Colors.textSecondary : (textColor ?? Colors.textSecondary);
+    const wlTextColor = baseTextColor;
     return (
       <View style={styles.wrapHorizontal}>
         <View
@@ -53,7 +62,12 @@ export function TournamentStatsBlock({
           accessibilityLabel={t('tournaments.statsPlayers', { current: currentPlayers, total: totalPlayers })}
         >
           <Ionicons name="people-outline" size={iconSize} color={accent} />
-          <Text style={cellLine}>
+          {showLabels ? (
+            <Text style={[labelStyle, { color: baseTextColor }]} numberOfLines={1}>
+              {t('tournamentDetail.tabPlayers')}
+            </Text>
+          ) : null}
+          <Text style={[cellLine, { color: baseTextColor }]}>
             {currentPlayers}/{totalPlayers}
           </Text>
         </View>
@@ -63,7 +77,12 @@ export function TournamentStatsBlock({
           accessibilityLabel={t('tournaments.statsTeams', { current: currentTeams, total: totalTeams })}
         >
           <Ionicons name="shield-outline" size={iconSize} color={accent} />
-          <Text style={cellLine}>
+          {showLabels ? (
+            <Text style={[labelStyle, { color: baseTextColor }]} numberOfLines={1}>
+              {t('tournamentDetail.tabTeams')}
+            </Text>
+          ) : null}
+          <Text style={[cellLine, { color: baseTextColor }]}>
             {currentTeams}/{totalTeams}
           </Text>
         </View>
@@ -73,7 +92,12 @@ export function TournamentStatsBlock({
           accessibilityLabel={t('tournaments.statsGroups', { current: currentGroups, total: totalGroups })}
         >
           <Ionicons name="grid-outline" size={iconSize} color={accent} />
-          <Text style={cellLine}>
+          {showLabels ? (
+            <Text style={[labelStyle, { color: baseTextColor }]} numberOfLines={1}>
+              {t('tournamentDetail.tabGroups')}
+            </Text>
+          ) : null}
+          <Text style={[cellLine, { color: baseTextColor }]}>
             {currentGroups}/{totalGroups}
           </Text>
         </View>
@@ -82,8 +106,15 @@ export function TournamentStatsBlock({
           accessibilityRole="text"
           accessibilityLabel={t('tournaments.statsWaitlist', { count: waitlistCount })}
         >
-          <Text style={[styles.wlMark, compact && styles.wlMarkCompact, { color: waitlistColor }]}>WL</Text>
-          <Text style={[cellLine, { color: muted ? Colors.textSecondary : tokens.accentSecondary }]}>{waitlistCount}</Text>
+          <Text style={[styles.wlIconText, { fontSize: iconSize, lineHeight: iconSize, color: accent }]} numberOfLines={1}>
+            WL
+          </Text>
+          {showLabels ? (
+            <Text style={[labelStyle, { color: wlTextColor }]} numberOfLines={1}>
+              {t('tournamentDetail.tabWaitingList')}
+            </Text>
+          ) : null}
+          <Text style={[cellLine, { color: wlTextColor }]}>{waitlistCount}</Text>
         </View>
       </View>
     );
@@ -165,6 +196,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  hCellLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  hCellLabelCompact: {
+    fontSize: 10,
+  },
+  hCellLabelMuted: {
+    fontWeight: '500',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -183,6 +225,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  wlIconText: {
+    fontWeight: '700',
     textAlign: 'center',
   },
   wlMarkCompact: {

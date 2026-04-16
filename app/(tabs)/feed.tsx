@@ -1,11 +1,10 @@
 import React, { useCallback, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform, RefreshControl } from 'react-native';
 import { WeatherPanelGradientLayer } from '@/components/weather/WeatherPanelGradientLayer';
-import { FlashList } from '@shopify/flash-list';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from '@/lib/i18n';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import Colors from '@/constants/Colors';
@@ -13,12 +12,10 @@ import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { TournamentListRow } from '@/components/tournament/TournamentListRow';
 import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
 import { useTheme } from '@/lib/theme/useTheme';
 import { useWeather } from '@/lib/hooks/useWeather';
 import { useTournaments } from '@/lib/hooks/useTournaments';
-import type { Tournament } from '@/types';
 import { weatherCodeToSkyKey, type WeatherPayload } from '@/lib/weather/openMeteo';
 import {
   getWeatherPanelGradient,
@@ -26,7 +23,10 @@ import {
   getWeatherPanelScrimColor,
   type WeatherPanelIconColors,
 } from '@/lib/weather/weatherPanelGradient';
-import { prefetchTournament } from '@/lib/prefetchTournament';
+import { entriesApi, tournamentsApi } from '@/lib/api';
+import type { Tournament } from '@/types';
+import { useUserStore } from '@/store/useUserStore';
+import { TournamentsCalendar } from '@/components/calendar/TournamentsCalendar';
 
 function formatHourLabel(iso: string, locale: string): string {
   try {
@@ -107,29 +107,57 @@ function WeatherGlyph({
 }
 
 export default function FeedScreen() {
-  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { tokens } = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const language = useLanguageStore((s) => s.language ?? 'en');
+  const userId = useUserStore((s) => s.user?._id ?? null);
+  const { data: tournamentsList = [] } = useTournaments();
   const { data, isLoading, isError, error, refetch, isFetching, usedDeviceLocation, refreshLocation, locationAreaName } =
     useWeather();
-  const {
-    data: tournaments = [],
-    isLoading: loadingTournaments,
-    isError: tournamentsQueryError,
-    refetch: refetchTournaments,
-    isFetching: isFetchingTournaments,
-  } = useTournaments();
+
+  const { data: myEntries = [] } = useQuery({
+    queryKey: ['entries', { userId }],
+    queryFn: async () => {
+      if (!userId) return [];
+      return (await entriesApi.find({ userId })) as unknown as { tournamentId?: string }[];
+    },
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+
+  const { data: myTournaments = [] } = useQuery({
+    queryKey: ['tournaments', { kind: 'mineByEntries', userId, ids: (myEntries ?? []).map((e) => e.tournamentId).filter(Boolean).join(',') }],
+    queryFn: async () => {
+      const ids = (myEntries ?? [])
+        .map((e) => String((e as any)?.tournamentId ?? '').trim())
+        .filter(Boolean);
+      const unique = Array.from(new Set(ids));
+      if (unique.length === 0) return [];
+      // Fetch a bounded number to avoid accidental huge fan-out.
+      const limited = unique.slice(0, 30);
+      const rows = await Promise.all(
+        limited.map((id) => tournamentsApi.findOne(id).catch(() => null as unknown as Tournament | null))
+      );
+      return rows.filter(Boolean) as Tournament[];
+    },
+    enabled: !!userId && (myEntries?.length ?? 0) > 0,
+    staleTime: 30_000,
+  });
+
+  const calendarTournaments = useMemo(() => {
+    const map = new Map<string, Tournament>();
+    for (const t of tournamentsList as Tournament[]) map.set(t._id, t);
+    for (const t of myTournaments as Tournament[]) map.set(t._id, t);
+    return Array.from(map.values());
+  }, [tournamentsList, myTournaments]);
 
   useFocusEffect(
     useCallback(() => {
-      void refetchTournaments();
       if (!usedDeviceLocation) {
         void refreshLocation();
       }
-    }, [usedDeviceLocation, refreshLocation, refetchTournaments]),
+    }, [usedDeviceLocation, refreshLocation]),
   );
 
   const dateLabel = useMemo(() => {
@@ -170,7 +198,7 @@ export default function FeedScreen() {
   }, [hourly]);
 
   const topPad = Math.max(insets.top, 12) + 8;
-  const scrollContentStyle = useMemo(() => [styles.content, { paddingTop: 0 }], []);
+  const scrollContentStyle = useMemo(() => [styles.content, { paddingTop: 12 }], []);
 
   const listHeader = useMemo(
     () => (
@@ -278,9 +306,7 @@ export default function FeedScreen() {
           </View>
         </View>
 
-        <View style={styles.tournamentsSection}>
-          <Text style={styles.sectionTitle}>{t('feed.tournamentsPreview')}</Text>
-        </View>
+        <TournamentsCalendar tournaments={calendarTournaments} />
       </>
     ),
     [
@@ -300,67 +326,8 @@ export default function FeedScreen() {
       isFetching,
       localeTag,
       panelIconColors,
+      calendarTournaments,
     ],
-  );
-
-  const listFooter = useMemo(
-    () => (
-      <View style={styles.feedSection}>
-        <Text style={styles.sectionTitle}>{t('feed.moreComing')}</Text>
-        <Pressable
-          style={styles.linkCard}
-          onPress={() => {
-            router.push('/(tabs)/index' as never);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={t('feed.goTournaments')}
-        >
-          <Ionicons name="trophy-outline" size={22} color={tokens.accent} />
-          <Text style={styles.linkCardText}>{t('feed.goTournaments')}</Text>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-        </Pressable>
-      </View>
-    ),
-    [t, router, tokens.accent],
-  );
-
-  const listEmpty = useMemo(() => {
-    if (tournamentsQueryError) {
-      return (
-        <View style={styles.tournamentsSection}>
-          <Text style={styles.tournamentError}>{t('tournaments.failedToLoad')}</Text>
-        </View>
-      );
-    }
-    if (loadingTournaments && (tournaments as Tournament[]).length === 0) {
-      return (
-        <View style={styles.tournamentsSection}>
-          <View style={styles.skeletonCard}>
-            <Skeleton height={20} width="65%" style={{ marginBottom: 10 }} />
-            <Skeleton height={14} width="45%" style={{ marginBottom: 6 }} />
-            <Skeleton height={14} width="55%" style={{ marginBottom: 8 }} />
-            <Skeleton height={12} width="35%" />
-          </View>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.tournamentsSection}>
-        <Text style={styles.tournamentEmpty}>{t('feed.noTournamentsYet')}</Text>
-      </View>
-    );
-  }, [t, tournamentsQueryError, loadingTournaments, tournaments]);
-
-  const renderTournamentItem = useCallback(
-    ({ item: tournament }: { item: Tournament }) => (
-      <TournamentListRow
-        variant="feed"
-        tournament={tournament}
-        onPressIn={() => prefetchTournament(queryClient, tournament._id)}
-        onPress={() => router.push(`/tournament/${tournament._id}` as never)}
-      />
-    ),
-    [queryClient, router],
   );
 
   return (
@@ -369,31 +336,31 @@ export default function FeedScreen() {
       <View style={[styles.stickyScreenHeader, { paddingTop: topPad }]}>
         <TabScreenHeader title={t('feed.homeTitle')} rightAccessory={<NotificationsInboxButton />} />
       </View>
-      <FlashList
-        data={tournaments as Tournament[]}
-        keyExtractor={(item) => item._id}
-        renderItem={renderTournamentItem}
-        ListHeaderComponent={listHeader}
-        ListFooterComponent={listFooter}
-        ListEmptyComponent={listEmpty}
-        style={styles.flashFill}
-        contentContainerStyle={scrollContentStyle}
+      <ScrollView
+        style={styles.scrollFill}
+        contentContainerStyle={scrollContentStyle as never}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={isFetchingTournaments}
-            onRefresh={() => void refetchTournaments()}
+            refreshing={isFetching}
+            onRefresh={() => {
+              void refetch();
+              void refreshLocation();
+            }}
             tintColor={tokens.accent}
           />
         }
-      />
+      >
+        {listHeader}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screenRoot: { flex: 1, backgroundColor: 'transparent' },
-  flashFill: { flex: 1 },
+  scrollFill: { flex: 1 },
   stickyScreenHeader: {
     paddingHorizontal: 16,
     backgroundColor: Colors.background,
@@ -541,7 +508,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 15,
   },
-  tournamentsSection: { gap: 10, marginBottom: 22 },
   skeletonCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -559,12 +525,6 @@ const styles = StyleSheet.create({
     color: Colors.error,
   },
   feedSection: { gap: 12 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
   linkCard: {
     flexDirection: 'row',
     alignItems: 'center',

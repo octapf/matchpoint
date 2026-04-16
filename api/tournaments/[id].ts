@@ -1360,8 +1360,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const allowed = [
         'name',
-        'startDate',
-        'endDate',
+        'divisionDates',
         'location',
         'description',
         'divisions',
@@ -1437,6 +1436,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           update.groupCount !== undefined)
       ) {
         return corsRes.status(400).json({ error: 'Tournament already started' });
+      }
+
+      // startDate/endDate/date are DERIVED fields: always compute from divisionDates (min start / max end).
+      // Clients must not update them directly.
+      {
+        const nextDivDates = (update.divisionDates ?? (cur as any).divisionDates ?? {}) as Record<
+          string,
+          { startDate?: unknown; endDate?: unknown } | undefined
+        >;
+        const divs = (update.divisions ?? (cur as any).divisions ?? ['mixed']) as unknown[];
+        const uniq = [...new Set(divs.map((x) => String(x)))].filter((x) => x === 'men' || x === 'women' || x === 'mixed');
+        const ranges = uniq
+          .map((d) => nextDivDates?.[d])
+          .filter(Boolean)
+          .map((r) => ({ startDate: String((r as any).startDate ?? '').trim(), endDate: String((r as any).endDate ?? '').trim() }))
+          .filter((r) => !!r.startDate && !!r.endDate);
+        if (ranges.length > 0) {
+          const minStart = ranges.map((r) => r.startDate).sort()[0]!;
+          const maxEnd = ranges.map((r) => r.endDate).sort().slice(-1)[0]!;
+          update.startDate = minStart;
+          update.endDate = maxEnd;
+          update.date = minStart;
+        }
       }
 
       if (update.maxTeams !== undefined || update.groupCount !== undefined) {

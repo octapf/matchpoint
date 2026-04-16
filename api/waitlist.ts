@@ -150,6 +150,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const targetUser = await db.collection('users').findOne({ _id: new ObjectId(userId) });
       const gender = String((targetUser as { gender?: unknown } | null)?.gender ?? '');
       const isBinaryGender = gender === 'male' || gender === 'female';
+      if (!isBinaryGender) {
+        return corsRes.status(400).json({ error: 'Gender must be set (male/female) to join a tournament' });
+      }
       const allowed =
         division === 'mixed'
           ? true
@@ -158,7 +161,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : division === 'women'
               ? gender === 'female'
               : false;
-      if (!allowed || (!isBinaryGender && division !== 'mixed')) {
+      if (!allowed) {
         return corsRes.status(400).json({ error: 'You cannot join this division' });
       }
 

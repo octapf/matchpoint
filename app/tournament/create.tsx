@@ -48,8 +48,9 @@ export default function CreateTournamentScreen() {
   const createTournament = useCreateTournament();
 
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [divisionDates, setDivisionDates] = useState<
+    Partial<Record<TournamentDivision, { startDate: string; endDate: string }>>
+  >({});
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
   const [pointsToWin, setPointsToWin] = useState('21');
@@ -100,8 +101,35 @@ export default function CreateTournamentScreen() {
     setLastDivisionsCount(dc);
   }, [divisions, groupCount, lastDivisionsCount, maxTeams]);
 
+  useEffect(() => {
+    // Keep divisionDates aligned with enabled divisions.
+    setDivisionDates((prev) => {
+      const next: Partial<Record<TournamentDivision, { startDate: string; endDate: string }>> = { ...(prev ?? {}) };
+      for (const k of Object.keys(next) as TournamentDivision[]) {
+        if (!divisions.includes(k)) delete next[k];
+      }
+      for (const d of divisions) {
+        if (!next[d]) next[d] = { startDate: '', endDate: '' };
+      }
+      return next;
+    });
+  }, [divisions]);
+
+  const globalRangeLabel = useMemo(() => {
+    const divs = (divisions.length ? divisions : (['mixed'] as TournamentDivision[])).filter(Boolean);
+    const ranges = divs
+      .map((d) => divisionDates?.[d])
+      .filter(Boolean)
+      .map((r) => ({ startDate: String(r!.startDate ?? '').trim(), endDate: String(r!.endDate ?? '').trim() }))
+      .filter((r) => !!r.startDate && !!r.endDate);
+    const minStart = ranges.map((r) => r.startDate).sort()[0] ?? '';
+    const maxEnd = ranges.map((r) => r.endDate).sort().slice(-1)[0] ?? minStart;
+    if (!minStart) return '—';
+    return maxEnd && maxEnd !== minStart ? `${minStart} – ${maxEnd}` : minStart;
+  }, [divisions, divisionDates]);
+
   const handleCreate = () => {
-    if (!name.trim() || !startDate || !location.trim()) {
+    if (!name.trim() || !location.trim()) {
       Alert.alert(t('common.error'), t('tournaments.missingFields'));
       return;
     }
@@ -109,10 +137,12 @@ export default function CreateTournamentScreen() {
       Alert.alert(t('common.error'), t('tournaments.divisionsRequired'));
       return;
     }
-    const end = endDate || startDate;
-    if (end < startDate) {
-      Alert.alert(t('common.error'), t('tournaments.invalidDates'));
-      return;
+    for (const div of divisions) {
+      const r = divisionDates?.[div];
+      if (!r?.startDate || !r?.endDate || r.endDate < r.startDate) {
+        Alert.alert(t('common.error'), t('tournaments.invalidDates'));
+        return;
+      }
     }
     const max = parseInt(maxTeams, 10) || 16;
     if (max < 2 || max > 64) {
@@ -178,9 +208,7 @@ export default function CreateTournamentScreen() {
     createTournament.mutate(
       {
         name: name.trim(),
-        date: startDate,
-        startDate,
-        endDate: end,
+        divisionDates,
         location: location.trim(),
         divisions,
         categories,
@@ -299,6 +327,65 @@ export default function CreateTournamentScreen() {
       </View>
 
       <View style={styles.field}>
+        <Text style={styles.label}>{t('tournaments.startDate')} / {t('tournaments.endDate')}</Text>
+        <Text style={styles.readOnlyValue} numberOfLines={1}>
+          {globalRangeLabel}
+        </Text>
+        <Text style={styles.hintInline}>{t('admin.readOnlyDerivedFromDivisionDates')}</Text>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>{t('admin.divisionDatesTitle')}</Text>
+        <View style={{ marginTop: 10, gap: 10 }}>
+          {(['men', 'women', 'mixed'] as const)
+            .filter((div) => divisions.includes(div))
+            .map((div) => {
+              const divLabel =
+                div === 'men'
+                  ? t('tournaments.divisionMen')
+                  : div === 'women'
+                    ? t('tournaments.divisionWomen')
+                    : t('tournaments.divisionMixed');
+              const r = divisionDates?.[div] ?? { startDate: '', endDate: '' };
+              const min = r.startDate ? new Date(r.startDate + 'T12:00:00') : MIN_DATE;
+              return (
+                <View key={`create-div-dates-${div}`} style={styles.divDatesBlock}>
+                  <Text style={styles.divDatesTitle}>{divLabel}</Text>
+                  <View style={styles.dateRow}>
+                    <DatePickerField
+                      fieldStyle={styles.dateFieldHalf}
+                      label={`${t('tournaments.startDate')}${t('common.requiredSuffix')}`}
+                      value={r.startDate}
+                      size="sm"
+                      onChange={(d) => {
+                        setDivisionDates((prev) => ({
+                          ...(prev ?? {}),
+                          [div]: { startDate: d, endDate: (prev?.[div]?.endDate ?? '') < d ? d : (prev?.[div]?.endDate ?? d) },
+                        }));
+                      }}
+                      minDate={MIN_DATE}
+                    />
+                    <DatePickerField
+                      fieldStyle={styles.dateFieldHalf}
+                      label={t('tournaments.endDate')}
+                      value={r.endDate}
+                      size="sm"
+                      onChange={(d) => {
+                        setDivisionDates((prev) => ({
+                          ...(prev ?? {}),
+                          [div]: { startDate: prev?.[div]?.startDate ?? d, endDate: d },
+                        }));
+                      }}
+                      minDate={min}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+        </View>
+      </View>
+
+      <View style={styles.field}>
         <Text style={styles.label}>
           {t('tournaments.categories')}
           {t('common.requiredSuffix')}
@@ -360,26 +447,6 @@ export default function CreateTournamentScreen() {
           onEqualDistribution={() => setClsFractions({ Gold: '1', Silver: '1', Bronze: '1' })}
           onClearFractions={() => setClsFractions({ Gold: '', Silver: '', Bronze: '' })}
           variant="admin"
-        />
-      </View>
-
-      <View style={styles.dateRow}>
-        <DatePickerField
-          fieldStyle={styles.dateFieldHalf}
-          label={`${t('tournaments.startDate')}${t('common.requiredSuffix')}`}
-          value={startDate}
-          onChange={(d) => {
-            setStartDate(d);
-            if (endDate && endDate < d) setEndDate(d);
-          }}
-          minDate={MIN_DATE}
-        />
-        <DatePickerField
-          fieldStyle={styles.dateFieldHalf}
-          label={t('tournaments.endDate')}
-          value={endDate}
-          onChange={setEndDate}
-          minDate={startDate ? new Date(startDate + 'T12:00:00') : MIN_DATE}
         />
       </View>
 
@@ -498,12 +565,34 @@ const styles = StyleSheet.create({
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
+  readOnlyValue: {
+    marginTop: 10,
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '700',
+    fontStyle: 'italic',
+  },
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: Colors.text,
+  },
+  divDatesBlock: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  divDatesTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+    marginBottom: 8,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
   switchRow: {

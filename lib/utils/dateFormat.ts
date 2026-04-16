@@ -28,6 +28,24 @@ export function toISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Iterate local calendar days between start and end (inclusive). */
+export function eachLocalDayInclusive(start: Date, end: Date): Date[] {
+  const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) return [];
+  const out: Date[] = [];
+  const dir = s.getTime() <= e.getTime() ? 1 : -1;
+  const cur = new Date(s);
+  for (let i = 0; i < 400; i++) {
+    out.push(new Date(cur));
+    if (cur.getFullYear() === e.getFullYear() && cur.getMonth() === e.getMonth() && cur.getDate() === e.getDate()) {
+      break;
+    }
+    cur.setDate(cur.getDate() + dir);
+  }
+  return out;
+}
+
 /** Format date range for display. Single day: "Jul 15, 2026". Multi-day: "Jul 15 – 18, 2026" or "Jul 15 – Aug 2, 2026" */
 export function formatTournamentDateRange(start: string, end?: string, locale?: string): string {
   const activeLocale = locale || i18n.locale || 'en';

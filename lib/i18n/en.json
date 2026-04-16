@@ -48,7 +48,7 @@
     "waitlistInviteMustBeOnList": "You must be on the waiting list to invite someone.",
     "waitlistInviteTargetNotOnList": "That player is not on the waiting list.",
     "waitlistInviteSelf": "You can't invite yourself.",
-    "playersAlreadyInTeam": "One or more players are already in a team.",
+    "playersAlreadyInTeam": "Cannot form a team: you or the other player is already in a team in this tournament.",
     "divisionNotEnabledForPair": "This pair's division is not enabled for this tournament.",
     "internal": "Something went wrong. Try again later.",
     "apiNotConfigured": "App API URL is not configured."
@@ -117,6 +117,8 @@
   "feed": {
     "homeTitle": "HOME",
     "today": "Today",
+    "noTournamentsThisDay": "No tournaments this day.",
+    "noTournamentsThisMonth": "No tournaments this month.",
     "wind": "Wind",
     "windSpeed": "%{speed} km/h",
     "locationNearby": "Your neighborhood",
@@ -171,6 +173,8 @@
     "editUserTitle": "Edit user",
     "editTournamentTitle": "Edit tournament",
     "editTournamentHint": "Changes apply immediately for all players.",
+    "divisionDatesTitle": "Dates by division",
+    "readOnlyDerivedFromDivisionDates": "The overall date range is generated automatically from division dates.",
     "edit": "Edit",
     "manageRoster": "Players & teams",
     "rosterTitle": "Roster",

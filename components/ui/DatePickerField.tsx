@@ -21,6 +21,7 @@ type DatePickerFieldProps = {
   label?: string;
   minDate?: Date;
   fieldStyle?: StyleProp<ViewStyle>;
+  size?: 'md' | 'sm';
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -40,6 +41,7 @@ export function DatePickerField({
   label = 'Date',
   minDate = new Date(),
   fieldStyle,
+  size = 'md',
 }: DatePickerFieldProps) {
   const { t, i18n } = useTranslation();
   const { tokens } = useTheme();
@@ -104,9 +106,11 @@ export function DatePickerField({
   };
 
   if (Platform.OS === 'web') {
+    const padding = size === 'sm' ? 12 : 16;
+    const fontSize = size === 'sm' ? 14 : 16;
     return (
       <View style={[styles.field, fieldStyle]}>
-        {label ? <Text style={styles.label}>{label}</Text> : null}
+        {label ? <Text style={[styles.label, size === 'sm' && styles.labelSm]}>{label}</Text> : null}
         <input
           type="date"
           value={value || ''}
@@ -117,8 +121,8 @@ export function DatePickerField({
             color: Colors.text,
             border: 'none',
             borderRadius: 12,
-            padding: 16,
-            fontSize: 16,
+            padding,
+            fontSize,
             width: '100%',
             boxSizing: 'border-box',
           } as React.CSSProperties}
@@ -129,9 +133,11 @@ export function DatePickerField({
 
   return (
     <View style={[styles.field, fieldStyle]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
-      <Pressable style={styles.input} onPress={() => setShow(true)}>
-        <Text style={[styles.inputText, !value && styles.placeholder]}>{displayValue}</Text>
+      {label ? <Text style={[styles.label, size === 'sm' && styles.labelSm]}>{label}</Text> : null}
+      <Pressable style={[styles.input, size === 'sm' && styles.inputSm]} onPress={() => setShow(true)}>
+        <Text style={[styles.inputText, size === 'sm' && styles.inputTextSm, !value && styles.placeholder]}>
+          {displayValue}
+        </Text>
       </Pressable>
 
       <Modal visible={show} transparent animationType="slide">
@@ -249,12 +255,15 @@ export function DatePickerField({
 const styles = StyleSheet.create({
   field: { marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
+  labelSm: { fontSize: 13, marginBottom: 6 },
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 16,
   },
+  inputSm: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10 },
   inputText: { fontSize: 16, color: Colors.text },
+  inputTextSm: { fontSize: 14 },
   placeholder: { color: Colors.textMuted },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: {

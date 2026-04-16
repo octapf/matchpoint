@@ -62,8 +62,6 @@ function sameStringSet(a: string[], b: string[]): boolean {
 function formFieldsMatchServer(
   t: Tournament,
   name: string,
-  startDate: string,
-  endDate: string,
   location: string,
   maxTeamsStr: string,
   pointsToWinStr: string,
@@ -78,17 +76,12 @@ function formFieldsMatchServer(
   const p2w = parseInt(pointsToWinStr, 10) || 21;
   const spm = parseInt(setsPerMatchStr, 10) || 1;
   const gc = normalizeGroupCount(parseInt(groupCountStr, 10) || 4);
-  const sd = t.startDate || t.date || '';
-  const ed = t.endDate || sd;
-  const end = endDate || startDate;
   const serverDivisions = (t.divisions ?? []) as TournamentDivision[];
   const serverCategories = (t.categories ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
   const localCategories = presetToCategories(categoryPreset);
   const serverPrivate = (t.visibility ?? 'public') === 'private';
   return (
     (t.name ?? '') === name.trim() &&
-    sd === startDate &&
-    ed === end &&
     (t.location ?? '') === location.trim() &&
     (t.maxTeams ?? 16) === max &&
     (t.pointsToWin ?? 21) === p2w &&
@@ -104,8 +97,6 @@ function formFieldsMatchServer(
 function serverMatchesForm(
   t: Tournament,
   name: string,
-  startDate: string,
-  endDate: string,
   location: string,
   maxTeamsStr: string,
   pointsToWinStr: string,
@@ -121,8 +112,6 @@ function serverMatchesForm(
     formFieldsMatchServer(
       t,
       name,
-      startDate,
-      endDate,
       location,
       maxTeamsStr,
       pointsToWinStr,
@@ -147,8 +136,9 @@ export default function AdminEditTournamentScreen() {
   const updateTournament = useUpdateTournament();
 
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [divisionDates, setDivisionDates] = useState<Partial<Record<TournamentDivision, { startDate: string; endDate: string }>>>(
+    {},
+  );
   const [location, setLocation] = useState('');
   const [maxTeams, setMaxTeams] = useState('16');
   const [pointsToWin, setPointsToWin] = useState('21');
@@ -174,8 +164,19 @@ export default function AdminEditTournamentScreen() {
     if (!tournament) return;
     setName(tournament.name ?? '');
     const sd = tournament.startDate || tournament.date || '';
-    setStartDate(sd);
-    setEndDate(tournament.endDate || sd);
+    const ed = tournament.endDate || sd;
+    const dd = (tournament as unknown as { divisionDates?: unknown }).divisionDates as
+      | Partial<Record<TournamentDivision, { startDate?: unknown; endDate?: unknown }>>
+      | undefined;
+    const safe: Partial<Record<TournamentDivision, { startDate: string; endDate: string }>> = {};
+    const divs = (((tournament.divisions ?? ['mixed']) as TournamentDivision[]).filter(Boolean) ?? ['mixed']) as TournamentDivision[];
+    for (const div of divs) {
+      const r = dd?.[div];
+      const s = typeof r?.startDate === 'string' && r.startDate.trim() ? r.startDate.trim() : sd;
+      const e = typeof r?.endDate === 'string' && r.endDate.trim() ? r.endDate.trim() : ed;
+      if (s) safe[div] = { startDate: s, endDate: e || s };
+    }
+    setDivisionDates(safe);
     setLocation(tournament.location ?? '');
     setMaxTeams(String(tournament.maxTeams ?? 16));
     setPointsToWin(String(tournament.pointsToWin ?? 21));
@@ -208,9 +209,15 @@ export default function AdminEditTournamentScreen() {
       divisions?: TournamentDivision[];
     }) => {
       if (!id || !tournament) return;
-      if (!name.trim() || !startDate || !location.trim()) return;
+      if (!name.trim() || !location.trim()) return;
       const divisionsEff = overrides?.divisions ?? divisions;
       if (!divisionsEff.length) return;
+      // Require per-division dates for enabled divisions (fallback is allowed only for legacy init).
+      for (const div of divisionsEff) {
+        const r = divisionDates?.[div];
+        if (!r?.startDate || !r?.endDate) return;
+        if (r.endDate < r.startDate) return;
+      }
 
       const cancelledEff = overrides?.cancelled !== undefined ? overrides.cancelled : cancelledLocal;
       const visibilityPrivateEff =
@@ -223,8 +230,6 @@ export default function AdminEditTournamentScreen() {
         formFieldsMatchServer(
           tournament,
           name,
-          startDate,
-          endDate,
           location,
           maxTeams,
           pointsToWin,
@@ -252,8 +257,6 @@ export default function AdminEditTournamentScreen() {
         return;
       }
 
-      const end = endDate || startDate;
-      if (end < startDate) return;
       const max = parseInt(maxTeams, 10) || 16;
       const p2w = parseInt(pointsToWin, 10) || 21;
       const spm = parseInt(setsPerMatch, 10) || 1;
@@ -268,8 +271,6 @@ export default function AdminEditTournamentScreen() {
         serverMatchesForm(
           tournament,
           name,
-          startDate,
-          endDate,
           location,
           maxTeams,
           pointsToWin,
@@ -289,9 +290,7 @@ export default function AdminEditTournamentScreen() {
       const payload: Record<string, unknown> = {
         id,
         name: name.trim(),
-        date: startDate,
-        startDate,
-        endDate: end,
+        divisionDates,
         location: location.trim(),
         divisions: divisionsEff,
         categories,
@@ -319,8 +318,7 @@ export default function AdminEditTournamentScreen() {
       id,
       tournament,
       name,
-      startDate,
-      endDate,
+      divisionDates,
       location,
       maxTeams,
       pointsToWin,
@@ -335,6 +333,20 @@ export default function AdminEditTournamentScreen() {
       updateTournament,
     ],
   );
+
+  const globalRangeLabel = useMemo(() => {
+    if (!tournament) return '—';
+    const divs = (divisions.length ? divisions : (['mixed'] as TournamentDivision[])).filter(Boolean);
+    const ranges = divs
+      .map((d) => divisionDates?.[d])
+      .filter(Boolean)
+      .map((r) => ({ startDate: String(r!.startDate ?? '').trim(), endDate: String(r!.endDate ?? '').trim() }))
+      .filter((r) => !!r.startDate && !!r.endDate);
+    const minStart = ranges.map((r) => r.startDate).sort()[0] ?? (tournament.startDate || tournament.date || '');
+    const maxEnd = ranges.map((r) => r.endDate).sort().slice(-1)[0] ?? (tournament.endDate || minStart);
+    if (!minStart) return '—';
+    return maxEnd && maxEnd !== minStart ? `${minStart} – ${maxEnd}` : minStart;
+  }, [tournament, divisions, divisionDates]);
 
   const scheduleSave = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -622,27 +634,67 @@ export default function AdminEditTournamentScreen() {
           <Text style={styles.hintInline}>{t('tournaments.categoriesHint')}</Text>
         </View>
 
-        <View style={styles.dateRow}>
-          <DatePickerField
-            fieldStyle={styles.dateFieldHalf}
-            label={`${t('tournaments.startDate')}${t('common.requiredSuffix')}`}
-            value={startDate}
-            onChange={(d) => {
-              setStartDate(d);
-              scheduleSave();
-            }}
-            minDate={MIN_DATE}
-          />
-          <DatePickerField
-            fieldStyle={styles.dateFieldHalf}
-            label={t('tournaments.endDate')}
-            value={endDate}
-            onChange={(d) => {
-              setEndDate(d);
-              scheduleSave();
-            }}
-            minDate={startDate ? new Date(startDate + 'T12:00:00') : MIN_DATE}
-          />
+        <View style={styles.field}>
+          <Text style={styles.label}>{t('tournaments.startDate')} / {t('tournaments.endDate')}</Text>
+          <Text style={styles.readOnlyValue} numberOfLines={1}>
+            {globalRangeLabel}
+          </Text>
+          <Text style={styles.hintInline}>
+            {t('admin.readOnlyDerivedFromDivisionDates')}
+          </Text>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>{t('admin.divisionDatesTitle')}</Text>
+          <View style={{ marginTop: 10, gap: 10 }}>
+            {(['men', 'women', 'mixed'] as const)
+              .filter((div) => divisions.includes(div))
+              .map((div) => {
+                const divLabel =
+                  div === 'men'
+                    ? t('tournaments.divisionMen')
+                    : div === 'women'
+                      ? t('tournaments.divisionWomen')
+                      : t('tournaments.divisionMixed');
+                const r = divisionDates?.[div] ?? { startDate: '', endDate: '' };
+                const min = r.startDate ? new Date(r.startDate + 'T12:00:00') : MIN_DATE;
+                return (
+                  <View key={`div-dates-${div}`} style={styles.divDatesBlock}>
+                    <Text style={styles.divDatesTitle}>{divLabel}</Text>
+                    <View style={styles.dateRow}>
+                      <DatePickerField
+                        fieldStyle={styles.dateFieldHalf}
+                        label={`${t('tournaments.startDate')}${t('common.requiredSuffix')}`}
+                        value={r.startDate}
+                        size="sm"
+                        onChange={(d) => {
+                          setDivisionDates((prev) => ({
+                            ...(prev ?? {}),
+                            [div]: { startDate: d, endDate: (prev?.[div]?.endDate ?? '') < d ? d : (prev?.[div]?.endDate ?? d) },
+                          }));
+                          scheduleSave();
+                        }}
+                        minDate={MIN_DATE}
+                      />
+                      <DatePickerField
+                        fieldStyle={styles.dateFieldHalf}
+                        label={t('tournaments.endDate')}
+                        value={r.endDate}
+                        size="sm"
+                        onChange={(d) => {
+                          setDivisionDates((prev) => ({
+                            ...(prev ?? {}),
+                            [div]: { startDate: prev?.[div]?.startDate ?? d, endDate: d },
+                          }));
+                          scheduleSave();
+                        }}
+                        minDate={min}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+          </View>
         </View>
 
         <View style={styles.field}>
@@ -778,6 +830,21 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginBottom: 0,
   },
+  divDatesBlock: {
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 12,
+  },
+  divDatesTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
   groupSelectWrap: { marginBottom: 20 },
   field: { marginBottom: 20 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -809,6 +876,13 @@ const styles = StyleSheet.create({
   medalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintInline: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 16 },
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 8 },
+  readOnlyValue: {
+    marginTop: 10,
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '700',
+    fontStyle: 'italic',
+  },
   input: {
     backgroundColor: Colors.surface,
     borderRadius: 12,

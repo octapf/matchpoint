@@ -101,9 +101,6 @@ export function TournamentHeader({
                 <Text style={dateStyle as never}>{formatTournamentDate(dateLabel) || '—'}</Text>
               </View>
 
-              <Text style={matchRulesTextStyle as never}>
-                {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21} · {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
-              </Text>
             </View>
           ) : (
             <View />

@@ -151,7 +151,7 @@ export const THEME_PRESETS: Record<ThemePresetId, { id: ThemePresetId; label: st
   sport_blue: {
     id: 'sport_blue',
     label: 'Ocean Sky',
-    tokens: { ...base, ...text, ...buildAccentPair('#3572EF', '#3ABEF9') },
+    tokens: { ...base, ...text, ...buildAccentPair('#3ABEF9', '#3572EF') },
   },
   sport_orange: {
     id: 'sport_orange',

@@ -91,6 +91,19 @@ export interface Tournament {
   date?: string;
   startDate: string;
   endDate: string;
+  /**
+   * Per-division date ranges (registration + play window). When present, each enabled division should have a range.
+   * Older tournaments may omit this; server may backfill using startDate/endDate.
+   */
+  divisionDates?: Partial<
+    Record<
+      TournamentDivision,
+      {
+        startDate: string;
+        endDate: string;
+      }
+    >
+  >;
   location: string;
   /** Optional hero image for list/detail cards; omit to use the default beach artwork. */
   coverImageUrl?: string;

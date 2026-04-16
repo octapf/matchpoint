@@ -16,9 +16,10 @@ export function PersistentBottomTabs({ active }: { active: TabId }) {
   const insets = useSafeAreaInsets();
 
   const items: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap; href: string }[] = [
-    { id: 'feed', label: t('tabs.feed'), icon: 'home', href: '/feed' },
-    { id: 'tournaments', label: t('tabs.tournaments'), icon: 'trophy-outline', href: '/' },
-    { id: 'profile', label: t('tabs.profile'), icon: 'person-circle-outline', href: '/profile' },
+    // Use tab-group routes directly to avoid remounting `app/index.tsx` (splash) from non-tab screens.
+    { id: 'feed', label: t('tabs.feed'), icon: 'home', href: '/(tabs)/feed' },
+    { id: 'tournaments', label: t('tabs.tournaments'), icon: 'trophy-outline', href: '/(tabs)' },
+    { id: 'profile', label: t('tabs.profile'), icon: 'person-circle-outline', href: '/(tabs)/profile' },
   ];
 
   return (
@@ -37,7 +38,7 @@ export function PersistentBottomTabs({ active }: { active: TabId }) {
             accessibilityRole="tab"
             accessibilityState={{ selected }}
           >
-            <Ionicons name={it.icon} size={22} color={color} />
+            <Ionicons name={it.icon} size={24} color={color} />
             <Text style={[styles.label, { color }]} numberOfLines={1}>
               {it.label}
             </Text>
@@ -61,12 +62,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingTop: 8,
+    gap: 2,
+    paddingTop: 6,
   },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
 });
 

@@ -74,7 +74,13 @@ export function PhoneInput({ value, onChange }: PhoneInputProps) {
           accessibilityLabel={t('phone.selectCountry')}
         >
           <Text style={styles.flag}>{selected.flag}</Text>
-          <Text style={styles.dial}>+{selected.countryCallingCode}</Text>
+          <TextInput
+            style={styles.dialInput}
+            value={`+${selected.countryCallingCode}`}
+            editable={false}
+            pointerEvents="none"
+            allowFontScaling={false}
+          />
           <Ionicons name="chevron-down" size={18} color={Colors.textSecondary} />
         </Pressable>
         <TextInput
@@ -87,6 +93,7 @@ export function PhoneInput({ value, onChange }: PhoneInputProps) {
           autoComplete="tel-national"
           textContentType="telephoneNumber"
           accessibilityLabel={t('profile.phone')}
+          allowFontScaling={false}
         />
       </View>
 
@@ -162,16 +169,32 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     minWidth: 118,
   },
-  flag: { fontSize: 22 },
-  dial: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  flag: { fontSize: 18, lineHeight: 20 },
+  // Use TextInput so Android renders identical metrics to the phone number input.
+  dialInput: {
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
+    color: Colors.text,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    minWidth: 44,
+  },
   input: {
     flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
     color: Colors.text,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },

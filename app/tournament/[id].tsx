@@ -222,8 +222,8 @@ function hasValidGender(g?: Gender | string): g is Gender {
 }
 
 function canJoinDivisionByGender(division: DivisionTab, gender: Gender | string | undefined): boolean {
-  // Unknown/other gender: only mixed division is allowed.
-  if (!hasValidGender(gender)) return division === 'mixed';
+  // Tournament participation requires binary genders. If missing/invalid, disallow joining any division.
+  if (!hasValidGender(gender)) return false;
   if (division === 'mixed') return true;
   if (division === 'men') return gender === 'male';
   if (division === 'women') return gender === 'female';
@@ -653,7 +653,6 @@ export default function TournamentDetailScreen() {
     const only = new Set(tournament.organizerOnlyIds ?? []);
     return (tournament.organizerIds ?? []).filter((uid) => only.has(uid));
   }, [tournament]);
-  const dateLabel = tournament?.date || tournament?.startDate;
   const isCancelled = tournament?.status === 'cancelled';
   const isOrganizeOnlyOrganizer = !!(userId && (tournament?.organizerOnlyIds ?? []).includes(userId));
 
@@ -662,6 +661,20 @@ export default function TournamentDetailScreen() {
   const currentDivision: DivisionTab = availableDivisions.includes(activeDivision)
     ? activeDivision
     : availableDivisions[0]!;
+  const dateLabel = useMemo(() => {
+    if (!tournament) return undefined;
+    const dd = (tournament as { divisionDates?: any }).divisionDates;
+    const r = dd && typeof dd === 'object' ? dd[currentDivision] : null;
+    const s =
+      typeof r?.startDate === 'string' && r.startDate.trim()
+        ? r.startDate.trim()
+        : tournament.date || tournament.startDate;
+    const e =
+      typeof r?.endDate === 'string' && r.endDate.trim()
+        ? r.endDate.trim()
+        : tournament.endDate || s;
+    return e && s && e !== s ? `${s} – ${e}` : s;
+  }, [tournament, currentDivision]);
   const { data: waitlistInfo } = useWaitlist(id, currentDivision);
   const { data: bettingSnapshot } = useTournamentBetting(id, currentDivision, {
     enabled: !!id && activeTab === 'bets',
@@ -1793,7 +1806,7 @@ export default function TournamentDetailScreen() {
                   {tournament.name?.trim() || t('common.tournament')}
                 </Text>
                 <View style={styles.tournamentConfigRow}>
-                  <Ionicons name="location-outline" size={18} color={Colors.text} />
+                  <Ionicons name="location-outline" size={18} color={Colors.textMuted} />
                   {tournament.location?.trim() ? (
                     <Pressable
                       onPress={() => openVenueInMaps(tournament.location!.trim())}
@@ -1801,17 +1814,17 @@ export default function TournamentDetailScreen() {
                       style={styles.tournamentConfigLocationPress}
                     >
                       <Text
-                        style={[styles.tournamentConfigText, styles.tournamentLocationLink, { color: Colors.text }]}
+                        style={[styles.tournamentConfigText, styles.tournamentLocationLink, { color: Colors.textMuted }]}
                         numberOfLines={3}
                       >
                         {tournament.location.trim()}
                       </Text>
                     </Pressable>
                   ) : (
-                    <Text style={[styles.tournamentConfigText, { color: Colors.text }]}>—</Text>
+                    <Text style={[styles.tournamentConfigText, { color: Colors.textMuted }]}>—</Text>
                   )}
-                  <Ionicons name="calendar-outline" size={18} color={Colors.text} />
-                  <Text style={[styles.tournamentConfigText, { color: Colors.text }]}>{dateLabel || '—'}</Text>
+                  <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} />
+                  <Text style={[styles.tournamentConfigText, { color: Colors.textMuted }]}>{dateLabel || '—'}</Text>
                 </View>
               </View>
             </View>
@@ -1888,6 +1901,7 @@ export default function TournamentDetailScreen() {
             userMap={userMap}
             organizerIds={organizerIds}
             organizerOnlyIds={tournament?.organizerOnlyIds ?? []}
+            currentDivision={currentDivision}
             currentUserId={userId}
             hasJoined={isRegistered}
             canManageTournament={canManageTournament}

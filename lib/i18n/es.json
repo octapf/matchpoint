@@ -48,7 +48,7 @@
     "waitlistInviteMustBeOnList": "Tenés que estar en la lista de espera para invitar a alguien.",
     "waitlistInviteTargetNotOnList": "Ese jugador no está en la lista de espera.",
     "waitlistInviteSelf": "No podés invitarte a vos mismo.",
-    "playersAlreadyInTeam": "Uno o más jugadores ya están en un equipo.",
+    "playersAlreadyInTeam": "No se puede formar equipo: vos o el otro jugador ya está en un equipo en este torneo.",
     "divisionNotEnabledForPair": "La división de esta pareja no está habilitada en este torneo.",
     "internal": "Algo salió mal. Intentá de nuevo más tarde.",
     "apiNotConfigured": "La URL de la API no está configurada."
@@ -117,6 +117,8 @@
   "feed": {
     "homeTitle": "INICIO",
     "today": "Hoy",
+    "noTournamentsThisDay": "No hay torneos este día.",
+    "noTournamentsThisMonth": "No hay torneos este mes.",
     "wind": "Viento",
     "windSpeed": "%{speed} km/h",
     "locationNearby": "Tu barrio",
@@ -171,6 +173,8 @@
     "editUserTitle": "Editar usuario",
     "editTournamentTitle": "Editar torneo",
     "editTournamentHint": "Los cambios se aplican de inmediato para todos los jugadores.",
+    "divisionDatesTitle": "Fechas por división",
+    "readOnlyDerivedFromDivisionDates": "La fecha general se genera automáticamente según las fechas de las divisiones.",
     "edit": "Editar",
     "manageRoster": "Jugadores y equipos",
     "rosterTitle": "Plantilla",

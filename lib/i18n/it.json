@@ -48,7 +48,7 @@
     "waitlistInviteMustBeOnList": "Devi essere in lista d'attesa per invitare qualcuno.",
     "waitlistInviteTargetNotOnList": "Quel giocatore non è in lista d'attesa.",
     "waitlistInviteSelf": "Non puoi invitare te stesso.",
-    "playersAlreadyInTeam": "Uno o più giocatori sono già in una squadra.",
+    "playersAlreadyInTeam": "Impossibile formare una squadra: tu o l'altro giocatore siete già in una squadra in questo torneo.",
     "divisionNotEnabledForPair": "La divisione di questa coppia non è abilitata per questo torneo.",
     "internal": "Qualcosa è andato storto. Riprova più tardi.",
     "apiNotConfigured": "URL API non configurato."
@@ -117,6 +117,8 @@
   "feed": {
     "homeTitle": "HOME",
     "today": "Oggi",
+    "noTournamentsThisDay": "Nessun torneo in questo giorno.",
+    "noTournamentsThisMonth": "Nessun torneo questo mese.",
     "wind": "Vento",
     "windSpeed": "%{speed} km/h",
     "locationNearby": "Il tuo quartiere",
@@ -171,6 +173,8 @@
     "editUserTitle": "Modifica utente",
     "editTournamentTitle": "Modifica torneo",
     "editTournamentHint": "Le modifiche si applicano subito a tutti i giocatori.",
+    "divisionDatesTitle": "Date per divisione",
+    "readOnlyDerivedFromDivisionDates": "L’intervallo date generale viene generato automaticamente dalle date delle divisioni.",
     "edit": "Modifica",
     "manageRoster": "Giocatori e squadre",
     "rosterTitle": "Rosa",

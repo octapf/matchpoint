@@ -10,9 +10,23 @@ type ThemePresetSelectProps = {
   label: string;
   /** Optional: called after selection changes */
   onChange?: (id: ThemePresetId) => void;
+  /** Hide the field label above the select */
+  showFieldLabel?: boolean;
+  /** Show the label inside the select button */
+  showLabelInInput?: boolean;
+  /** Optional style overrides */
+  fieldStyle?: object;
+  inputStyle?: object;
 };
 
-export function ThemePresetSelect({ label, onChange }: ThemePresetSelectProps) {
+export function ThemePresetSelect({
+  label,
+  onChange,
+  showFieldLabel = true,
+  showLabelInInput = false,
+  fieldStyle,
+  inputStyle,
+}: ThemePresetSelectProps) {
   const [open, setOpen] = useState(false);
   const presetId = useThemeStore((s) => s.presetId);
   const setPresetId = useThemeStore((s) => s.setPresetId);
@@ -51,10 +65,10 @@ export function ThemePresetSelect({ label, onChange }: ThemePresetSelectProps) {
   );
 
   return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+    <View style={[styles.field, fieldStyle]}>
+      {showFieldLabel ? <Text style={styles.label}>{label}</Text> : null}
       <Pressable
-        style={styles.input}
+        style={[styles.input, inputStyle]}
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -65,7 +79,7 @@ export function ThemePresetSelect({ label, onChange }: ThemePresetSelectProps) {
             <View style={[styles.swatch, { backgroundColor: THEME_PRESETS[selected].tokens.accentSecondary }]} />
           </View>
           <Text style={styles.inputText} numberOfLines={1}>
-            {selectedLabel}
+            {showLabelInInput ? `${label} · ${selectedLabel}` : selectedLabel}
           </Text>
         </View>
         <Ionicons name="chevron-down" size={20} color={Colors.textMuted} />

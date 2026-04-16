@@ -12,8 +12,10 @@ import {
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { PhoneInput } from '@/components/ui/PhoneInput';
+import { PersistentBottomTabs, PERSISTENT_TABS_HEIGHT } from '@/components/ui/PersistentBottomTabs';
 import Colors from '@/constants/Colors';
 import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
@@ -56,6 +58,7 @@ export default function MyDataScreen() {
   const { t } = useTranslation();
   const { tokens } = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
   const setUser = useUserStore((s) => s.setUser);
   const language = useLanguageStore((s) => s.language ?? 'en');
@@ -161,31 +164,41 @@ export default function MyDataScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.field}>
-        <Text style={styles.label}>{t('profile.username')}</Text>
-        <TextInput
-          style={styles.input}
-          placeholder={t('profile.usernamePlaceholder')}
-          placeholderTextColor={Colors.textMuted}
-          value={username}
-          onChangeText={(v) => {
-            setUsername(v);
-            scheduleSave();
-          }}
-          onBlur={() => {
-            setUsername((u: string) => normalizeUsername(u));
-            flushSave();
-          }}
-          autoCapitalize="none"
-        />
-        <Text style={styles.hint}>{t('profile.usernameHint')}</Text>
-      </View>
+    <View style={styles.screenRoot}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 40 + PERSISTENT_TABS_HEIGHT + insets.bottom },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {user.email ? (
+          <View style={styles.field}>
+            <Text style={styles.label}>{t('auth.email')}</Text>
+            <TextInput style={[styles.input, styles.readOnlyInput]} value={user.email} editable={false} />
+          </View>
+        ) : null}
+        <View style={styles.field}>
+          <Text style={styles.label}>{t('profile.username')}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t('profile.usernamePlaceholder')}
+            placeholderTextColor={Colors.textMuted}
+            value={username}
+            onChangeText={(v) => {
+              setUsername(v);
+              scheduleSave();
+            }}
+            onBlur={() => {
+              setUsername((u: string) => normalizeUsername(u));
+              flushSave();
+            }}
+            autoCapitalize="none"
+          />
+          <Text style={styles.hint}>{t('profile.usernameHint')}</Text>
+        </View>
 
       <View style={styles.field}>
         <Text style={styles.label}>{t('profile.firstName')}</Text>
@@ -226,7 +239,6 @@ export default function MyDataScreen() {
             scheduleSave();
           }}
         />
-        <Text style={styles.hint}>{t('editProfile.phoneHint')}</Text>
       </View>
 
       <View style={styles.switchRow}>
@@ -309,11 +321,17 @@ export default function MyDataScreen() {
           />
         ) : null}
       </View>
-    </ScrollView>
+      </ScrollView>
+      <PersistentBottomTabs active="profile" />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screenRoot: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -351,6 +369,9 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 15,
     color: Colors.text,
+  },
+  readOnlyInput: {
+    opacity: 0.85,
   },
   hint: {
     fontSize: 12,

@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/IconButton';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
-import type { Entry, User } from '@/types';
+import type { Entry, User, TournamentDivision } from '@/types';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
 
@@ -47,6 +47,7 @@ export function PlayersTab({
   userMap,
   organizerIds,
   organizerOnlyIds,
+  currentDivision,
   currentUserId,
   hasJoined,
   canManageTournament,
@@ -83,6 +84,7 @@ export function PlayersTab({
   userMap: Record<string, User>;
   organizerIds: string[];
   organizerOnlyIds?: string[];
+  currentDivision: TournamentDivision;
   currentUserId: string | null;
   hasJoined: boolean;
   canManageTournament: boolean;
@@ -116,6 +118,18 @@ export function PlayersTab({
 }) {
   const { tokens } = useTheme();
   const onlySet = React.useMemo(() => new Set(organizerOnlyIds ?? []), [organizerOnlyIds]);
+  const viewerGender = currentUserId ? (userMap[currentUserId]?.gender as unknown) : undefined;
+  const userIdsInTeam = useMemo(() => new Set(sortedEntries.filter((e) => !!e.teamId).map((e) => e.userId)), [sortedEntries]);
+
+  const hasValidGender = (g: unknown): g is 'male' | 'female' => g === 'male' || g === 'female';
+  const canPairInDivision = (division: TournamentDivision, gA: unknown, gB: unknown): boolean => {
+    // Tournament participation requires binary genders. If missing/invalid, disallow pairing.
+    if (!hasValidGender(gA) || !hasValidGender(gB)) return false;
+    if (division === 'mixed') return true;
+    if (division === 'men') return gA === 'male' && gB === 'male';
+    if (division === 'women') return gA === 'female' && gB === 'female';
+    return false;
+  };
 
   const organizeOnlySorted = useMemo(
     () =>
@@ -269,6 +283,11 @@ export function PlayersTab({
           const isOrg = organizerIds.includes(row.userId);
           const showInvite =
             !!onInviteWaitlistUser && viewerOnWaitlist && !!currentUserId && row.userId !== currentUserId;
+          const canCreateTeamWith =
+            showInvite &&
+            canPairInDivision(currentDivision, viewerGender, (u as any)?.gender) &&
+            !userIdsInTeam.has(row.userId) &&
+            !userIdsInTeam.has(currentUserId!);
           return (
             <View
               style={[
@@ -307,10 +326,10 @@ export function PlayersTab({
                 >
                   WL
                 </Text>
-                {showInvite ? (
+                {showInvite && canCreateTeamWith ? (
                   <View style={rightSlotStyle}>
                     <IconButton
-                      icon="mail-outline"
+                      icon="add"
                       onPress={() => onInviteWaitlistUser!(row.userId)}
                       disabled={!!invitePartnerPending}
                       accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}

@@ -71,6 +71,11 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
         lastName,
         ...(photoUrl ? { photoUrl } : {}),
       };
+    // Reactivate soft-deleted accounts on successful sign-in.
+    if ((user as { deletedAt?: unknown }).deletedAt) {
+      patch.deletedAt = null;
+      patch.deletedBy = null;
+    }
       const existingUsername = (user as { username?: unknown }).username;
       if (typeof existingUsername !== 'string' || !existingUsername.trim()) {
         patch.username = await allocateUniqueUsernameFromEmail(col, email);
@@ -86,6 +91,7 @@ async function handleGoogle(req: VercelRequest, res: VercelResponse) {
         firstName,
         lastName,
         phone: '',
+        gender: 'male',
         authProvider: 'google',
         ...(photoUrl ? { photoUrl } : {}),
         createdAt: now,
@@ -115,6 +121,9 @@ async function handleMe(req: VercelRequest, res: VercelResponse) {
     const db = await getDb();
     const user = await db.collection('users').findOne({ _id: new ObjectId(auth.userId) });
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if ((user as { deletedAt?: unknown }).deletedAt) {
+      return res.status(403).json({ error: 'Account is deleted. Sign in again to reactivate.' });
+    }
     return res.status(200).json(serializeUser(user as Record<string, unknown>));
   } catch (err) {
     console.error(err);
@@ -199,6 +208,7 @@ async function handleSignup(req: VercelRequest, body: Record<string, unknown>, r
     passwordHash,
     authProvider: 'email',
     phone: '',
+    gender: 'male',
     emailVerified: false,
     createdAt: now,
     updatedAt: now,
@@ -270,7 +280,16 @@ async function handleLogin(req: VercelRequest, body: Record<string, unknown>, re
 
   const now = new Date().toISOString();
   const uid = (user as { _id: ObjectId })._id;
-  await col.updateOne({ _id: uid }, { $set: { updatedAt: now, lastLoginAt: now } });
+  // Reactivate soft-deleted accounts on successful login.
+  const delAt = (user as { deletedAt?: unknown }).deletedAt;
+  if (delAt) {
+    await col.updateOne(
+      { _id: uid },
+      { $set: { updatedAt: now, lastLoginAt: now }, $unset: { deletedAt: '', deletedBy: '' } }
+    );
+  } else {
+    await col.updateOne({ _id: uid }, { $set: { updatedAt: now, lastLoginAt: now } });
+  }
   const emailStr = (user as { email?: string }).email;
   const { user: u, accessToken } = await issueSessionAndUser(db, String(uid), emailStr);
   const sessionExpiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
