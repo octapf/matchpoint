@@ -147,6 +147,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      const targetUser = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+      const gender = String((targetUser as { gender?: unknown } | null)?.gender ?? '');
+      const isBinaryGender = gender === 'male' || gender === 'female';
+      const allowed =
+        division === 'mixed'
+          ? true
+          : division === 'men'
+            ? gender === 'male'
+            : division === 'women'
+              ? gender === 'female'
+              : false;
+      if (!allowed || (!isBinaryGender && division !== 'mixed')) {
+        return corsRes.status(400).json({ error: 'You cannot join this division' });
+      }
+
       const now = new Date().toISOString();
       const doc = {
         tournamentId,

@@ -159,6 +159,12 @@ export default function AdminEditTournamentScreen() {
   const [categoryPreset, setCategoryPreset] = useState<CategoryPreset>('none');
   const [cancelledLocal, setCancelledLocal] = useState(false);
   const [visibilityPrivate, setVisibilityPrivate] = useState(false);
+  const [bettingLocal, setBettingLocal] = useState<{
+    bettingEnabled: boolean;
+    bettingAllowWinner: boolean;
+    bettingAllowScore: boolean;
+    bettingAnonymous: boolean;
+  }>({ bettingEnabled: false, bettingAllowWinner: true, bettingAllowScore: true, bettingAnonymous: false });
   const [saving, setSaving] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,6 +186,12 @@ export default function AdminEditTournamentScreen() {
     setCategoryPreset(categoriesToPreset(tournament.categories));
     setCancelledLocal(tournament.status === 'cancelled');
     setVisibilityPrivate((tournament.visibility ?? 'public') === 'private');
+    setBettingLocal({
+      bettingEnabled: !!(tournament as unknown as Record<string, unknown>).bettingEnabled,
+      bettingAllowWinner: !!(tournament as unknown as Record<string, unknown>).bettingAllowWinner,
+      bettingAllowScore: !!(tournament as unknown as Record<string, unknown>).bettingAllowScore,
+      bettingAnonymous: !!(tournament as unknown as Record<string, unknown>).bettingAnonymous,
+    });
   }, [tournament]);
 
   const maxTeamsForSelect = useMemo(() => {
@@ -187,14 +199,23 @@ export default function AdminEditTournamentScreen() {
     return Number.isFinite(n) && n >= 2 && n <= 64 ? n : 16;
   }, [maxTeams]);
 
-  /** Pass `cancelledOverride` from the cancel Switch so we save the new value immediately (debounced save can run before state updates). */
+  /** Pass overrides from toggles so we save the new value immediately (debounced save can run before state updates). */
   const persist = useCallback(
-    (cancelledOverride?: boolean) => {
+    (overrides?: {
+      cancelled?: boolean;
+      visibilityPrivate?: boolean;
+      categoryPreset?: CategoryPreset;
+      divisions?: TournamentDivision[];
+    }) => {
       if (!id || !tournament) return;
       if (!name.trim() || !startDate || !location.trim()) return;
-      if (!divisions.length) return;
+      const divisionsEff = overrides?.divisions ?? divisions;
+      if (!divisionsEff.length) return;
 
-      const cancelledEff = cancelledOverride !== undefined ? cancelledOverride : cancelledLocal;
+      const cancelledEff = overrides?.cancelled !== undefined ? overrides.cancelled : cancelledLocal;
+      const visibilityPrivateEff =
+        overrides?.visibilityPrivate !== undefined ? overrides.visibilityPrivate : visibilityPrivate;
+      const categoryPresetEff = overrides?.categoryPreset ?? categoryPreset;
       const serverCancelled = tournament.status === 'cancelled';
 
       /** Cancel/reopen must work even when max/group fail client validation (legacy DB data). */
@@ -210,9 +231,9 @@ export default function AdminEditTournamentScreen() {
           setsPerMatch,
           groupCount,
           description,
-          divisions,
-          categoryPreset,
-          visibilityPrivate,
+          divisionsEff,
+          categoryPresetEff,
+          visibilityPrivateEff,
         ) && cancelledEff !== serverCancelled;
 
       if (onlyStatusChange) {
@@ -264,7 +285,7 @@ export default function AdminEditTournamentScreen() {
         return;
       }
 
-      const categories = presetToCategories(categoryPreset);
+      const categories = presetToCategories(categoryPresetEff);
       const payload: Record<string, unknown> = {
         id,
         name: name.trim(),
@@ -272,14 +293,14 @@ export default function AdminEditTournamentScreen() {
         startDate,
         endDate: end,
         location: location.trim(),
-        divisions,
+        divisions: divisionsEff,
         categories,
         maxTeams: max,
         pointsToWin: p2w,
         setsPerMatch: spm,
         groupCount: vg.groupCount,
         description: description.trim() || undefined,
-        visibility: visibilityPrivate ? 'private' : 'public',
+        visibility: visibilityPrivateEff ? 'private' : 'public',
       };
       if (cancelledEff !== serverCancelled) {
         payload.status = cancelledEff ? 'cancelled' : 'open';
@@ -445,7 +466,7 @@ export default function AdminEditTournamentScreen() {
               thumbColor="#f4f4f5"
               onValueChange={(v) => {
                 setVisibilityPrivate(v);
-                setTimeout(() => flushSave(), 0);
+                persist({ visibilityPrivate: v });
               }}
             />
           </View>
@@ -468,13 +489,27 @@ export default function AdminEditTournamentScreen() {
                   <Text style={styles.label}>{t(labelKey)}</Text>
                 </View>
                 <Switch
-                  value={!!(tournament as unknown as Record<string, boolean>)[key]}
+                  value={!!(bettingLocal as unknown as Record<string, boolean>)[key]}
+                  disabled={key !== 'bettingEnabled' && !bettingLocal.bettingEnabled}
                   trackColor={{ false: Colors.surfaceLight, true: tokens.accentHover }}
                   thumbColor="#f4f4f5"
                   onValueChange={(v) => {
+                    const prev = bettingLocal;
+                    const next = { ...bettingLocal, [key]: v } as typeof bettingLocal;
+                    if (key === 'bettingEnabled' && !v) {
+                      next.bettingAllowWinner = false;
+                      next.bettingAllowScore = false;
+                      next.bettingAnonymous = false;
+                    }
+                    setBettingLocal(next);
                     updateTournament.mutate(
                       { id, [key]: v },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.failedToLoad') }
+                      {
+                        onError: (err: unknown) => {
+                          setBettingLocal(prev);
+                          alertApiError(t, err, 'tournamentDetail.failedToLoad');
+                        },
+                      }
                     );
                   }}
                 />
@@ -502,20 +537,26 @@ export default function AdminEditTournamentScreen() {
                   style={[
                     styles.chip,
                     styles.chipFlex,
+                    tournamentStarted && styles.chipDisabled,
                     selected && styles.chipSelected,
                     selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
                   ]}
                   onPress={() => {
+                    if (tournamentStarted) return;
+                    let nextDivs: TournamentDivision[] = [];
                     setDivisions((prev) => {
                       if (prev.includes(opt.id)) {
                         if (prev.length <= 1) return prev;
-                        return prev.filter((d) => d !== opt.id);
+                        nextDivs = prev.filter((d) => d !== opt.id);
+                        return nextDivs;
                       }
-                      return [...prev, opt.id];
+                      nextDivs = [...prev, opt.id];
+                      return nextDivs;
                     });
-                    // Divisions/categories must persist immediately (otherwise query rehydrate looks like "revert").
-                    setTimeout(() => flushSave(), 0);
+                    // Divisions must persist immediately (otherwise query rehydrate looks like "revert").
+                    persist({ divisions: nextDivs });
                   }}
+                  disabled={tournamentStarted}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}
                 >
@@ -545,13 +586,16 @@ export default function AdminEditTournamentScreen() {
                   style={[
                     styles.chip,
                     styles.chipFlex,
+                    tournamentStarted && styles.chipDisabled,
                     selected && styles.chipSelected,
                     selected && { borderColor: tokens.accentOutline, backgroundColor: tokens.accentMuted },
                   ]}
                   onPress={() => {
+                    if (tournamentStarted) return;
                     setCategoryPreset(opt.id);
-                    setTimeout(() => flushSave(), 0);
+                    persist({ categoryPreset: opt.id });
                   }}
+                  disabled={tournamentStarted}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}
                 >
@@ -696,7 +740,7 @@ export default function AdminEditTournamentScreen() {
             thumbColor="#f4f4f5"
             onValueChange={(v) => {
               setCancelledLocal(v);
-              persist(v);
+              persist({ cancelled: v });
             }}
           />
         </View>
@@ -748,6 +792,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  chipDisabled: { opacity: 0.5 },
   chipFlex: { flex: 1, minWidth: 0 },
   chipSelected: {
     borderColor: Colors.surfaceLight,

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
@@ -18,6 +19,7 @@ export default function CreateTeamOrganizerScreen() {
   const { t } = useTranslation();
   const { id, division } = useLocalSearchParams<{ id: string; division?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
 
@@ -95,7 +97,7 @@ export default function CreateTeamOrganizerScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: 20 + insets.bottom }]}>
       <Text style={styles.title}>{t('team.createTeam')}</Text>
       <Text style={styles.hint}>{t('tournamentDetail.organizerCreateTeamHint')}</Text>
 

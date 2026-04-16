@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, Share, Alert, Pressable, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet, Share, Alert, Pressable, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
@@ -64,12 +64,9 @@ import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/Organ
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { openVenueInMaps } from '@/components/tournament/venueMapShared';
 import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
+import { PersistentBottomTabs, PERSISTENT_TABS_HEIGHT } from '@/components/ui/PersistentBottomTabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
-
-/** Same default asset as `TournamentListRow` / tournament cards in the list. */
-const DEFAULT_TOURNAMENT_CARD_BG = require('@/assets/images/tournament-card-bg.png');
-/** Icon + text on card image (matches `TournamentListRow` `CARD_CONFIG_ICON_COLOR`). */
-const TOURNAMENT_CONFIG_ON_CARD = 'rgba(255, 255, 255, 0.92)';
 
 function TeamCard({
   team,
@@ -224,9 +221,19 @@ function hasValidGender(g?: Gender | string): g is Gender {
   return g === 'male' || g === 'female';
 }
 
+function canJoinDivisionByGender(division: DivisionTab, gender: Gender | string | undefined): boolean {
+  // Unknown/other gender: only mixed division is allowed.
+  if (!hasValidGender(gender)) return division === 'mixed';
+  if (division === 'mixed') return true;
+  if (division === 'men') return gender === 'male';
+  if (division === 'women') return gender === 'female';
+  return false;
+}
+
 /** Tournament name in the info card (same look as the former nav title). */
 const tournamentNameInCardStyle = {
-  color: '#e5e5e5',
+  // Keep consistent with the selected tab color (see override where rendered).
+  color: Colors.text,
   fontSize: 17,
   fontWeight: '600',
   fontStyle: 'italic',
@@ -265,16 +272,17 @@ const TAB_CONFIG: {
     | 'tournamentDetail.tabBets'
     | 'tournamentDetail.tabFixture';
 }[] = [
-  { id: 'bets', icon: 'stats-chart-outline', labelKey: 'tournamentDetail.tabBets' },
   { id: 'players', icon: 'people-outline', labelKey: 'tournamentDetail.tabPlayers' },
   { id: 'teams', icon: 'shield-outline', labelKey: 'tournamentDetail.tabTeams' },
   { id: 'groups', icon: 'grid-outline', labelKey: 'tournamentDetail.tabGroups' },
+  { id: 'bets', icon: 'stats-chart-outline', labelKey: 'tournamentDetail.tabBets' },
   { id: 'fixture', icon: 'volleyball', labelKey: 'tournamentDetail.tabFixture' },
 ];
 
 export default function TournamentDetailScreen() {
   const { t, i18n } = useTranslation();
   const { tokens } = useTheme();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
@@ -429,9 +437,15 @@ export default function TournamentDetailScreen() {
           ? i18n.locale
           : 'en';
     const url = config.invite.getUrl(tournament.inviteLink, lang);
+    const androidIntentUrl = config.invite.getAndroidIntentUrl(tournament.inviteLink, lang);
+    const shareUrl = Platform.OS === 'android' ? androidIntentUrl : url;
+    const message =
+      Platform.OS === 'android'
+        ? `${t('tournamentDetail.inviteMessage', { name: tournament.name, url })}\n\n${androidIntentUrl}`
+        : t('tournamentDetail.inviteMessage', { name: tournament.name, url });
     Share.share({
-      message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
-      url,
+      message,
+      url: shareUrl,
       title: t('tournamentDetail.inviteTitle'),
     }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
   }, [i18n.locale, storedLanguage, t, tournament?.inviteLink, tournament?.name]);
@@ -467,13 +481,6 @@ export default function TournamentDetailScreen() {
           icon: 'create-outline',
           color: tokens.accent,
           onPress: () => router.push(`/admin/tournament/${id}` as never),
-        },
-        {
-          key: 'roster',
-          label: t('tournamentDetail.menuAdd'),
-          icon: 'person-add-outline',
-          color: tokens.accent,
-          onPress: () => router.push(`/admin/tournament/${id}/roster` as never),
         }
       );
     }
@@ -558,6 +565,7 @@ export default function TournamentDetailScreen() {
       }
     }
 
+    // Share is available to all users, but it stays in the menu list for organizers too.
     if (tournament.inviteLink) {
       list.push({
         key: 'share',
@@ -646,11 +654,6 @@ export default function TournamentDetailScreen() {
     return (tournament.organizerIds ?? []).filter((uid) => only.has(uid));
   }, [tournament]);
   const dateLabel = tournament?.date || tournament?.startDate;
-  const tournamentConfigCardImageSource = useMemo(() => {
-    const url = tournament?.coverImageUrl?.trim();
-    if (url) return { uri: url };
-    return DEFAULT_TOURNAMENT_CARD_BG;
-  }, [tournament?.coverImageUrl]);
   const isCancelled = tournament?.status === 'cancelled';
   const isOrganizeOnlyOrganizer = !!(userId && (tournament?.organizerOnlyIds ?? []).includes(userId));
 
@@ -692,15 +695,6 @@ export default function TournamentDetailScreen() {
   const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
 
-  const userHasTeam = teams.some(
-    (t) => (t.playerIds ?? []).includes(userId ?? '') && String((t as { tournamentId?: unknown }).tournamentId ?? '') === String(id ?? '')
-  );
-  const onWaitlist = useMemo(
-    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
-    [waitlistInfo?.users, userId]
-  );
-  /** On waiting list or already on a team (registered for the tournament flow). */
-  const isRegistered = onWaitlist || userHasTeam;
   const isLoading = loadingTournament;
   const isError = errorTournament;
 
@@ -709,6 +703,23 @@ export default function TournamentDetailScreen() {
     for (const team of teams) map[team._id] = divisionForTeam(team, userMap);
     return map;
   }, [teams, userMap]);
+
+  const userHasTeamInDivision = useMemo(() => {
+    if (!userId || !id) return false;
+    return teams.some((tm) => {
+      if (String((tm as { tournamentId?: unknown }).tournamentId ?? '') !== String(id)) return false;
+      if (!(tm.playerIds ?? []).includes(userId)) return false;
+      return teamDivisionById[tm._id] === currentDivision;
+    });
+  }, [userId, id, teams, teamDivisionById, currentDivision]);
+
+  const onWaitlistInDivision = useMemo(
+    () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
+    [waitlistInfo?.users, userId]
+  );
+
+  /** Registered in this division: waiting list for division, or already on a team in this division. */
+  const isRegistered = onWaitlistInDivision || userHasTeamInDivision;
 
   const filteredTeams = useMemo(
     () => teams.filter((team) => teamDivisionById[team._id] === currentDivision),
@@ -1231,6 +1242,47 @@ export default function TournamentDetailScreen() {
     [organizerMenuBaseItems, organizerMenuRoleItems]
   );
 
+  const infoMenuItems = useMemo((): OrganizerMenuItem[] => {
+    if (!tournament) return [];
+    const divs = ((tournament.divisions ?? []) as TournamentDivision[]).filter(Boolean);
+    const divisionsLabel =
+      divs.length === 0
+        ? t('tournaments.divisionMixed')
+        : divs
+            .map((d) =>
+              d === 'men'
+                ? t('tournaments.divisionMen')
+                : d === 'women'
+                  ? t('tournaments.divisionWomen')
+                  : t('tournaments.divisionMixed')
+            )
+            .join(' · ');
+    const catsRaw = Array.isArray((tournament as { categories?: unknown }).categories)
+      ? (((tournament as { categories: unknown[] }).categories ?? []) as unknown[])
+      : [];
+    const cats = catsRaw.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
+    const categoriesLabel = cats.join(' · ') || '—';
+    const visibilityLabel =
+      (tournament.visibility ?? 'public') === 'private' ? t('tournaments.visibilityPrivate') : t('tournaments.visibilityPublic');
+    const start = tournament.startDate || tournament.date || '—';
+    const end = tournament.endDate || start;
+    const dateRange = end && end !== start ? `${start} — ${end}` : start;
+
+    return [
+      {
+        key: 'info_location',
+        label: t('tournamentDetail.menuOpenLocation'),
+        icon: 'navigate-outline',
+        color: tokens.accentHover,
+        disabled: !tournament.location?.trim(),
+        onPress: () => {
+          if (!tournament.location?.trim()) return;
+          openVenueInMaps(tournament.location.trim());
+        },
+      },
+    ];
+  }, [t, tokens.accent, tokens.accentHover, tournament]);
+
   const [reorderPendingTeamId, setReorderPendingTeamId] = useState<string | null>(null);
   const [swapSourceTeamId, setSwapSourceTeamId] = useState<string | null>(null);
 
@@ -1610,12 +1662,12 @@ export default function TournamentDetailScreen() {
       return;
     }
 
-    if (userHasTeam) {
+    if (userHasTeamInDivision) {
       Alert.alert(t('common.error'), t('tournamentDetail.leaveTournamentStateError'));
       return;
     }
 
-    if (onWaitlist) {
+    if (onWaitlistInDivision) {
       Alert.alert(t('tournamentDetail.leaveTournament'), t('tournamentDetail.leaveTournamentConfirm'), [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -1632,6 +1684,7 @@ export default function TournamentDetailScreen() {
   };
 
   const tournamentCardMenuItems: OrganizerMenuItem[] = [
+    ...infoMenuItems,
     ...(canManageTournament ? organizerMenuItems : []),
     ...(canEnroll && !isCancelled && !isOrganizeOnlyOrganizer && isRegistered
       ? ([
@@ -1694,7 +1747,7 @@ export default function TournamentDetailScreen() {
     <FlashList
       data={[0]}
       keyExtractor={() => 'tournament-detail'}
-      contentContainerStyle={styles.content as never}
+        contentContainerStyle={[styles.content, { paddingBottom: 40 + PERSISTENT_TABS_HEIGHT + insets.bottom }] as never}
       ListHeaderComponent={
         <>
             <TournamentHeader
@@ -1722,100 +1775,52 @@ export default function TournamentDetailScreen() {
 
           {/* Tournament configuration */}
           {tournament ? (
-            <ImageBackground
-              source={tournamentConfigCardImageSource}
-              style={styles.tournamentConfigCard}
-              imageStyle={styles.tournamentConfigCardImage}
-              resizeMode="cover"
-            >
-              <View style={styles.tournamentConfigScrim} pointerEvents="none" />
+            <View style={styles.tournamentConfigCard}>
               <View style={styles.tournamentConfigContent}>
                 {tournamentCardMenuItems.length > 0 ? (
                   <View style={styles.tournamentConfigMenuAbs}>
                     <TournamentOrganizerMenu
                       menuLabel={t('tournamentDetail.actionsMenu')}
+                      title={t('tournamentDetail.tournamentPanelTitle')}
                       items={tournamentCardMenuItems}
                     />
                   </View>
                 ) : null}
-                <Text style={[tournamentNameInCardStyle, styles.tournamentConfigName]} numberOfLines={3}>
+                <Text
+                  style={[tournamentNameInCardStyle, styles.tournamentConfigName, { color: tokens.tabIconSelected }]}
+                  numberOfLines={3}
+                >
                   {tournament.name?.trim() || t('common.tournament')}
                 </Text>
                 <View style={styles.tournamentConfigRow}>
-                  <Ionicons name="location-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
+                  <Ionicons name="location-outline" size={18} color={Colors.text} />
                   {tournament.location?.trim() ? (
                     <Pressable
                       onPress={() => openVenueInMaps(tournament.location!.trim())}
                       accessibilityRole="link"
                       style={styles.tournamentConfigLocationPress}
                     >
-                      <Text style={[styles.tournamentConfigText, styles.tournamentLocationLink]} numberOfLines={3}>
+                      <Text
+                        style={[styles.tournamentConfigText, styles.tournamentLocationLink, { color: Colors.text }]}
+                        numberOfLines={3}
+                      >
                         {tournament.location.trim()}
                       </Text>
                     </Pressable>
                   ) : (
-                    <Text style={styles.tournamentConfigText}>—</Text>
+                    <Text style={[styles.tournamentConfigText, { color: Colors.text }]}>—</Text>
                   )}
-                </View>
-                <View style={styles.tournamentConfigRow}>
-                  <Ionicons name="calendar-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
-                  <Text style={styles.tournamentConfigText}>{dateLabel || '—'}</Text>
-                </View>
-                <View style={styles.tournamentConfigRow}>
-                  <Ionicons name="trophy-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
-                  <Text style={styles.tournamentConfigText}>
-                    {t('tournaments.pointsToWin')}: {tournament.pointsToWin ?? 21}
-                  </Text>
-                </View>
-                <View style={styles.tournamentConfigRow}>
-                  <Ionicons name="layers-outline" size={18} color={TOURNAMENT_CONFIG_ON_CARD} />
-                  <Text style={styles.tournamentConfigText}>
-                    {t('tournaments.setsPerMatch')}: {tournament.setsPerMatch ?? 1}
-                  </Text>
+                  <Ionicons name="calendar-outline" size={18} color={Colors.text} />
+                  <Text style={[styles.tournamentConfigText, { color: Colors.text }]}>{dateLabel || '—'}</Text>
                 </View>
               </View>
-            </ImageBackground>
+            </View>
           ) : null}
 
           {/* Join / leave tournament (waitlist join + leave waitlist or delete entry when on a team) */}
           {canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
             <>
-              {onWaitlist && !userHasTeam ? (
-                <Text style={styles.waitlistOnWaitlistHint}>{t('tournamentDetail.onWaitlistFormTeam')}</Text>
-              ) : null}
-              {!isRegistered ? (
-                <View style={styles.waitlistActions}>
-                  <Button
-                    title={t('tournamentDetail.joinTournament')}
-                    variant="secondary"
-                    onPress={() => {
-                      if (!userId || !id) return;
-                      if (!requireOnline()) return;
-                      joinWaitlist.mutate(
-                        { tournamentId: id, division: currentDivision, userId },
-                        { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
-                      );
-                    }}
-                    disabled={joinWaitlist.isPending}
-                    size="sm"
-                    fullWidth
-                  />
-                </View>
-              ) : null}
             </>
-          ) : null}
-
-          {canManageTournament && id ? (
-            <View style={styles.organizerTournamentActions}>
-              <Button
-                title={t('tournamentDetail.editTournament')}
-                variant="primary"
-                onPress={() => router.push(`/admin/tournament/${id}` as never)}
-                size="sm"
-                fullWidth
-                disabled={isOffline}
-              />
-            </View>
           ) : null}
 
           <TournamentTabsBar
@@ -1823,17 +1828,34 @@ export default function TournamentDetailScreen() {
             availableDivisions={availableDivisions}
             currentDivision={currentDivision}
             onSelectDivision={setActiveDivision}
+            divisionActionNode={
+              !isRegistered &&
+              canEnroll &&
+              !isCancelled &&
+              !isOrganizeOnlyOrganizer &&
+              canJoinDivisionByGender(currentDivision, user?.gender) ? (
+                <Button
+                  title={t('tournamentDetail.joinTournament')}
+                  variant="secondary"
+                  onPress={() => {
+                    if (!userId || !id) return;
+                    if (!requireOnline()) return;
+                    joinWaitlist.mutate(
+                      { tournamentId: id, division: currentDivision, userId },
+                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
+                    );
+                  }}
+                  disabled={joinWaitlist.isPending}
+                  size="sm"
+                  fullWidth
+                />
+              ) : null
+            }
             matchProgress={matchProgress}
             activeTab={activeTab}
             onSelectTab={setActiveTab}
             tabConfig={TAB_CONFIG as never}
             tabValueById={{
-              players: `${filteredEntries.length}/${playersPerDivisionCap}`,
-              teams: `${filteredTeams.length}/${teamsPerDivisionCap}`,
-              groups: `${
-                groupsDistributionPending ? `0/${groupsPerDivisionCap}` : `${filteredGroupsWithTeams}/${groupsPerDivisionCap}`
-              }`,
-              bets: `${bettingSnapshot?.matches?.length ?? 0}`,
             }}
             tabsSectionStyle={styles.tabsSection}
             divisionTabBarStyle={styles.divisionTabBar}
@@ -1878,9 +1900,9 @@ export default function TournamentDetailScreen() {
             onConfirmLeave={confirmLeave}
             onConfirmRemovePlayer={confirmRemovePlayer}
             onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
-            viewerOnWaitlist={onWaitlist}
+            viewerOnWaitlist={onWaitlistInDivision}
             onInviteWaitlistUser={
-              onWaitlist && id
+              onWaitlistInDivision && id
                 ? (toUserId) => {
                     if (!requireOnline()) return;
                     invitePartnerFromWaitlist.mutate(
@@ -1891,6 +1913,8 @@ export default function TournamentDetailScreen() {
                 : undefined
             }
             invitePartnerPending={invitePartnerFromWaitlist.isPending}
+            playersPerDivisionCap={playersPerDivisionCap}
+            sectionHeadingStyle={styles.groupHeading}
             emptyTextStyle={styles.emptyText}
             playerRowStyle={styles.playerRow}
             playerRowOrganizerStyle={styles.playerRowOrganizer}
@@ -1907,21 +1931,67 @@ export default function TournamentDetailScreen() {
         {activeTab === 'teams' ? (
           <TeamsTab
             t={t}
-            canCreateTeam={!canManageTournament && !userHasTeam && onWaitlist && canEnroll && !!id}
-            onCreateTeam={() => router.push(`/tournament/${id}/team/create?division=${currentDivision}`)}
+            canCreateTeam={!canManageTournament && !userHasTeamInDivision && onWaitlistInDivision && canEnroll && !!id}
+                      onCreateTeam={() => router.push(`/tournament/${id}/team/create?division=${currentDivision}`)}
             organizerActions={
               canManageTournament && id ? (
                 <View style={styles.teamsTabCreateRow}>
-                  <Button
-                    title={t('tournamentDetail.createTeamFromEntries')}
-                    variant="outline"
+                  <Pressable
+                    style={styles.teamCard as never}
                     onPress={() => router.push(`/tournament/${id}/team/create-organizer?division=${currentDivision}`)}
-                    size="sm"
-                    fullWidth
-                  />
+                    accessibilityRole="button"
+                    accessibilityLabel={t('tournamentDetail.createTeamFromEntries')}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', fontStyle: 'italic', color: Colors.text }} numberOfLines={1}>
+                          {t('tournamentDetail.newTeamPlaceholder')}
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle-outline" size={28} color={tokens.accentHover} />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 10 }}>
+                      {[0, 1].map((i) => (
+                        <View
+                          key={i}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            flexGrow: 0,
+                            flexShrink: 1,
+                            maxWidth: '48%',
+                            minWidth: 0,
+                            paddingVertical: 2,
+                          }}
+                        >
+                          <View
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 13,
+                              backgroundColor: Colors.surfaceLight,
+                              borderWidth: 1,
+                              borderColor: Colors.surfaceLight,
+                            }}
+                          />
+                          <View
+                            style={{
+                              height: 10,
+                              width: 70,
+                              borderRadius: 6,
+                              backgroundColor: Colors.surfaceLight,
+                            }}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  </Pressable>
                 </View>
               ) : null
             }
+            teamsCountText={`${filteredTeams.length}/${teamsPerDivisionCap} ${t('tournamentDetail.teams')}`}
             loadingTeams={loadingTeams}
             filteredTeams={teamsSortedForTeamsTab}
             renderTeam={(team) => {
@@ -2095,6 +2165,9 @@ export default function TournamentDetailScreen() {
         </>
       )}
     />
+    <View style={styles.persistentTabsWrap} pointerEvents="box-none">
+      <PersistentBottomTabs active="tournaments" />
+    </View>
     <OrganizeOnlyDivisionsModal
       visible={organizeOnlyModal != null}
       onClose={() => setOrganizeOnlyModal(null)}
@@ -2133,7 +2206,7 @@ export default function TournamentDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 20, paddingBottom: 40 + PERSISTENT_TABS_HEIGHT },
   centered: { justifyContent: 'center', padding: 24 },
   skeletonBlock: { marginBottom: 24 },
   header: { marginBottom: 0 },
@@ -2161,11 +2234,13 @@ const styles = StyleSheet.create({
   },
   progressLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' },
   waitlistActions: { marginBottom: 16 },
-  organizerTournamentActions: {
-    marginBottom: 16,
-    marginTop: 4,
-  },
   tabsSection: { marginBottom: 8, overflow: 'visible' },
+  persistentTabsWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   divisionTabBar: {
     flexDirection: 'row',
     gap: 8,
@@ -2580,22 +2655,14 @@ const styles = StyleSheet.create({
   },
   genderRequired: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 12 },
   waitlistExplainer: { fontSize: 13, color: Colors.textMuted, lineHeight: 18, marginBottom: 12 },
-  waitlistOnWaitlistHint: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 8 },
   tournamentConfigCard: {
     position: 'relative',
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
     overflow: 'hidden',
-  },
-  tournamentConfigCardImage: {
-    borderRadius: 12,
-  },
-  /** Same scrim as `TournamentListRow` `cardBgScrim`. */
-  tournamentConfigScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.52)',
   },
   tournamentConfigContent: {
     position: 'relative',
@@ -2622,7 +2689,7 @@ const styles = StyleSheet.create({
   },
   tournamentConfigText: {
     fontSize: 14,
-    color: TOURNAMENT_CONFIG_ON_CARD,
+    color: Colors.text,
     lineHeight: 20,
     fontStyle: 'italic',
     fontWeight: '700',
@@ -2633,7 +2700,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   tournamentLocationLink: {
-    color: TOURNAMENT_CONFIG_ON_CARD,
+    color: Colors.text,
     textDecorationLine: 'underline',
   },
   playerRow: {

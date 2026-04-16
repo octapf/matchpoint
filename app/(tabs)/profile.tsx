@@ -159,7 +159,13 @@ export default function ProfileScreen() {
             size="lg"
             photoUrl={user.photoUrl}
           />
-          <Text style={styles.name}>{getUserDisplayName(user) || '—'}</Text>
+          <Text style={styles.name}>
+            {(() => {
+              const raw = (getUserDisplayName(user) || '').trim();
+              if (!raw) return '—';
+              return raw.charAt(0).toLocaleUpperCase() + raw.slice(1);
+            })()}
+          </Text>
           <Text style={styles.email}>{user.email || '—'}</Text>
         </Pressable>
 

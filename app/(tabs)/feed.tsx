@@ -154,6 +154,20 @@ export default function FeedScreen() {
   const weatherReady = current != null;
   const panelIconColors =
     weatherReady && current && !isError ? getWeatherPanelIconColors(skyKey, current.isDay) : null;
+  const todayMinMax = useMemo(() => {
+    if (!hourly.length) return null;
+    const dayKey = String(hourly[0]?.timeIso ?? '').slice(0, 10);
+    const inDay = dayKey ? hourly.filter((h) => String(h.timeIso).slice(0, 10) === dayKey) : hourly;
+    const temps = (inDay.length ? inDay : hourly).map((h) => h.temperatureC).filter((n) => Number.isFinite(n));
+    if (!temps.length) return null;
+    let min = temps[0]!;
+    let max = temps[0]!;
+    for (const t of temps) {
+      if (t < min) min = t;
+      if (t > max) max = t;
+    }
+    return { minC: min, maxC: max };
+  }, [hourly]);
 
   const topPad = Math.max(insets.top, 12) + 8;
   const scrollContentStyle = useMemo(() => [styles.content, { paddingTop: 0 }], []);
@@ -188,8 +202,17 @@ export default function FeedScreen() {
             ) : (
               <View style={styles.weatherBody}>
                 <View style={styles.weatherTopRow}>
-                  <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={30} iconColors={panelIconColors!} />
-                  <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+                  <View style={styles.tempLeft}>
+                    <WeatherGlyph skyKey={skyKey} isDay={current.isDay} size={30} iconColors={panelIconColors!} />
+                    <Text style={styles.temp}>{Math.round(current.temperatureC)}°</Text>
+                  </View>
+                  {todayMinMax ? (
+                    <Text style={styles.tempRange} accessibilityRole="text">
+                      ↑{Math.round(todayMinMax.maxC)}° ↓{Math.round(todayMinMax.minC)}°
+                    </Text>
+                  ) : (
+                    <View />
+                  )}
                 </View>
                 <Text style={styles.skyText}>{skyLabel}</Text>
 
@@ -411,15 +434,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     direction: 'ltr',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     gap: 10,
     marginBottom: 2,
   },
+  tempLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   temp: {
     fontSize: 34,
     fontWeight: '200',
     color: Colors.text,
     letterSpacing: -1.2,
+  },
+  tempRange: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.88)',
+    textAlign: 'right',
+    alignSelf: 'flex-start',
+    letterSpacing: 0.2,
   },
   skyText: {
     fontSize: 14,

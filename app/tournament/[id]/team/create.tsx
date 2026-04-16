@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, TextInput, Alert, Pressable, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
@@ -20,6 +21,7 @@ export default function CreateTeamScreen() {
   const { t } = useTranslation();
   const { id, division } = useLocalSearchParams<{ id: string; division?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const hasValidGender = user?.gender === 'male' || user?.gender === 'female';
@@ -131,7 +133,11 @@ export default function CreateTeamScreen() {
   }
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={[styles.container, { paddingBottom: 40 + insets.bottom }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>{t('team.createTeam')}</Text>
 
       <View style={styles.field}>

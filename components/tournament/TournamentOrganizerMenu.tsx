@@ -6,19 +6,27 @@ import Colors from '@/constants/Colors';
 import { IconButton } from '@/components/ui/IconButton';
 import { useTheme } from '@/lib/theme/useTheme';
 
-export type OrganizerMenuItem = {
-  key: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  onPress: () => void;
-  disabled?: boolean;
-  accessibilityLabel?: string;
-};
+export type OrganizerMenuItem =
+  | {
+      kind?: 'item';
+      key: string;
+      label: string;
+      icon: keyof typeof Ionicons.glyphMap;
+      color: string;
+      onPress: () => void;
+      disabled?: boolean;
+      accessibilityLabel?: string;
+    }
+  | {
+      kind: 'section';
+      key: string;
+      label: string;
+    };
 
 type Props = {
   items: OrganizerMenuItem[];
   menuLabel: string;
+  title?: string;
 };
 
 const ROW_ICON = 22;
@@ -27,7 +35,7 @@ const ROW_ICON = 22;
  * Tournament actions as a **bottom action sheet** (same pattern as iOS/Android share sheets).
  * No anchor math, no shrink-width — predictable and aligned with the screen + safe area.
  */
-export function TournamentOrganizerMenu({ items, menuLabel }: Props) {
+export function TournamentOrganizerMenu({ items, menuLabel, title }: Props) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const { tokens } = useTheme();
@@ -54,36 +62,47 @@ export function TournamentOrganizerMenu({ items, menuLabel }: Props) {
               },
             ]}
           >
-            {items.map((item, index) => (
-              <Pressable
-                key={item.key}
-                style={({ pressed }) => [
-                  styles.row,
-                  index < items.length - 1 && styles.rowBorder,
-                  pressed && styles.rowPressed,
-                  item.disabled && styles.rowDisabled,
-                ]}
-                onPress={() => {
-                  if (item.disabled) return;
-                  close();
-                  item.onPress();
-                }}
-                disabled={item.disabled}
-                accessibilityRole="button"
-                accessibilityLabel={item.accessibilityLabel ?? item.label}
-              >
-                <Text style={styles.rowLabel} numberOfLines={2}>
-                  {item.label}
-                </Text>
-                <View style={styles.iconSlot}>
-                  <Ionicons
-                    name={item.icon}
-                    size={ROW_ICON}
-                    color={item.disabled ? Colors.textMuted : item.color}
-                  />
+            {title ? <Text style={styles.sheetTitle}>{String(title).toUpperCase()}</Text> : null}
+            {items.map((item, index) =>
+              item.kind === 'section' ? (
+                <View
+                  key={item.key}
+                  style={[styles.sectionRow, index > 0 ? styles.sectionRowTopPad : null]}
+                  accessibilityRole="text"
+                >
+                  <Text style={styles.sectionLabel}>{String(item.label).toUpperCase()}</Text>
                 </View>
-              </Pressable>
-            ))}
+              ) : (
+                <Pressable
+                  key={item.key}
+                  style={({ pressed }) => [
+                    styles.row,
+                    index < items.length - 1 && styles.rowBorder,
+                    pressed && styles.rowPressed,
+                    item.disabled && styles.rowDisabled,
+                  ]}
+                  onPress={() => {
+                    if (item.disabled) return;
+                    close();
+                    item.onPress();
+                  }}
+                  disabled={item.disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.accessibilityLabel ?? item.label}
+                >
+                  <Text style={styles.rowLabel} numberOfLines={2}>
+                    {item.label}
+                  </Text>
+                  <View style={styles.iconSlot}>
+                    <Ionicons
+                      name={item.icon}
+                      size={ROW_ICON}
+                      color={item.disabled ? Colors.textMuted : item.color}
+                    />
+                  </View>
+                </Pressable>
+              )
+            )}
           </View>
         </View>
       </Modal>
@@ -109,6 +128,16 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.surfaceLight,
     borderBottomWidth: 0,
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    fontStyle: 'italic',
+    color: Colors.text,
+    textAlign: 'right',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    letterSpacing: 0.9,
   },
   row: {
     flexDirection: 'row',
@@ -141,6 +170,24 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '500',
     color: Colors.text,
+    textAlign: 'right',
+  },
+  sectionRow: {
+    paddingTop: 10,
+    paddingBottom: 6,
+    paddingHorizontal: 12,
+  },
+  sectionRowTopPad: {
+    marginTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.surfaceLight,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    fontStyle: 'italic',
+    letterSpacing: 1.1,
+    color: Colors.textMuted,
     textAlign: 'right',
   },
 });

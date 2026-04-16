@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import i18n, { useTranslation } from '@/lib/i18n';
-import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Share, Alert, RefreshControl, Animated, Easing, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,9 +66,15 @@ export default function TournamentsScreen() {
             ? i18n.locale
             : 'en';
       const url = config.invite.getUrl(tournament.inviteLink, lang);
+      const androidIntentUrl = config.invite.getAndroidIntentUrl(tournament.inviteLink, lang);
+      const shareUrl = Platform.OS === 'android' ? androidIntentUrl : url;
+      const message =
+        Platform.OS === 'android'
+          ? `${t('tournamentDetail.inviteMessage', { name: tournament.name, url })}\n\n${androidIntentUrl}`
+          : t('tournamentDetail.inviteMessage', { name: tournament.name, url });
       Share.share({
-        message: t('tournamentDetail.inviteMessage', { name: tournament.name, url }),
-        url,
+        message,
+        url: shareUrl,
         title: t('tournamentDetail.inviteTitle'),
       }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
     },

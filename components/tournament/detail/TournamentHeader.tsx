@@ -111,7 +111,11 @@ export function TournamentHeader({
 
           {canManageTournament ? (
             <View style={headerTopActionsStyle as never}>
-              <TournamentOrganizerMenu menuLabel={t('tournamentDetail.actionsMenu')} items={organizerMenuItems} />
+              <TournamentOrganizerMenu
+                menuLabel={t('tournamentDetail.actionsMenu')}
+                title={t('tournamentDetail.tournamentPanelTitle')}
+                items={organizerMenuItems}
+              />
             </View>
           ) : null}
         </View>

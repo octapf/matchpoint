@@ -62,6 +62,8 @@ export function PlayersTab({
   viewerOnWaitlist,
   onInviteWaitlistUser,
   invitePartnerPending,
+  playersPerDivisionCap,
+  sectionHeadingStyle,
   emptyTextStyle,
   playerRowStyle,
   playerRowOrganizerStyle,
@@ -97,6 +99,9 @@ export function PlayersTab({
   viewerOnWaitlist?: boolean;
   onInviteWaitlistUser?: (userId: string) => void;
   invitePartnerPending?: boolean;
+  playersPerDivisionCap?: number;
+  /** Style used for group headings (e.g. “GRUPO 1”). */
+  sectionHeadingStyle?: unknown;
   emptyTextStyle: unknown;
   playerRowStyle: unknown;
   playerRowOrganizerStyle: unknown;
@@ -150,7 +155,8 @@ export function PlayersTab({
     return out;
   }, [sortedEntries, waitlistUserIds, userMap]);
 
-  const rightClusterStyle = [playerRowRightStyle as never, { gap: 6 } as never];
+  const rightClusterStyle = [playerRowRightStyle as never, { gap: 8, alignItems: 'center' } as never];
+  const rightSlotStyle = { width: 34, alignItems: 'center', justifyContent: 'center' } as const;
 
   const header = (
     <>
@@ -191,14 +197,16 @@ export function PlayersTab({
                   </Pressable>
                   <View style={rightClusterStyle}>
                     {showDemote ? (
-                      <IconButton
-                        icon="person-circle-outline"
-                        onPress={() => onDemoteOrganizeOnly(uid, playerName)}
-                        disabled={mutationBusy}
-                        accessibilityLabel={t('tournamentDetail.removeOrganizer')}
-                        color={tokens.accentHover}
-                        compact
-                      />
+                      <View style={rightSlotStyle}>
+                        <IconButton
+                          icon="ribbon"
+                          onPress={() => onDemoteOrganizeOnly(uid, playerName)}
+                          disabled={mutationBusy}
+                          accessibilityLabel={t('tournamentDetail.removeOrganizer')}
+                          color={tokens.accentHover}
+                          compact
+                        />
+                      </View>
                     ) : null}
                   </View>
                 </View>
@@ -220,9 +228,14 @@ export function PlayersTab({
   }
 
   const sectionTitle = (sectionId: 'withTeam' | 'noTeamYet' | 'waitlist'): string => {
-    if (sectionId === 'withTeam') return t('tournamentDetail.playersGroupWithTeam');
+    if (sectionId === 'withTeam') {
+      const withTeamCount = sortedEntries.filter((e) => !!e.teamId).length;
+      const cap = Number.isFinite(Number(playersPerDivisionCap)) ? Math.max(0, Number(playersPerDivisionCap)) : null;
+      return cap != null ? `${t('tournamentDetail.playersGroupWithTeam')} ${withTeamCount}/${cap}` : t('tournamentDetail.playersGroupWithTeam');
+    }
     if (sectionId === 'noTeamYet') return t('tournamentDetail.playersGroupNoTeamYet');
-    return t('tournamentDetail.tabWaitingList');
+    const wlTotal = (waitlistUserIds ?? []).length;
+    return `${t('tournamentDetail.tabWaitingList')} (${wlTotal})`;
   };
 
   return (
@@ -241,14 +254,8 @@ export function PlayersTab({
           return (
             <Text
               style={[
-                playerRowNameStyle as never,
-                {
-                  fontSize: 13,
-                  opacity: 0.85,
-                  marginBottom: 8,
-                  fontWeight: '600',
-                  marginTop: index === 0 ? 0 : 12,
-                } as never,
+                (sectionHeadingStyle ?? playerRowNameStyle) as never,
+                { marginTop: index === 0 ? 0 : 12 } as never,
               ]}
             >
               {sectionTitle(row.sectionId)}
@@ -301,24 +308,28 @@ export function PlayersTab({
                   WL
                 </Text>
                 {showInvite ? (
-                  <IconButton
-                    icon="mail-outline"
-                    onPress={() => onInviteWaitlistUser!(row.userId)}
-                    disabled={!!invitePartnerPending}
-                    accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}
-                    color={tokens.accentHover}
-                    compact
-                  />
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon="mail-outline"
+                      onPress={() => onInviteWaitlistUser!(row.userId)}
+                      disabled={!!invitePartnerPending}
+                      accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}
+                      color={tokens.accentHover}
+                      compact
+                    />
+                  </View>
                 ) : null}
                 {canManageTournament && onRemoveWaitlistPlayer ? (
-                  <IconButton
-                    icon="trash-outline"
-                    onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
-                    disabled={mutationBusy}
-                    accessibilityLabel={t('tournamentDetail.removeFromWaitlist')}
-                    color="#f87171"
-                    compact
-                  />
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon="trash-outline"
+                      onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
+                      disabled={mutationBusy}
+                      accessibilityLabel={t('tournamentDetail.removeFromWaitlist')}
+                      color="#f87171"
+                      compact
+                    />
+                  </View>
                 ) : null}
               </View>
             </View>
@@ -361,34 +372,40 @@ export function PlayersTab({
 
               <View style={rightClusterStyle}>
                 {hasTeam ? (
-                  <MatchStyleStatusPill>
-                    <Ionicons name="checkmark" size={14} color="#22c55e" />
-                  </MatchStyleStatusPill>
+                  <View style={rightSlotStyle}>
+                    <MatchStyleStatusPill>
+                      <Ionicons name="checkmark" size={14} color="#22c55e" />
+                    </MatchStyleStatusPill>
+                  </View>
                 ) : null}
                 {showOrganizerToggleIcon ? (
-                  <IconButton
-                    icon="person-circle-outline"
-                    onPress={() =>
-                      isOrg ? onDemoteOrganizer(entry.userId, playerName) : onPromoteOrganizer(entry.userId, playerName)
-                    }
-                    disabled={mutationBusy}
-                    accessibilityLabel={isOrg ? t('tournamentDetail.removeOrganizer') : t('tournamentDetail.makeOrganizer')}
-                    color={isOrg ? tokens.accentHover : Colors.textMuted}
-                    compact
-                  />
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon={isOrg ? 'ribbon' : 'ribbon-outline'}
+                      onPress={() =>
+                        isOrg ? onDemoteOrganizer(entry.userId, playerName) : onPromoteOrganizer(entry.userId, playerName)
+                      }
+                      disabled={mutationBusy}
+                      accessibilityLabel={isOrg ? t('tournamentDetail.removeOrganizer') : t('tournamentDetail.makeOrganizer')}
+                      color={isOrg ? tokens.accentHover : Colors.textMuted}
+                      compact
+                    />
+                  </View>
                 ) : null}
 
                 {showTopTrash ? (
-                  <IconButton
-                    icon="trash-outline"
-                    onPress={() => (isSelf && hasJoined ? onConfirmLeave() : onConfirmRemovePlayer(entry, playerName))}
-                    disabled={mutationBusy}
-                    accessibilityLabel={
-                      isSelf && hasJoined ? t('tournamentDetail.leaveTournament') : t('tournamentDetail.removePlayer')
-                    }
-                    color="#f87171"
-                    compact
-                  />
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon="trash-outline"
+                      onPress={() => (isSelf && hasJoined ? onConfirmLeave() : onConfirmRemovePlayer(entry, playerName))}
+                      disabled={mutationBusy}
+                      accessibilityLabel={
+                        isSelf && hasJoined ? t('tournamentDetail.leaveTournament') : t('tournamentDetail.removePlayer')
+                      }
+                      color="#f87171"
+                      compact
+                    />
+                  </View>
                 ) : null}
               </View>
             </View>

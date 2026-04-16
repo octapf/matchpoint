@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Modal, FlatList, type ListRenderItem } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { THEME_PRESETS, type ThemePresetId } from '@/lib/theme/colors';
 import { useThemeStore } from '@/store/useThemeStore';
@@ -15,6 +16,7 @@ export function ThemePresetSelect({ label, onChange }: ThemePresetSelectProps) {
   const [open, setOpen] = useState(false);
   const presetId = useThemeStore((s) => s.presetId);
   const setPresetId = useThemeStore((s) => s.setPresetId);
+  const insets = useSafeAreaInsets();
 
   const items = useMemo(() => Object.values(THEME_PRESETS), []);
   const selected = presetId && presetId in THEME_PRESETS ? presetId : items[0]!.id;
@@ -72,7 +74,7 @@ export function ThemePresetSelect({ label, onChange }: ThemePresetSelectProps) {
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)} />
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{label}</Text>
               <Pressable onPress={() => setOpen(false)} hitSlop={12}>
@@ -120,7 +122,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    paddingBottom: 28,
     maxHeight: '70%',
   },
   modalHeader: {

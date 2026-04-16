@@ -12,6 +12,7 @@ export function TournamentTabsBar({
   availableDivisions,
   currentDivision,
   onSelectDivision,
+  divisionActionNode,
   matchProgress,
   activeTab,
   onSelectTab,
@@ -39,6 +40,7 @@ export function TournamentTabsBar({
   availableDivisions: TournamentDivision[];
   currentDivision: TournamentDivision;
   onSelectDivision: (division: TournamentDivision) => void;
+  divisionActionNode?: React.ReactNode;
   matchProgress: { total: number; completed: number; ratio: number } | null;
   activeTab: TournamentTabId;
   onSelectTab: (tab: TournamentTabId) => void;
@@ -97,23 +99,7 @@ export function TournamentTabsBar({
       </View>
 
       <View style={[tabBarStyle as never, { flexDirection: 'column' } as never]}>
-        {matchProgress ? (
-          <View style={[progressWrapStyle as never, { marginTop: 0, marginBottom: 10 } as never]} accessibilityRole="text">
-            <View style={progressTrackStyle as never}>
-              <View
-                style={[
-                  progressFillStyle as never,
-                  { backgroundColor: tokens.accent } as never,
-                  { width: `${Math.round(matchProgress.ratio * 100)}%` },
-                ]}
-              />
-            </View>
-            <Text style={progressLabelStyle as never}>
-              {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
-            </Text>
-          </View>
-        ) : null}
-
+        {divisionActionNode ? <View style={{ marginBottom: 10 }}>{divisionActionNode}</View> : null}
         <View style={{ flexDirection: 'row', gap: 4 }} accessibilityRole="tablist">
           {tabConfig.map(({ id: tabId, icon, labelKey }) => {
             const selected = activeTab === tabId;
@@ -152,6 +138,23 @@ export function TournamentTabsBar({
             );
           })}
         </View>
+
+        {activeTab === 'fixture' && matchProgress ? (
+          <View style={[progressWrapStyle as never, { marginTop: 8, marginBottom: 10 } as never]} accessibilityRole="text">
+            <Text style={[progressLabelStyle as never, { color: tokens.accent } as never]}>
+              {t('tournamentDetail.progressLabel', { done: matchProgress.completed, total: matchProgress.total })}
+            </Text>
+            <View style={progressTrackStyle as never}>
+              <View
+                style={[
+                  progressFillStyle as never,
+                  { backgroundColor: tokens.accent } as never,
+                  { width: `${Math.round(matchProgress.ratio * 100)}%` },
+                ]}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
     </View>
   );
