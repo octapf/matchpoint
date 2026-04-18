@@ -14,6 +14,9 @@ import {
 import { countTeamsInGroup } from '../../server/lib/tournamentGroupDb';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import { notifyMany } from '../../server/lib/notify';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots } from '../../lib/playerSlots';
+import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
+import type { TournamentDivision } from '../../types';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -26,17 +29,8 @@ function firstQueryString(q: string | string[] | undefined): string | undefined 
   return typeof q === 'string' ? q : q[0];
 }
 
-function normalizePlayerIds(raw: unknown): string[] | null {
-  const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  const clean = list
-    .map((x) => (typeof x === 'string' ? x.trim() : ''))
-    .filter(Boolean)
-    .filter((x, i, arr) => arr.indexOf(x) === i);
-  if (clean.length !== 2) return null;
-  for (const pid of clean) {
-    if (!ObjectId.isValid(pid)) return null;
-  }
-  return clean;
+function normalizePlayerIds(raw: unknown): [string, string] | null {
+  return normalizeTeamPlayerSlots(raw);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -141,12 +135,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const prevPids = ((team as { playerIds?: string[] }).playerIds ?? []).filter(Boolean);
         const division = String((team as { division?: unknown }).division ?? 'mixed');
+        const tDivs = (tournament as { divisions?: TournamentDivision[] }).divisions;
+        const pairRes = await resolveTwoSlotGenders(db, tournamentId, tDivs, clean[0], clean[1]);
+        if (!pairRes.ok) {
+          return corsRes.status(400).json({ error: pairRes.error });
+        }
+        if (pairRes.pairDivision !== division) {
+          return corsRes.status(400).json({ error: 'Player pair does not match this team division' });
+        }
+
         const added = clean.filter((pid) => !prevPids.includes(pid));
         const waitlistCol = db.collection('waitlist');
-        for (const uid of added) {
-          const w = await waitlistCol.findOne({ tournamentId, division, userId: uid });
+        for (const pid of added) {
+          if (isGuestPlayerSlot(pid)) continue;
+          const w = await waitlistCol.findOne({ tournamentId, division, userId: pid });
           if (!w) {
-            return corsRes.status(400).json({ error: 'Both players must be on the waiting list' });
+            return corsRes.status(400).json({ error: 'Registered player must be on the waiting list for this division' });
           }
         }
 
@@ -165,49 +169,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await teamsCol.updateOne({ _id: oid }, { $set: update }, { session });
 
             const removed = prevPids.filter((pid) => !clean.includes(pid));
-            for (const uid of removed) {
-              await ec.deleteMany({ tournamentId, userId: uid }, { session });
-              const dup = await wc.findOne({ tournamentId, division, userId: uid }, { session });
-              if (!dup) {
-                await wc.insertOne(
-                  {
-                    tournamentId,
-                    division,
-                    userId: uid,
-                    createdAt: now,
-                    updatedAt: now,
-                  },
-                  { session }
-                );
-              }
-            }
-
-            for (const uid of clean) {
-              await ec.deleteMany({ tournamentId, userId: uid, teamId: null }, { session });
-              const existing = await ec.findOne({ tournamentId, userId: uid }, { session });
-              const entryPayload = {
-                teamId: teamIdStr,
-                status: 'in_team',
-                lookingForPartner: false,
-                updatedAt: now,
-              };
-              if (existing) {
-                await ec.updateOne({ _id: existing._id }, { $set: entryPayload }, { session });
+            for (const pid of removed) {
+              if (isGuestPlayerSlot(pid)) {
+                const gid = guestPlayerIdFromSlot(pid)!;
+                await ec.deleteMany({ tournamentId, guestPlayerId: gid }, { session });
               } else {
-                await ec.insertOne(
-                  {
-                    tournamentId,
-                    userId: uid,
-                    ...entryPayload,
-                    createdAt: now,
-                  },
-                  { session }
-                );
+                await ec.deleteMany({ tournamentId, userId: pid }, { session });
+                const dup = await wc.findOne({ tournamentId, division, userId: pid }, { session });
+                if (!dup) {
+                  await wc.insertOne(
+                    {
+                      tournamentId,
+                      division,
+                      userId: pid,
+                      createdAt: now,
+                      updatedAt: now,
+                    },
+                    { session }
+                  );
+                }
               }
             }
 
-            // Remove from waitlist across ALL divisions for this tournament (prevents stale WL rows after team changes).
-            await wc.deleteMany({ tournamentId, userId: { $in: clean } }, { session });
+            for (const pid of clean) {
+              if (isGuestPlayerSlot(pid)) {
+                const gid = guestPlayerIdFromSlot(pid)!;
+                await ec.deleteMany({ tournamentId, guestPlayerId: gid, teamId: null }, { session });
+                const existing = await ec.findOne({ tournamentId, guestPlayerId: gid }, { session });
+                const entryPayload = {
+                  teamId: teamIdStr,
+                  status: 'in_team' as const,
+                  lookingForPartner: false,
+                  updatedAt: now,
+                };
+                if (existing) {
+                  await ec.updateOne({ _id: existing._id }, { $set: entryPayload }, { session });
+                } else {
+                  await ec.insertOne(
+                    {
+                      tournamentId,
+                      userId: null,
+                      guestPlayerId: gid,
+                      ...entryPayload,
+                      createdAt: now,
+                    },
+                    { session }
+                  );
+                }
+              } else {
+                await ec.deleteMany({ tournamentId, userId: pid, teamId: null }, { session });
+                const existing = await ec.findOne({ tournamentId, userId: pid }, { session });
+                const entryPayload = {
+                  teamId: teamIdStr,
+                  status: 'in_team' as const,
+                  lookingForPartner: false,
+                  updatedAt: now,
+                };
+                if (existing) {
+                  await ec.updateOne({ _id: existing._id }, { $set: entryPayload }, { session });
+                } else {
+                  await ec.insertOne(
+                    {
+                      tournamentId,
+                      userId: pid,
+                      ...entryPayload,
+                      createdAt: now,
+                    },
+                    { session }
+                  );
+                }
+              }
+            }
+
+            const userIdsInTeam = clean.filter((p) => !isGuestPlayerSlot(p));
+            if (userIdsInTeam.length) {
+              await wc.deleteMany({ tournamentId, userId: { $in: userIdsInTeam } }, { session });
+            }
           });
         } finally {
           await session.endSession();
@@ -266,15 +303,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const ec = tdb.collection('entries');
           const wc = tdb.collection('waitlist');
           const tc = tdb.collection('teams');
-          await ec.deleteMany({ tournamentId, userId: { $in: playerIds } }, { session });
+          await ec.deleteMany({ tournamentId, teamId: id }, { session });
           const result = await tc.deleteOne({ _id: oid }, { session });
           if (result.deletedCount === 0) {
             throw new Error('TEAM_NOT_FOUND');
           }
-          for (const uid of playerIds) {
-            const dup = await wc.findOne({ tournamentId, division, userId: uid }, { session });
+          for (const pid of playerIds) {
+            if (isGuestPlayerSlot(pid)) continue;
+            const dup = await wc.findOne({ tournamentId, division, userId: pid }, { session });
             if (!dup) {
-              await wc.insertOne({ tournamentId, division, userId: uid, createdAt: now, updatedAt: now }, { session });
+              await wc.insertOne({ tournamentId, division, userId: pid, createdAt: now, updatedAt: now }, { session });
             }
           }
         });
@@ -290,7 +328,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // In-app notifications: team dissolved (both players back to waitlist).
       const tournamentName = String((tournament as { name?: unknown }).name ?? '');
-      await notifyMany(db, playerIds, {
+      await notifyMany(db, playerIds.filter((p) => !isGuestPlayerSlot(p)), {
         type: 'team.dissolved',
         params: { tournament: tournamentName || 'Tournament' },
         data: { tournamentId },

@@ -56,14 +56,6 @@ SplashScreen.preventAutoHideAsync();
 
 initAppObservability();
 
-if (__DEV__) {
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  import('@/lib/theme/verifyThemeA11y').then(({ verifyThemeA11y }) => {
-    // eslint-disable-next-line no-console
-    console.log('[theme.a11y]', verifyThemeA11y());
-  });
-}
-
 export default function RootLayout() {
   // Required for OAuth: closes auth browser when redirect returns to app
   useEffect(() => {
@@ -140,6 +132,7 @@ function RootLayoutNav() {
         />
         <Stack.Screen name="tournament/create" />
         <Stack.Screen name="tournament/[id]/team/create" />
+        <Stack.Screen name="tournament/[id]/guest-players" />
         <Stack.Screen name="t/[token]" />
         <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
         <Stack.Screen

@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tournamentsApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
+import { getMockDevBettingSnapshot } from '@/lib/mocks/devTournamentMocks';
+import { augmentBettingSnapshotWithLinePicks } from '@/lib/utils/bettingSnapshotClient';
 import type { Tournament, TournamentDivision } from '@/types';
 
 export function useTournamentBetting(
@@ -8,14 +10,19 @@ export function useTournamentBetting(
   division: TournamentDivision | undefined,
   options?: { refetchIntervalMs?: number; enabled?: boolean }
 ) {
-  const enabled = (options?.enabled ?? true) && !!tournamentId && !!division && !shouldUseDevMocks();
+  const enabled = (options?.enabled ?? true) && !!tournamentId && !!division;
   return useQuery({
     queryKey: ['tournament', tournamentId, 'betting', division],
-    queryFn: () => tournamentsApi.findOne(tournamentId!, { betsDivision: division! }) as Promise<Tournament>,
+    queryFn: () =>
+      shouldUseDevMocks()
+        ? Promise.resolve({
+            bettingSnapshot: getMockDevBettingSnapshot(tournamentId!, division!),
+          } as Tournament)
+        : (tournamentsApi.findOne(tournamentId!, { betsDivision: division! }) as Promise<Tournament>),
     enabled,
-    select: (d) => d.bettingSnapshot ?? null,
+    select: (d) => augmentBettingSnapshotWithLinePicks(d.bettingSnapshot ?? null),
     staleTime: 15_000,
-    refetchInterval: options?.refetchIntervalMs,
+    refetchInterval: shouldUseDevMocks() ? false : options?.refetchIntervalMs,
   });
 }
 

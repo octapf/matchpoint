@@ -26,10 +26,32 @@ async function main() {
     } catch {
       // ignore (does not exist)
     }
+    try {
+      await db.collection('entries').dropIndex('entries_tournament_user_unique');
+      console.log('OK: dropped legacy entries_tournament_user_unique (will recreate as partial unique)');
+    } catch {
+      // ignore
+    }
 
     await Promise.all([
-      db.collection('entries').createIndex({ tournamentId: 1, userId: 1 }, { unique: true, name: 'entries_tournament_user_unique' }),
+      db.collection('entries').createIndex(
+        { tournamentId: 1, userId: 1 },
+        {
+          unique: true,
+          name: 'entries_tournament_user_unique',
+          partialFilterExpression: { userId: { $type: 'string' } },
+        }
+      ),
+      db.collection('entries').createIndex(
+        { tournamentId: 1, guestPlayerId: 1 },
+        {
+          unique: true,
+          name: 'entries_tournament_guest_unique',
+          partialFilterExpression: { guestPlayerId: { $type: 'string' } },
+        }
+      ),
       db.collection('entries').createIndex({ userId: 1 }, { name: 'entries_user' }),
+      db.collection('tournament_guest_players').createIndex({ tournamentId: 1, displayName: 1 }, { name: 'guest_players_tournament_name' }),
       db.collection('waitlist').createIndex(
         { tournamentId: 1, division: 1, userId: 1 },
         { unique: true, name: 'waitlist_tournament_div_user_unique' }

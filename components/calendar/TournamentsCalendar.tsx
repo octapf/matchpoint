@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { View, Text, Pressable, StyleSheet, I18nManager } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 // IMPORTANT: avoid importing from `react-native-calendars` package root.
 // The root index pulls in CalendarList/NewCalendarList which depends on recyclerlistview,
 // and Metro fails to bundle it in this workspace. Import only the modules we need.
 import Calendar from 'react-native-calendars/src/calendar';
 import CalendarProvider from 'react-native-calendars/src/expandableCalendar/Context/Provider';
+// When `dayComponent` is set, the calendar skips built-in `PeriodDay`; import it to keep range marks visible.
+import PeriodDay from 'react-native-calendars/src/calendar/day/period';
+import type { DayProps } from 'react-native-calendars/src/calendar/day/index';
+import type { DateData } from 'react-native-calendars/src/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import XDate from 'xdate';
@@ -96,6 +101,103 @@ function clampMaxDays(start: Date, end: Date, maxDays: number): Date {
   return out.getTime() < end.getTime() ? out : end;
 }
 
+function parseTournamentScheduleDate(raw?: string): Date | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  // API stores calendar dates as YYYY-MM-DD. Parsing that alone is timezone-sensitive; anchor to local noon.
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d;
+}
+
+function pickTournamentScheduleIso(t: Tournament): { rawStart?: string; rawEnd?: string } {
+  const dd = (t as any).divisionDates as Record<string, { startDate?: string; endDate?: string } | undefined> | undefined;
+  const ranges = dd
+    ? (['men', 'women', 'mixed'] as const)
+        .map((k) => dd[k])
+        .filter(Boolean)
+        .map((r) => ({ startDate: String((r as any).startDate ?? '').trim(), endDate: String((r as any).endDate ?? '').trim() }))
+        .filter((r) => !!r.startDate && !!r.endDate)
+    : [];
+
+  const fromDivStart = ranges.map((r) => r.startDate).sort()[0];
+  const fromDivEnd = ranges.map((r) => r.endDate).sort().slice(-1)[0];
+
+  const start =
+    String(fromDivStart ?? '').trim() ||
+    String((t as any).startDate ?? '').trim() ||
+    String((t as any).date ?? '').trim() ||
+    String((t as any).createdAt ?? '').trim();
+
+  const end =
+    String(fromDivEnd ?? '').trim() ||
+    String((t as any).endDate ?? '').trim() ||
+    start;
+
+  return { rawStart: start || undefined, rawEnd: end || undefined };
+}
+
+type LibraryCustomDayProps = Omit<DayProps, 'dayComponent'> & { date?: DateData };
+
+/**
+ * With `dayComponent`, Calendar's `Day` wrapper passes `date` as `DateData` (see `xdateToData` in the library).
+ * `PeriodDay` always calls `xdateToData(date)` internally, which does `new XDate(date)` — that breaks on a plain
+ * `{ dateString, year, ... }` object and throws inside XDate. Normalize back to `YYYY-MM-DD` string.
+ */
+function toPeriodDayDateString(date: unknown): string | undefined {
+  if (date == null) return undefined;
+  if (typeof date === 'string') {
+    const s = date.trim();
+    return s || undefined;
+  }
+  if (typeof date === 'object' && date !== null && 'dateString' in date) {
+    const ds = String((date as DateData).dateString ?? '').trim();
+    return ds || undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Custom day cell: render the library's period day (range bar) and optionally a one-line tournament caption
+ * on the **first day** of each tournament's painted range (see `namesByStartDay`).
+ */
+function CalendarDayWithPeriodAndName(
+  props: LibraryCustomDayProps & { namesByStartDay: Record<string, string[]> },
+) {
+  const { namesByStartDay, date: rawDate, ...rest } = props;
+  const dateStr = toPeriodDayDateString(rawDate);
+  const dayKey = dateStr ?? '';
+  const names = dayKey ? (namesByStartDay[dayKey] ?? []) : [];
+  const showLabel = names.length > 0;
+  const label =
+    names.length === 0 ? '' : names.length === 1 ? (names[0] ?? '') : `${names[0] ?? ''} (+${names.length - 1})`;
+
+  if (!dateStr) {
+    return <View style={styles.dayColumn} />;
+  }
+
+  return (
+    <View style={showLabel ? styles.dayColumnWithCaption : styles.dayColumn}>
+      {/* PeriodDay handles touches and period fill; children = day-of-month from Calendar's Day wrapper */}
+      <PeriodDay {...(rest as Record<string, unknown>)} date={dateStr}>
+        {rest.children}
+      </PeriodDay>
+      {showLabel ? (
+        <Text
+          pointerEvents="none"
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={styles.dayTournamentCaption}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {label}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function TournamentsCalendar({ tournaments }: Props) {
   const { tokens } = useTheme();
   const { t } = useTranslation();
@@ -111,27 +213,27 @@ export function TournamentsCalendar({ tournaments }: Props) {
   const todayKey = useMemo(() => toISODate(new Date()), []);
   const [selectedDayKey, setSelectedDayKey] = useState(todayKey);
   const [activeMonthKey, setActiveMonthKey] = useState(() => todayKey.slice(0, 7)); // YYYY-MM
+  const prevMonthKeyRef = useRef<string | null>(null);
+  const calendarWidthRef = useRef(360);
+  const slideX = useSharedValue(0);
+  const fadeMonth = useSharedValue(1);
 
-  const { markedDates } = useMemo(() => {
+  const calendarMonthAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: slideX.value }],
+    opacity: fadeMonth.value,
+  }));
+
+  const { markedDates, namesByStartDay } = useMemo(() => {
     const marks: MarkedDates = {};
+    const namesByDay: Record<string, string[]> = {};
 
     for (const t of tournaments) {
-      const dd = (t as any).divisionDates as Record<string, { startDate?: string; endDate?: string } | undefined> | undefined;
-      const ranges = dd
-        ? (['men', 'women', 'mixed'] as const)
-            .map((k) => dd[k])
-            .filter(Boolean)
-            .map((r) => ({ startDate: String((r as any).startDate ?? '').trim(), endDate: String((r as any).endDate ?? '').trim() }))
-            .filter((r) => !!r.startDate && !!r.endDate)
-        : [];
-      const rawStart = (ranges.map((r) => r.startDate).sort()[0] ?? (t.startDate || t.date)) as string | undefined;
-      const rawEnd = (ranges.map((r) => r.endDate).sort().slice(-1)[0] ?? (t.endDate || rawStart)) as string | undefined;
+      const { rawStart, rawEnd } = pickTournamentScheduleIso(t);
       if (!rawStart) continue;
 
-      const start = new Date(rawStart);
-      const end = new Date(rawEnd || rawStart);
-      if (!Number.isFinite(start.getTime())) continue;
-      if (!Number.isFinite(end.getTime())) continue;
+      const start = parseTournamentScheduleDate(rawStart);
+      const end = parseTournamentScheduleDate(rawEnd || rawStart);
+      if (!start || !end) continue;
 
       const s = start.getTime() <= end.getTime() ? start : end;
       const e = start.getTime() <= end.getTime() ? end : start;
@@ -155,11 +257,20 @@ export function TournamentsCalendar({ tournaments }: Props) {
           color: tokens.accentMuted,
           textColor: Colors.text,
         } as any;
+        if (isStart) {
+          const prev = namesByDay[dayKey] ?? [];
+          namesByDay[dayKey] = [...prev, t.name];
+        }
       }
     }
 
-    return { markedDates: marks };
+    return { markedDates: marks, namesByStartDay: namesByDay };
   }, [tournaments, tokens.accentMuted]);
+
+  const renderDay = useCallback(
+    (props: LibraryCustomDayProps) => <CalendarDayWithPeriodAndName {...props} namesByStartDay={namesByStartDay} />,
+    [namesByStartDay],
+  );
 
   const monthTournaments = useMemo(() => {
     const [yStr, mStr] = activeMonthKey.split('-');
@@ -171,20 +282,11 @@ export function TournamentsCalendar({ tournaments }: Props) {
 
     const out: Tournament[] = [];
     for (const t of tournaments) {
-      const dd = (t as any).divisionDates as Record<string, { startDate?: string; endDate?: string } | undefined> | undefined;
-      const ranges = dd
-        ? (['men', 'women', 'mixed'] as const)
-            .map((k) => dd[k])
-            .filter(Boolean)
-            .map((r) => ({ startDate: String((r as any).startDate ?? '').trim(), endDate: String((r as any).endDate ?? '').trim() }))
-            .filter((r) => !!r.startDate && !!r.endDate)
-        : [];
-      const rawStart = (ranges.map((r) => r.startDate).sort()[0] ?? (t.startDate || t.date)) as string | undefined;
-      const rawEnd = (ranges.map((r) => r.endDate).sort().slice(-1)[0] ?? (t.endDate || rawStart)) as string | undefined;
+      const { rawStart, rawEnd } = pickTournamentScheduleIso(t);
       if (!rawStart) continue;
-      const s = new Date(rawStart);
-      const e = new Date(rawEnd || rawStart);
-      if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) continue;
+      const s = parseTournamentScheduleDate(rawStart);
+      const e = parseTournamentScheduleDate(rawEnd || rawStart);
+      if (!s || !e) continue;
       const start = s.getTime() <= e.getTime() ? s : e;
       const end = s.getTime() <= e.getTime() ? e : s;
       // intersection test
@@ -193,8 +295,8 @@ export function TournamentsCalendar({ tournaments }: Props) {
       out.push(t);
     }
     out.sort((a, b) => {
-      const as = String((a as any).startDate || (a as any).date || '');
-      const bs = String((b as any).startDate || (b as any).date || '');
+      const as = pickTournamentScheduleIso(a).rawStart || '';
+      const bs = pickTournamentScheduleIso(b).rawStart || '';
       if (as !== bs) return as.localeCompare(bs);
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
@@ -207,6 +309,33 @@ export function TournamentsCalendar({ tournaments }: Props) {
     },
     [router]
   );
+
+  const handleCalendarMonthChange = useCallback((m: { year?: unknown; month?: unknown }) => {
+    const y = Number(m?.year);
+    const mo = Number(m?.month);
+    if (!Number.isFinite(y) || !Number.isFinite(mo)) return;
+    const nextKey = `${String(y)}-${String(mo).padStart(2, '0')}`;
+    const prevKey = prevMonthKeyRef.current;
+    prevMonthKeyRef.current = nextKey;
+    setActiveMonthKey(nextKey);
+
+    if (prevKey === null || prevKey === nextKey) {
+      return;
+    }
+    const forward = nextKey > prevKey;
+    const rtl = I18nManager.isRTL;
+    const sign = rtl ? (forward ? -1 : 1) : forward ? 1 : -1;
+    const w = calendarWidthRef.current;
+    const distance = Math.min(100, Math.max(40, w * 0.22));
+    slideX.value = sign * distance;
+    fadeMonth.value = 0.88;
+    slideX.value = withSpring(0, { damping: 17, stiffness: 210, mass: 0.82 });
+    fadeMonth.value = withSpring(1, { damping: 14, stiffness: 200 });
+  }, []);
+
+  useEffect(() => {
+    prevMonthKeyRef.current = todayKey.slice(0, 7);
+  }, [todayKey]);
 
   const calendarTheme = useMemo(
     () => ({
@@ -238,58 +367,43 @@ export function TournamentsCalendar({ tournaments }: Props) {
 
   return (
     <View style={[styles.card, { backgroundColor: tokens.surface, borderColor: tokens.surfaceLight }]}>
-      <CalendarProvider
-        date={selectedDayKey}
-        onDateChanged={(d) => setSelectedDayKey(d)}
-        showTodayButton={false}
+      <Animated.View
+        style={[styles.calendarAnimClip, calendarMonthAnimStyle]}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w > 0) calendarWidthRef.current = w;
+        }}
       >
-        <Calendar
-          firstDay={1}
-          markingType="period"
-          markedDates={{
-            ...markedDates,
-            [selectedDayKey]: {
-              ...(markedDates[selectedDayKey] as any),
-              selected: true,
-            } as any,
-          }}
-          theme={calendarTheme as any}
-          onDayPress={(d: any) => setSelectedDayKey(String(d?.dateString ?? ''))}
-          onMonthChange={(m: any) => {
-            const y = Number(m?.year);
-            const mo = Number(m?.month);
-            if (!Number.isFinite(y) || !Number.isFinite(mo)) return;
-            setActiveMonthKey(`${String(y)}-${String(mo).padStart(2, '0')}`);
-          }}
-          renderArrow={(direction: 'left' | 'right') => (
-            <Ionicons
-              name={direction === 'left' ? 'chevron-back' : 'chevron-forward'}
-              size={18}
-              color={tokens.accent}
-            />
-          )}
-          dayComponent={({ date, state }: any) => {
-            const dayKey = date?.dateString ?? '';
-            const selected = dayKey === selectedDayKey;
-            const isToday = dayKey === todayKey;
-            const baseColor = state === 'disabled' ? Colors.textMuted : Colors.text;
-            const textColor = isToday && !selected ? tokens.accent : baseColor;
-
-            return (
-              <Pressable
-                onPress={() => dayKey && setSelectedDayKey(dayKey)}
-                style={[styles.dayWrap, selected ? { borderColor: tokens.accent } : null]}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.dayText, { color: textColor }]}>{date?.day ?? ''}</Text>
-                {isToday && !selected ? (
-                  <View style={[styles.todayDot, { backgroundColor: tokens.accent }]} />
-                ) : null}
-              </Pressable>
-            );
-          }}
-        />
-      </CalendarProvider>
+        <CalendarProvider
+          date={selectedDayKey}
+          onDateChanged={(d) => setSelectedDayKey(d)}
+          showTodayButton={false}
+        >
+          <Calendar
+            firstDay={1}
+            enableSwipeMonths
+            markingType="period"
+            markedDates={{
+              ...markedDates,
+              [selectedDayKey]: {
+                ...(markedDates[selectedDayKey] as any),
+                selected: true,
+              } as any,
+            }}
+            theme={calendarTheme as any}
+            onDayPress={(d: any) => setSelectedDayKey(String(d?.dateString ?? ''))}
+            onMonthChange={handleCalendarMonthChange}
+            renderArrow={(direction: 'left' | 'right') => (
+              <Ionicons
+                name={direction === 'left' ? 'chevron-back' : 'chevron-forward'}
+                size={18}
+                color={tokens.accent}
+              />
+            )}
+            dayComponent={renderDay}
+          />
+        </CalendarProvider>
+      </Animated.View>
 
       {Legend}
 
@@ -332,6 +446,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 12,
+  },
+  calendarAnimClip: {
+    overflow: 'hidden',
   },
   legendRow: {
     flexDirection: 'row',
@@ -378,24 +495,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  dayWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  dayColumn: {
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
+    alignSelf: 'stretch',
   },
-  dayText: {
-    fontSize: 13,
+  dayColumnWithCaption: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingBottom: 2,
+  },
+  dayTournamentCaption: {
+    marginTop: 1,
+    maxWidth: 56,
+    fontSize: 9,
     fontWeight: '700',
-  },
-  todayDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 2,
+    lineHeight: 11,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });
 

@@ -27,17 +27,15 @@ function applyVisibilityListFilter(
 ): void {
   if (skip || actorIsAdmin) return;
 
+  // NOTE: Some legacy/manual DB rows store visibility with different casing ("Private", "PRIVATE").
+  // Treat ONLY case-insensitive "private" as private; everything else behaves like public for listing.
+  const isPrivate = { visibility: { $regex: /^private$/i } };
+
   const visClause: Record<string, unknown> = actorId
     ? {
-        $or: [
-          { visibility: 'public' },
-          { visibility: { $exists: false } },
-          { organizerIds: actorId },
-        ],
+        $or: [{ $nor: [isPrivate] }, { organizerIds: actorId }],
       }
-    : {
-        $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
-      };
+    : { $nor: [isPrivate] };
 
   const existing = { ...filter };
   Object.keys(filter).forEach((k) => delete filter[k]);
@@ -309,7 +307,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Sets per match must be between 1 and 7' });
       }
 
-      const divisions = [...new Set(rawDivisions)];
       const now = new Date().toISOString();
       const visibility = rawVisibility === 'private' ? 'private' : 'public';
       const clsMatches =

@@ -4,7 +4,15 @@ import { View, Text, StyleSheet, Share, Alert, Pressable, Platform } from 'react
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import type { Gender, User, TournamentDivision, Team, Entry, TournamentCategory } from '@/types';
+import type {
+  Gender,
+  User,
+  TournamentDivision,
+  Team,
+  Entry,
+  TournamentCategory,
+  TournamentGuestPlayer,
+} from '@/types';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -41,6 +49,8 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
+import { isGuestPlayerSlot } from '@/lib/playerSlots';
+import { resolveRosterSlotLabel, tournamentGuestDisplayName } from '@/lib/utils/resolveParticipant';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
 import { resolveTeamForFixture } from '@/lib/tournamentMatchDisplay';
@@ -71,6 +81,7 @@ const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 function TeamCard({
   team,
   userMap,
+  guestMap,
   currentUserId,
   t,
   canRemoveTeam,
@@ -81,6 +92,7 @@ function TeamCard({
 }: {
   team: Team;
   userMap: Record<string, User>;
+  guestMap?: Record<string, TournamentGuestPlayer | undefined>;
   currentUserId: string | null;
   t: (key: string, options?: Record<string, string | number>) => string;
   canRemoveTeam?: boolean;
@@ -169,16 +181,22 @@ function TeamCard({
           <View style={styles.teamCardPlayersRow}>
             {[0, 1].map((i) => {
               const pid = team.playerIds?.[i];
-              const user = pid ? userMap[pid] : null;
-              const playerName = user ? getTournamentPlayerDisplayName(user) : null;
+              const user = pid && !isGuestPlayerSlot(pid) ? userMap[pid] : null;
+              const playerName = pid
+                ? user
+                  ? getTournamentPlayerDisplayName(user)
+                  : resolveRosterSlotLabel(pid, userMap, guestMap ?? {})
+                : null;
               const isYou = pid === currentUserId;
+              const isGuest = !!(pid && isGuestPlayerSlot(pid));
               return pid ? (
                 <Pressable
                   key={i}
                   style={styles.teamCardPlayerCell}
-                  onPress={() => onOpenProfile(pid)}
+                  onPress={isGuest ? undefined : () => onOpenProfile(pid)}
                   accessibilityRole="button"
-                  accessibilityLabel={t('profile.viewProfile')}
+                  accessibilityLabel={isGuest ? playerName ?? '' : t('profile.viewProfile')}
+                  disabled={isGuest}
                 >
                   <Avatar
                     firstName={user?.firstName ?? ''}
@@ -402,7 +420,11 @@ export default function TournamentDetailScreen() {
     if (!userId || !id || !tournament) return;
     if (!requireOnline()) return;
     const organizerIds = tournament.organizerIds ?? [];
-    const hasNonOrganizerEntry = entries.some((e) => !organizerIds.includes(e.userId));
+    const hasNonOrganizerEntry = entries.some((e) => {
+      if (e.userId) return !organizerIds.includes(e.userId);
+      if (e.guestPlayerId) return true;
+      return false;
+    });
     if (hasNonOrganizerEntry) {
       Alert.alert(t('common.error'), t('tournamentDetail.cannotDeleteWithPlayers'));
       return;
@@ -483,6 +505,16 @@ export default function TournamentDetailScreen() {
           onPress: () => router.push(`/admin/tournament/${id}` as never),
         }
       );
+    }
+
+    if (id && !shouldUseDevMocks()) {
+      list.push({
+        key: 'guestPlayers',
+        label: t('tournamentDetail.menuGuestPlayers'),
+        icon: 'person-add-outline',
+        color: tokens.accentHover,
+        onPress: () => router.push(`/tournament/${id}/guest-players` as never),
+      });
     }
 
     if (!started && id && !shouldUseDevMocks()) {
@@ -648,6 +680,23 @@ export default function TournamentDetailScreen() {
 
   // Everything below must be declared before any early `return` so hook order stays stable.
   const organizerIds = tournament?.organizerIds ?? [];
+  const guestPlayersList = tournament?.guestPlayers ?? [];
+  const guestMap = useMemo(
+    () =>
+      Object.fromEntries(guestPlayersList.map((g: TournamentGuestPlayer) => [g._id, g])) as Record<
+        string,
+        TournamentGuestPlayer
+      >,
+    [guestPlayersList]
+  );
+  const guestGenderById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of guestPlayersList) {
+      m.set(g._id, g.gender === 'male' || g.gender === 'female' ? g.gender : '');
+    }
+    return m;
+  }, [guestPlayersList]);
+
   const organizeOnlyUserIds = useMemo(() => {
     if (!tournament) return [];
     const only = new Set(tournament.organizerOnlyIds ?? []);
@@ -693,16 +742,28 @@ export default function TournamentDetailScreen() {
   const divisionIndex = Math.max(0, availableDivisions.indexOf(currentDivision));
   const divisionGroupOffset = divisionIndex * groupsPerDivisionCap;
 
-  const allPlayerIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
-  const entryUserIds = entries.map((e) => e.userId);
+  const rosterSlotIds = teams.flatMap((t) => t.playerIds ?? []).filter(Boolean);
+  const registeredUserIdsFromTeams = rosterSlotIds.filter((pid) => !isGuestPlayerSlot(pid));
+  const entryUserIds = entries
+    .map((e) => e.userId)
+    .filter((uid): uid is string => typeof uid === 'string' && uid.length > 0);
   const waitlistUserIds = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
+  const bettingSnapshotUserIds = useMemo(
+    () => [
+      ...new Set([
+        ...(bettingSnapshot?.leaderboard?.map((r) => r.userId) ?? []),
+        ...(bettingSnapshot?.matches?.flatMap((row) => (row.lines ?? []).map((l) => l.userId)) ?? []),
+      ]),
+    ],
+    [bettingSnapshot]
+  );
   const combinedUserIds = [
     ...new Set([
-      ...allPlayerIds,
+      ...registeredUserIdsFromTeams,
       ...entryUserIds,
       ...waitlistUserIds,
       ...(tournament?.organizerIds ?? []),
-      ...(bettingSnapshot?.leaderboard?.map((r) => r.userId) ?? []),
+      ...bettingSnapshotUserIds,
     ]),
   ];
   const { data: users = [] } = useUsers(combinedUserIds);
@@ -713,9 +774,9 @@ export default function TournamentDetailScreen() {
 
   const teamDivisionById = useMemo(() => {
     const map: Record<string, DivisionTab> = {};
-    for (const team of teams) map[team._id] = divisionForTeam(team, userMap);
+    for (const team of teams) map[team._id] = divisionForTeam(team, userMap, guestMap);
     return map;
-  }, [teams, userMap]);
+  }, [teams, userMap, guestMap]);
 
   const userHasTeamInDivision = useMemo(() => {
     if (!userId || !id) return false;
@@ -741,19 +802,22 @@ export default function TournamentDetailScreen() {
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
-      const d = divisionForEntry(entry, userMap, teamDivisionById);
+      const d = divisionForEntry(entry, userMap, teamDivisionById, guestMap);
       return d === currentDivision;
     });
-  }, [entries, userMap, teamDivisionById, currentDivision]);
+  }, [entries, userMap, teamDivisionById, guestMap, currentDivision]);
 
   /** Players tab: A–Z by visible name (same as labels), not raw username. */
   const sortedEntries = useMemo(() => {
-    return [...filteredEntries].sort((a, b) => {
-      const na = getTournamentPlayerDisplayName(userMap[a.userId]).toLowerCase();
-      const nb = getTournamentPlayerDisplayName(userMap[b.userId]).toLowerCase();
-      return na.localeCompare(nb, undefined, { sensitivity: 'base' });
-    });
-  }, [filteredEntries, userMap]);
+    const label = (e: Entry) => {
+      if (e.userId) return getTournamentPlayerDisplayName(userMap[e.userId]);
+      if (e.guestPlayerId) return tournamentGuestDisplayName(guestMap[e.guestPlayerId]);
+      return '';
+    };
+    return [...filteredEntries].sort((a, b) =>
+      label(a).toLowerCase().localeCompare(label(b).toLowerCase(), undefined, { sensitivity: 'base' })
+    );
+  }, [filteredEntries, userMap, guestMap]);
 
   const canPlaceTournamentBet = useMemo(
     () =>
@@ -790,7 +854,6 @@ export default function TournamentDetailScreen() {
     return buckets;
   }, [filteredTeams, groupsPerDivisionCap, divisionGroupOffset, groupsDistributionPending]);
 
-  const filteredGroupsWithTeams = divisionTeamsByGroup.filter((g) => g.length > 0).length;
   const matchCategoryTabs = (() => {
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
       (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
@@ -1257,29 +1320,6 @@ export default function TournamentDetailScreen() {
 
   const infoMenuItems = useMemo((): OrganizerMenuItem[] => {
     if (!tournament) return [];
-    const divs = ((tournament.divisions ?? []) as TournamentDivision[]).filter(Boolean);
-    const divisionsLabel =
-      divs.length === 0
-        ? t('tournaments.divisionMixed')
-        : divs
-            .map((d) =>
-              d === 'men'
-                ? t('tournaments.divisionMen')
-                : d === 'women'
-                  ? t('tournaments.divisionWomen')
-                  : t('tournaments.divisionMixed')
-            )
-            .join(' · ');
-    const catsRaw = Array.isArray((tournament as { categories?: unknown }).categories)
-      ? (((tournament as { categories: unknown[] }).categories ?? []) as unknown[])
-      : [];
-    const cats = catsRaw.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
-    const categoriesLabel = cats.join(' · ') || '—';
-    const visibilityLabel =
-      (tournament.visibility ?? 'public') === 'private' ? t('tournaments.visibilityPrivate') : t('tournaments.visibilityPublic');
-    const start = tournament.startDate || tournament.date || '—';
-    const end = tournament.endDate || start;
-    const dateRange = end && end !== start ? `${start} — ${end}` : start;
 
     return [
       {
@@ -1502,16 +1542,26 @@ export default function TournamentDetailScreen() {
     for (const u of Object.values(userMap)) {
       userGender.set(u._id, u.gender === 'male' || u.gender === 'female' ? u.gender : '');
     }
-    const entriesSlim = entries.map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    const entriesSlim = entries
+      .filter((e): e is Entry & { userId: string } => typeof e.userId === 'string' && e.userId.length > 0)
+      .map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
     const nextOnlyAfterDemote = (tournament.organizerOnlyIds ?? []).filter((x) => x !== targetUserId);
     const nextCoversAfterDemote = organizerOnlyCoversFromTournament(
       tournament.organizerOnlyCovers,
       nextOnlyAfterDemote
     );
-    const missing = missingDivisionForOrganizers(divisions, nextOrgs, entriesSlim, teamsById, userGender, {
-      organizerOnlyIds: nextOnlyAfterDemote,
-      organizerOnlyCovers: nextCoversAfterDemote,
-    });
+    const missing = missingDivisionForOrganizers(
+      divisions,
+      nextOrgs,
+      entriesSlim,
+      teamsById,
+      userGender,
+      {
+        organizerOnlyIds: nextOnlyAfterDemote,
+        organizerOnlyCovers: nextCoversAfterDemote,
+      },
+      guestGenderById
+    );
     if (missing) {
       const divLabel =
         missing === 'men'
@@ -1566,11 +1616,21 @@ export default function TournamentDetailScreen() {
     for (const u of Object.values(userMap)) {
       userGender.set(u._id, u.gender === 'male' || u.gender === 'female' ? u.gender : '');
     }
-    const entriesSlim = entries.map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
-    const missing = missingDivisionForOrganizers(divisions, nextOrgs, entriesSlim, teamsById, userGender, {
-      organizerOnlyIds: nextOnly,
-      organizerOnlyCovers: nextCovers,
-    });
+    const entriesSlim = entries
+      .filter((e): e is Entry & { userId: string } => typeof e.userId === 'string' && e.userId.length > 0)
+      .map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    const missing = missingDivisionForOrganizers(
+      divisions,
+      nextOrgs,
+      entriesSlim,
+      teamsById,
+      userGender,
+      {
+        organizerOnlyIds: nextOnly,
+        organizerOnlyCovers: nextCovers,
+      },
+      guestGenderById
+    );
     if (missing) {
       const divLabel =
         missing === 'men'
@@ -1611,6 +1671,11 @@ export default function TournamentDetailScreen() {
   const confirmRemovePlayer = (entry: Entry, playerName: string) => {
     if (!userId || !id) return;
     if (!requireOnline()) return;
+    const removeUid = entry.userId;
+    if (!removeUid) {
+      Alert.alert(t('common.error'), t('tournamentDetail.organizerActionFailed'));
+      return;
+    }
     Alert.alert(
       t('tournamentDetail.removePlayer'),
       t('tournamentDetail.removePlayerConfirm', { name: playerName }),
@@ -1621,7 +1686,7 @@ export default function TournamentDetailScreen() {
           style: 'destructive',
           onPress: () =>
             removeTournamentPlayer.mutate(
-              { id, userId: entry.userId, mode: 'dissolveToWaitlist' },
+              { id, userId: removeUid, mode: 'dissolveToWaitlist' },
               { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
             ),
         },
@@ -1717,7 +1782,7 @@ export default function TournamentDetailScreen() {
     if (!userId || !id) return;
     if (!requireOnline()) return;
     const pNames = (team.playerIds ?? [])
-      .map((pid) => (pid ? getTournamentPlayerDisplayName(userMap[pid]) : ''))
+      .map((pid) => (pid ? resolveRosterSlotLabel(pid, userMap, guestMap) : ''))
       .filter(Boolean)
       .join(' · ');
     Alert.alert(
@@ -1897,6 +1962,7 @@ export default function TournamentDetailScreen() {
           <PlayersTab
             t={t}
             sortedEntries={sortedEntries}
+            guestMap={guestMap}
             waitlistUserIds={waitlistUserIds}
             userMap={userMap}
             organizerIds={organizerIds}
@@ -2017,6 +2083,7 @@ export default function TournamentDetailScreen() {
                   key={team._id}
                   team={team}
                   userMap={userMap}
+                  guestMap={guestMap}
                   currentUserId={userId}
                   t={t}
                   canRemoveTeam={canManageTournament}
@@ -2076,6 +2143,7 @@ export default function TournamentDetailScreen() {
                 key={team._id}
                 team={team}
                 userMap={userMap}
+                guestMap={guestMap}
                 currentUserId={userId}
                 t={t}
                 canRemoveTeam={canManageTournament}
@@ -2138,6 +2206,7 @@ export default function TournamentDetailScreen() {
               categoryMatchesByCategory={categoryMatchesByCategory}
               teamById={teamById}
               userMap={userMap}
+              guestMap={guestMap}
               tournamentId={id ?? ''}
               opponentTbdLabel={opponentTbdLabel}
               categoryTeamIdsByCategory={categoryTeamIdsByCategory}

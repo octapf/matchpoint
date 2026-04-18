@@ -1,5 +1,6 @@
 import type { ClientSession, Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
+import { isGuestPlayerSlot } from '../../lib/playerSlots';
 
 /**
  * Remove a player from a tournament: dissolve any team they were on (both players → waiting list),
@@ -25,8 +26,9 @@ export async function removePlayerFromTournament(
     const division = String((team as { division?: unknown }).division ?? 'mixed');
     const tid = team._id as ObjectId;
     await teamsCol.deleteOne({ _id: tid }, { session });
-    await entriesCol.deleteMany({ tournamentId, userId: { $in: pids } }, { session });
+    await entriesCol.deleteMany({ tournamentId, teamId: tid.toString() }, { session });
     for (const pid of pids) {
+      if (isGuestPlayerSlot(pid)) continue;
       const dup = await waitlistCol.findOne({ tournamentId, division, userId: pid }, { session });
       if (!dup) {
         await waitlistCol.insertOne({ tournamentId, division, userId: pid, createdAt: now, updatedAt: now }, { session });

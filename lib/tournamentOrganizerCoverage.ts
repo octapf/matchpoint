@@ -1,4 +1,5 @@
 import type { TournamentDivision } from '@/types';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 
 export type EntryDivisionInput = { userId: string; teamId?: string | null };
 
@@ -20,18 +21,32 @@ export function tournamentDivisionsNormalized(raw: unknown): TournamentDivision[
  * Which division this entry competes in (aligned with `divisionForEntry` / team pairing rules).
  * Solo players without male/female gender count as `mixed` when mixed is enabled.
  */
+function genderForRosterSlot(
+  pid: string | undefined,
+  userGender: Map<string, string>,
+  guestGenderById?: Map<string, string>
+): string {
+  if (!pid) return '';
+  if (isGuestPlayerSlot(pid)) {
+    const gid = guestPlayerIdFromSlot(pid);
+    return gid && guestGenderById ? guestGenderById.get(gid) ?? '' : '';
+  }
+  return userGender.get(pid) ?? '';
+}
+
 export function divisionForOrganizerCoverage(
   entry: EntryDivisionInput,
   teamsById: Map<string, { playerIds?: string[] }>,
   userGender: Map<string, string>,
-  divisionsEnabled: TournamentDivision[]
+  divisionsEnabled: TournamentDivision[],
+  guestGenderById?: Map<string, string>
 ): TournamentDivision | null {
   const tid = entry.teamId?.trim();
   if (tid) {
     const team = teamsById.get(tid);
     const pids = team?.playerIds ?? [];
-    const g1 = userGender.get(pids[0] ?? '') ?? '';
-    const g2 = userGender.get(pids[1] ?? '') ?? '';
+    const g1 = genderForRosterSlot(pids[0], userGender, guestGenderById);
+    const g2 = genderForRosterSlot(pids[1], userGender, guestGenderById);
     if (g1 === 'male' && g2 === 'male') return 'men';
     if (g1 === 'female' && g2 === 'female') return 'women';
     return 'mixed';
@@ -73,7 +88,8 @@ export function missingDivisionForOrganizers(
   entries: EntryDivisionInput[],
   teamsById: Map<string, { playerIds?: string[] }>,
   userGender: Map<string, string>,
-  extras?: OrganizerCoverageExtras
+  extras?: OrganizerCoverageExtras,
+  guestGenderById?: Map<string, string>
 ): TournamentDivision | null {
   const divs = [...new Set(divisions)].filter((d) => d === 'men' || d === 'women' || d === 'mixed');
   if (divs.length === 0) return null;
@@ -92,7 +108,7 @@ export function missingDivisionForOrganizers(
     }
     const entry = entries.find((e) => e.userId === oid);
     if (!entry) continue;
-    const d = divisionForOrganizerCoverage(entry, teamsById, userGender, divs);
+    const d = divisionForOrganizerCoverage(entry, teamsById, userGender, divs, guestGenderById);
     if (d) covered.add(d);
   }
   for (const need of divs) {

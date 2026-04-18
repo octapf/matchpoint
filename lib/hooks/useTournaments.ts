@@ -57,7 +57,11 @@ export function useTournamentByToken(token: string | undefined) {
         return { ...MOCK_DEV_TOURNAMENT, inviteLink: trimmed };
       }
       const byInvite = (await tournamentsApi.find({ inviteLink: trimmed })) as Tournament[];
-      if (byInvite.length > 0) return byInvite[0]!;
+      if (byInvite.length > 0) {
+        const tid = String(byInvite[0]!._id ?? '').trim();
+        if (tid) return tournamentsApi.findOne(tid) as Promise<Tournament>;
+        return byInvite[0]!;
+      }
       if (/^[a-f0-9]{24}$/i.test(trimmed)) {
         return tournamentsApi.findOne(trimmed) as Promise<Tournament>;
       }

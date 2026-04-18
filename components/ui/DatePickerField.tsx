@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,10 @@ import {
   Pressable,
   Modal,
   ScrollView,
+  PanResponder,
+  Animated,
+  Easing,
+  I18nManager,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -61,6 +65,11 @@ export function DatePickerField({
   const [viewYear, setViewYear] = useState(d.getFullYear());
   const [viewMonth, setViewMonth] = useState(d.getMonth());
 
+  const slideX = useRef(new Animated.Value(0)).current;
+  const layoutW = useRef(320);
+  const monthAnimating = useRef(false);
+  const [monthTransitioning, setMonthTransitioning] = useState(false);
+
   useEffect(() => {
     if (show) {
       const ref = (() => {
@@ -72,8 +81,10 @@ export function DatePickerField({
       setViewYear(ref.getFullYear());
       setViewMonth(ref.getMonth());
       setMode('calendar');
+      slideX.setValue(0);
+      monthAnimating.current = false;
     }
-  }, [show, value, today, minRef]);
+  }, [show, value, today, minRef, slideX]);
 
   const { startPad, days } = getDaysInMonth(viewYear, viewMonth);
   const minYear = minRef.getFullYear();
@@ -94,6 +105,98 @@ export function DatePickerField({
   const canPrev = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
   const maxYear = Math.max(minYear + 20, new Date().getFullYear() + 10);
   const canNext = viewYear < maxYear || (viewYear === maxYear && viewMonth < 11);
+
+  const applyPrevMonth = useCallback(() => {
+    if (mode !== 'calendar' || !canPrev) return;
+    setViewMonth((m) => {
+      if (m === 0) {
+        setViewYear((y) => y - 1);
+        return 11;
+      }
+      return m - 1;
+    });
+  }, [mode, canPrev]);
+
+  const applyNextMonth = useCallback(() => {
+    if (mode !== 'calendar' || !canNext) return;
+    setViewMonth((m) => {
+      if (m === 11) {
+        setViewYear((y) => y + 1);
+        return 0;
+      }
+      return m + 1;
+    });
+  }, [mode, canNext]);
+
+  const carouselDeltas = (direction: 1 | -1, w: number) => {
+    const rtl = I18nManager.isRTL;
+    if (direction === 1) {
+      return { exitTo: rtl ? w : -w, enterFrom: rtl ? -w : w };
+    }
+    return { exitTo: rtl ? -w : w, enterFrom: rtl ? w : -w };
+  };
+
+  const animateMonthChange = useCallback(
+    (direction: 1 | -1, apply: () => void) => {
+      if (mode !== 'calendar' || monthAnimating.current) return;
+      if (direction === 1 && !canNext) return;
+      if (direction === -1 && !canPrev) return;
+      const w = Math.max(220, layoutW.current);
+      const { exitTo, enterFrom } = carouselDeltas(direction, w);
+      monthAnimating.current = true;
+      setMonthTransitioning(true);
+      Animated.timing(slideX, {
+        toValue: exitTo,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) {
+          monthAnimating.current = false;
+          setMonthTransitioning(false);
+          return;
+        }
+        apply();
+        slideX.setValue(enterFrom);
+        Animated.timing(slideX, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          monthAnimating.current = false;
+          setMonthTransitioning(false);
+        });
+      });
+    },
+    [mode, canNext, canPrev, slideX]
+  );
+
+  const goPrevCalendarMonth = useCallback(() => {
+    animateMonthChange(-1, applyPrevMonth);
+  }, [animateMonthChange, applyPrevMonth]);
+
+  const goNextCalendarMonth = useCallback(() => {
+    animateMonthChange(1, applyNextMonth);
+  }, [animateMonthChange, applyNextMonth]);
+
+  const calendarMonthSwipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+          mode === 'calendar' &&
+          !monthTransitioning &&
+          Math.abs(g.dx) > 14 &&
+          Math.abs(g.dx) > Math.abs(g.dy) + 6,
+        onPanResponderRelease: (_, g) => {
+          if (mode !== 'calendar' || monthTransitioning) return;
+          const threshold = 44;
+          if (g.dx < -threshold) goNextCalendarMonth();
+          else if (g.dx > threshold) goPrevCalendarMonth();
+        },
+      }),
+    [mode, monthTransitioning, goNextCalendarMonth, goPrevCalendarMonth],
+  );
 
   const selectDay = (day: number) => {
     const iso = toISODate(new Date(viewYear, viewMonth, day));
@@ -151,44 +254,28 @@ export function DatePickerField({
               </Pressable>
             </View>
 
-            <View style={styles.nav}>
-              <Pressable
-                style={[styles.navBtn, (!canPrev || mode === 'year') && styles.navBtnDisabled]}
-                onPress={() => {
-                  if (mode !== 'calendar') return;
-                  if (viewMonth === 0) setViewYear((y) => y - 1);
-                  setViewMonth((m) => (m === 0 ? 11 : m - 1));
-                }}
-                disabled={!canPrev || mode === 'year'}
-              >
-                <Text style={[styles.navBtnText, (!canPrev || mode === 'year') && styles.navBtnTextDisabled]}>‹</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('common.selectDate')}
-                onPress={() => setMode((m) => (m === 'calendar' ? 'year' : 'calendar'))}
-                style={styles.navTitleBtn}
-              >
-                <Text style={styles.navTitle}>
-                  {localizedMonths[viewMonth]} {viewYear}
-                </Text>
-                <Text style={styles.navTitleHint}>{mode === 'calendar' ? '▼' : '▲'}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.navBtn, (!canNext || mode === 'year') && styles.navBtnDisabled]}
-                onPress={() => {
-                  if (mode !== 'calendar') return;
-                  if (viewMonth === 11) setViewYear((y) => y + 1);
-                  setViewMonth((m) => (m === 11 ? 0 : m + 1));
-                }}
-                disabled={!canNext || mode === 'year'}
-              >
-                <Text style={[styles.navBtnText, (!canNext || mode === 'year') && styles.navBtnTextDisabled]}>›</Text>
-              </Pressable>
-            </View>
-
             {mode === 'year' ? (
-              <ScrollView style={styles.yearScroll} contentContainerStyle={styles.yearGrid} showsVerticalScrollIndicator={false}>
+              <>
+                <View style={styles.nav}>
+                  <Pressable style={[styles.navBtn, styles.navBtnDisabled]} disabled accessibilityRole="button">
+                    <Text style={[styles.navBtnText, styles.navBtnTextDisabled]}>‹</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.selectDate')}
+                    onPress={() => setMode('calendar')}
+                    style={styles.navTitleBtn}
+                  >
+                    <Text style={styles.navTitle}>
+                      {localizedMonths[viewMonth]} {viewYear}
+                    </Text>
+                    <Text style={styles.navTitleHint}>▲</Text>
+                  </Pressable>
+                  <Pressable style={[styles.navBtn, styles.navBtnDisabled]} disabled accessibilityRole="button">
+                    <Text style={[styles.navBtnText, styles.navBtnTextDisabled]}>›</Text>
+                  </Pressable>
+                </View>
+                <ScrollView style={styles.yearScroll} contentContainerStyle={styles.yearGrid} showsVerticalScrollIndicator={false}>
                 {Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i).map((y) => {
                   const selected = y === viewYear;
                   return (
@@ -206,44 +293,81 @@ export function DatePickerField({
                     </Pressable>
                   );
                 })}
-              </ScrollView>
-            ) : (
-              <>
-                <View style={styles.weekdays}>
-                  {localizedWeekdays.map((w) => (
-                    <Text key={w} style={styles.weekday}>{w}</Text>
-                  ))}
-                </View>
-
-                <View style={styles.grid}>
-                  {cells.map((day, i) => {
-                    if (day === null) return <View key={i} style={styles.cell} />;
-                    const iso = toISODate(new Date(viewYear, viewMonth, day));
-                    const sel = new Date(iso + 'T12:00:00');
-                    const min = new Date(minYear, minMonth, minDay);
-                    const disabled = sel < min;
-                    const selected = value === iso;
-                    return (
-                      <Pressable
-                        key={i}
-                        style={[
-                          styles.cell,
-                          styles.cellDay,
-                          selected && styles.cellSelected,
-                          selected && { backgroundColor: tokens.accent },
-                          disabled && styles.cellDisabled,
-                        ]}
-                        onPress={() => !disabled && selectDay(day)}
-                        disabled={disabled}
-                      >
-                        <Text style={[styles.cellText, selected && styles.cellTextSelected, disabled && styles.cellTextDisabled]}>
-                          {day}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                </ScrollView>
               </>
+            ) : (
+              <View style={styles.monthCarouselClip} {...calendarMonthSwipe.panHandlers}>
+                <Animated.View
+                  style={{ transform: [{ translateX: slideX }] }}
+                  onLayout={(e) => {
+                    const lw = e.nativeEvent.layout.width;
+                    if (lw > 0) layoutW.current = lw;
+                  }}
+                >
+                  <View style={styles.nav}>
+                    <Pressable
+                      style={[styles.navBtn, (!canPrev || monthTransitioning) && styles.navBtnDisabled]}
+                      onPress={goPrevCalendarMonth}
+                      disabled={!canPrev || monthTransitioning}
+                    >
+                      <Text style={[styles.navBtnText, (!canPrev || monthTransitioning) && styles.navBtnTextDisabled]}>‹</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t('common.selectDate')}
+                      onPress={() => setMode('year')}
+                      style={styles.navTitleBtn}
+                      disabled={monthTransitioning}
+                    >
+                      <Text style={styles.navTitle}>
+                        {localizedMonths[viewMonth]} {viewYear}
+                      </Text>
+                      <Text style={styles.navTitleHint}>▼</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.navBtn, (!canNext || monthTransitioning) && styles.navBtnDisabled]}
+                      onPress={goNextCalendarMonth}
+                      disabled={!canNext || monthTransitioning}
+                    >
+                      <Text style={[styles.navBtnText, (!canNext || monthTransitioning) && styles.navBtnTextDisabled]}>›</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.weekdays}>
+                    {localizedWeekdays.map((w) => (
+                      <Text key={w} style={styles.weekday}>{w}</Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.grid}>
+                    {cells.map((day, i) => {
+                      if (day === null) return <View key={i} style={styles.cell} />;
+                      const iso = toISODate(new Date(viewYear, viewMonth, day));
+                      const sel = new Date(iso + 'T12:00:00');
+                      const min = new Date(minYear, minMonth, minDay);
+                      const disabled = sel < min;
+                      const selected = value === iso;
+                      return (
+                        <Pressable
+                          key={i}
+                          style={[
+                            styles.cell,
+                            styles.cellDay,
+                            selected && styles.cellSelected,
+                            selected && { backgroundColor: tokens.accent },
+                            disabled && styles.cellDisabled,
+                          ]}
+                          onPress={() => !disabled && selectDay(day)}
+                          disabled={disabled}
+                        >
+                          <Text style={[styles.cellText, selected && styles.cellTextSelected, disabled && styles.cellTextDisabled]}>
+                            {day}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </Animated.View>
+              </View>
             )}
           </View>
         </View>
@@ -276,6 +400,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     padding: 16,
     paddingBottom: 24,
+  },
+  monthCarouselClip: {
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',

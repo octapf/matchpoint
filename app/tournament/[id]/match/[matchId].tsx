@@ -35,10 +35,12 @@ import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
 import { isMongoObjectId, teamDisplayName } from '@/lib/tournamentMatchDisplay';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
+import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
+import type { Match, TournamentGuestPlayer } from '@/types';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
 import { MPMark } from '@/components/ui/MPMark';
 import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
-import type { Match } from '@/types';
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
 
@@ -136,10 +138,24 @@ export default function EditMatchScreen() {
     const a = teams.find((t) => t._id === match.teamAId)?.playerIds ?? [];
     const b = teams.find((t) => t._id === match.teamBId)?.playerIds ?? [];
     const ref = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
-    return [...new Set([...a, ...b, ...(ref ? [ref] : [])].filter(Boolean))];
+    const all = [...new Set([...a, ...b, ...(ref ? [ref] : [])].filter(Boolean))];
+    return all.filter((pid) => !isGuestPlayerSlot(pid));
   }, [match, teams]);
   const { data: players = [] } = useUsers(playerIdsForNames);
   const usersById = useMemo(() => new Map(players.map((u) => [u._id, u])), [players]);
+  const guestMapRec = useMemo(
+    () =>
+      Object.fromEntries((tournament?.guestPlayers ?? []).map((g) => [g._id, g])) as Record<
+        string,
+        TournamentGuestPlayer
+      >,
+    [tournament?.guestPlayers]
+  );
+  const userMapRec = useMemo(() => Object.fromEntries(players.map((u) => [u._id, u])), [players]);
+  const rosterSlotLabel = useCallback(
+    (pid: string) => resolveRosterSlotLabel(pid, userMapRec, guestMapRec),
+    [userMapRec, guestMapRec]
+  );
 
   const [setsWonA, setSetsWonA] = useState('0');
   const [setsWonB, setSetsWonB] = useState('0');
@@ -612,18 +628,28 @@ export default function EditMatchScreen() {
             {[0, 2].map((idx) => {
               const pid = order[idx]!;
               const u = usersById.get(pid);
-              const label = u ? getTournamentPlayerDisplayName(u as any) : pid;
+              const label = rosterSlotLabel(pid);
+              const isGuest = isGuestPlayerSlot(pid);
+              const gg = isGuest ? guestMapRec[guestPlayerIdFromSlot(pid) ?? ''] : undefined;
               const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
                     <View style={styles.serveAvatarWrap}>
                       <Avatar
-                        firstName={(u as any)?.firstName ?? ''}
-                        lastName={(u as any)?.lastName ?? ''}
-                        gender={(u as any)?.gender === 'male' || (u as any)?.gender === 'female' ? (u as any).gender : undefined}
+                        firstName={isGuest ? label : (u as any)?.firstName ?? ''}
+                        lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
+                        gender={
+                          isGuest
+                            ? gg?.gender === 'male' || gg?.gender === 'female'
+                              ? gg.gender
+                              : undefined
+                            : (u as any)?.gender === 'male' || (u as any)?.gender === 'female'
+                              ? (u as any).gender
+                              : undefined
+                        }
                         size="xs"
-                        photoUrl={(u as any)?.photoUrl}
+                        photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
                       />
                     </View>
                     <View style={styles.serveOrderRow}>
@@ -663,18 +689,28 @@ export default function EditMatchScreen() {
             {[1, 3].map((idx) => {
               const pid = order[idx]!;
               const u = usersById.get(pid);
-              const label = u ? getTournamentPlayerDisplayName(u as any) : pid;
+              const label = rosterSlotLabel(pid);
+              const isGuest = isGuestPlayerSlot(pid);
+              const gg = isGuest ? guestMapRec[guestPlayerIdFromSlot(pid) ?? ''] : undefined;
               const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
                     <View style={styles.serveAvatarWrap}>
                       <Avatar
-                        firstName={(u as any)?.firstName ?? ''}
-                        lastName={(u as any)?.lastName ?? ''}
-                        gender={(u as any)?.gender === 'male' || (u as any)?.gender === 'female' ? (u as any).gender : undefined}
+                        firstName={isGuest ? label : (u as any)?.firstName ?? ''}
+                        lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
+                        gender={
+                          isGuest
+                            ? gg?.gender === 'male' || gg?.gender === 'female'
+                              ? gg.gender
+                              : undefined
+                            : (u as any)?.gender === 'male' || (u as any)?.gender === 'female'
+                              ? (u as any).gender
+                              : undefined
+                        }
                         size="xs"
-                        photoUrl={(u as any)?.photoUrl}
+                        photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
                       />
                     </View>
                     <View style={styles.serveOrderRow}>

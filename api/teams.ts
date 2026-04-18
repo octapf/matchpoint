@@ -8,10 +8,11 @@ import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { isTournamentOrganizer } from '../server/lib/organizer';
 import { normalizeGroupCount, tournamentAllowsManualGroupAssignment, validateTournamentGroups } from '../lib/tournamentGroups';
 import { countTeamsInGroup } from '../server/lib/tournamentGroupDb';
-import { isPairValidForTournamentDivisions } from '../server/lib/teamDivisionPairing';
 import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
 import type { TournamentDivision } from '../types';
 import { notifyMany } from '../server/lib/notify';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, parsePlayerSlot } from '../lib/playerSlots';
+import { resolveTwoSlotGenders } from '../server/lib/guestPlayersDb';
 
 function hasExplicitGroupIndex(raw: unknown): boolean {
   if (raw === undefined || raw === null) return false;
@@ -69,19 +70,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const isOrg = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actorId);
 
-      const playerIdList = Array.isArray(playerIds) ? playerIds : [playerIds];
-      const cleanPlayerIds = playerIdList
-        .map((x) => (typeof x === 'string' ? x.trim() : ''))
-        .filter(Boolean)
-        .filter((x, i, arr) => arr.indexOf(x) === i);
-      if (cleanPlayerIds.length !== 2) {
+      const normalizedSlots = normalizeTeamPlayerSlots(playerIds);
+      if (!normalizedSlots) {
         return corsRes.status(400).json({ error: 'Teams must have exactly 2 distinct players' });
       }
-      for (const pid of cleanPlayerIds) {
-        if (!ObjectId.isValid(pid)) {
-          return corsRes.status(400).json({ error: 'Invalid player id' });
-        }
-      }
+      const cleanPlayerIds: [string, string] = normalizedSlots;
 
       const canCreateTeam =
         isOrg || admin || (cleanPlayerIds.includes(actorId) && createdBy === actorId);
@@ -96,26 +89,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!cleanPlayerIds.includes(actorId)) {
           return corsRes.status(403).json({ error: 'You must be one of the two players' });
         }
+        if (isGuestPlayerSlot(cleanPlayerIds[0]!) || isGuestPlayerSlot(cleanPlayerIds[1]!)) {
+          return corsRes.status(403).json({ error: 'Guests can only be added by an organizer' });
+        }
       }
 
-      const usersCol = db.collection('users');
-      const [u1, u2] = await Promise.all([
-        usersCol.findOne({ _id: new ObjectId(cleanPlayerIds[0]!) }),
-        usersCol.findOne({ _id: new ObjectId(cleanPlayerIds[1]!) }),
-      ]);
-      if (!u1 || !u2) {
-        return corsRes.status(400).json({ error: 'Player not found' });
-      }
-      const rawG1 = (u1 as Record<string, unknown>).gender;
-      const rawG2 = (u2 as Record<string, unknown>).gender;
-      const g1 = typeof rawG1 === 'string' ? rawG1 : undefined;
-      const g2 = typeof rawG2 === 'string' ? rawG2 : undefined;
       const tDivs = (tournament as { divisions?: TournamentDivision[] }).divisions;
-      const divCheck = isPairValidForTournamentDivisions(tDivs, g1, g2);
-      if (!divCheck.ok) {
-        return corsRes.status(400).json({ error: divCheck.reason });
+      const resolvedPair = await resolveTwoSlotGenders(db, tournamentId, tDivs, cleanPlayerIds[0]!, cleanPlayerIds[1]!);
+      if (!resolvedPair.ok) {
+        return corsRes.status(400).json({ error: resolvedPair.error });
       }
-      const pairDivision: TournamentDivision = divCheck.division;
+      const pairDivision: TournamentDivision = resolvedPair.pairDivision;
+      const s0 = parsePlayerSlot(cleanPlayerIds[0]!)!;
+      const s1 = parsePlayerSlot(cleanPlayerIds[1]!)!;
 
       const maxT = Number((tournament as { maxTeams?: number }).maxTeams);
       const gc = normalizeGroupCount((tournament as { groupCount?: number }).groupCount);
@@ -156,20 +142,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const entriesCol = db.collection('entries');
       const waitlistCol = db.collection('waitlist');
-      const [w1, w2, inTeamCount] = await Promise.all([
-        waitlistCol.findOne({ tournamentId, division: pairDivision, userId: cleanPlayerIds[0] }),
-        waitlistCol.findOne({ tournamentId, division: pairDivision, userId: cleanPlayerIds[1] }),
-        entriesCol.countDocuments({
-          tournamentId,
-          userId: { $in: cleanPlayerIds },
-          teamId: { $ne: null },
-        }),
-      ]);
-      if (!w1 || !w2) {
-        return corsRes.status(400).json({ error: 'Both players must be on the waiting list' });
-      }
+      const userIdsOnly = cleanPlayerIds.filter((p) => !isGuestPlayerSlot(p));
+      const guestIdsOnly = cleanPlayerIds.map((p) => guestPlayerIdFromSlot(p)).filter(Boolean) as string[];
+      const orClauses: Record<string, unknown>[] = [];
+      if (userIdsOnly.length) orClauses.push({ userId: { $in: userIdsOnly }, teamId: { $ne: null } });
+      if (guestIdsOnly.length) orClauses.push({ guestPlayerId: { $in: guestIdsOnly }, teamId: { $ne: null } });
+      const inTeamCount =
+        orClauses.length === 0
+          ? 0
+          : await entriesCol.countDocuments({ tournamentId, $or: orClauses });
       if (inTeamCount > 0) {
         return corsRes.status(400).json({ error: 'One or more players are already in a team' });
+      }
+
+      const relaxedWaitlist = isOrg || admin;
+      if (relaxedWaitlist) {
+        if (s0.kind === 'user') {
+          const w = await waitlistCol.findOne({ tournamentId, division: pairDivision, userId: s0.userId });
+          if (!w) return corsRes.status(400).json({ error: 'Registered player must be on the waiting list for this division' });
+        }
+        if (s1.kind === 'user') {
+          const w = await waitlistCol.findOne({ tournamentId, division: pairDivision, userId: s1.userId });
+          if (!w) return corsRes.status(400).json({ error: 'Registered player must be on the waiting list for this division' });
+        }
+      } else {
+        if (s0.kind !== 'user' || s1.kind !== 'user') {
+          return corsRes.status(400).json({ error: 'Invalid team composition' });
+        }
+        const [w1, w2] = await Promise.all([
+          waitlistCol.findOne({ tournamentId, division: pairDivision, userId: s0.userId }),
+          waitlistCol.findOne({ tournamentId, division: pairDivision, userId: s1.userId }),
+        ]);
+        if (!w1 || !w2) {
+          return corsRes.status(400).json({ error: 'Both players must be on the waiting list' });
+        }
       }
 
       const now = new Date().toISOString();
@@ -197,23 +203,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const ins = await teamsCol.findOne({ _id: result.insertedId }, { session });
           inserted = ins as Record<string, unknown> | null;
           const tidStr = result.insertedId.toString();
-          for (const uid of cleanPlayerIds) {
-            await ec.deleteMany({ tournamentId, userId: uid, teamId: null }, { session });
-            await ec.insertOne(
-              {
-                tournamentId,
-                userId: uid,
-                teamId: tidStr,
-                status: 'in_team',
-                lookingForPartner: false,
-                createdAt: now,
-                updatedAt: now,
-              },
-              { session }
-            );
+          for (const pid of cleanPlayerIds) {
+            if (isGuestPlayerSlot(pid)) {
+              const gid = guestPlayerIdFromSlot(pid)!;
+              await ec.deleteMany({ tournamentId, guestPlayerId: gid, teamId: null }, { session });
+              await ec.insertOne(
+                {
+                  tournamentId,
+                  userId: null,
+                  guestPlayerId: gid,
+                  teamId: tidStr,
+                  status: 'in_team',
+                  lookingForPartner: false,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                { session }
+              );
+            } else {
+              await ec.deleteMany({ tournamentId, userId: pid, teamId: null }, { session });
+              await ec.insertOne(
+                {
+                  tournamentId,
+                  userId: pid,
+                  teamId: tidStr,
+                  status: 'in_team',
+                  lookingForPartner: false,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                { session }
+              );
+            }
           }
           // Remove from waitlist across ALL divisions for this tournament (prevents stale WL rows after forming a team).
-          await wc.deleteMany({ tournamentId, userId: { $in: cleanPlayerIds } }, { session });
+          if (userIdsOnly.length) {
+            await wc.deleteMany({ tournamentId, userId: { $in: userIdsOnly } }, { session });
+          }
         });
       } finally {
         await session.endSession();
@@ -226,7 +252,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // In-app notifications: team created.
       const tournamentName = String((tournament as { name?: unknown }).name ?? '');
-      await notifyMany(db, cleanPlayerIds, {
+      await notifyMany(db, userIdsOnly, {
         type: 'team.created',
         params: { tournament: tournamentName || 'Tournament', team: name },
         data: { tournamentId, teamId: (inserted as any)?._id ?? '' },

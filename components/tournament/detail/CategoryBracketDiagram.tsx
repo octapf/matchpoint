@@ -16,7 +16,9 @@ import React, { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
-import type { Team, User } from '@/types';
+import type { Team, TournamentGuestPlayer, User } from '@/types';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
+import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
 import Colors from '@/constants/Colors';
 import { fixtureBracketSectionTitleStyle, FIXTURE_BRACKET_SECTION_TITLE_FS } from '@/constants/fixtureSectionTitle';
 import { Avatar } from '@/components/ui/Avatar';
@@ -459,11 +461,13 @@ type Props = {
   category?: BracketCategoryTab;
   /** When set, show player photos (team A above name, team B below). */
   userMap?: Record<string, User>;
+  guestMap?: Record<string, TournamentGuestPlayer | undefined>;
 };
 
 function BracketTeamBlock({
   team,
   userMap,
+  guestMap,
   fTeam,
   isWinner,
   label,
@@ -471,13 +475,16 @@ function BracketTeamBlock({
 }: {
   team: Team;
   userMap?: Record<string, User>;
+  guestMap?: Record<string, TournamentGuestPlayer | undefined>;
   fTeam: number;
   isWinner: boolean;
   label: string;
   /** `above` = photos over the team name; `below` = photos under (second side in the card). */
   avatarPlacement: 'above' | 'below';
 }) {
-  if (!userMap) {
+  const hasAvatarData =
+    Boolean(userMap && Object.keys(userMap).length) || Boolean(guestMap && Object.keys(guestMap).length > 0);
+  if (!hasAvatarData) {
     return (
       <Text
         style={[styles.teamName, { fontSize: fTeam }, isWinner && styles.winner]}
@@ -501,7 +508,8 @@ function BracketTeamBlock({
         </>
       ) : (
         ids.map((pid) => {
-          const u = userMap[pid];
+          const u = !isGuestPlayerSlot(pid) ? userMap?.[pid] : undefined;
+          const slotLabel = resolveRosterSlotLabel(pid, userMap ?? {}, guestMap ?? {});
           return (
             <View key={pid} style={styles.bracketAvatarWrap}>
               {u ? (
@@ -510,6 +518,19 @@ function BracketTeamBlock({
                   lastName={u.lastName}
                   gender={u.gender}
                   photoUrl={u.photoUrl}
+                  size="xs"
+                />
+              ) : isGuestPlayerSlot(pid) ? (
+                <Avatar
+                  firstName={slotLabel}
+                  lastName=""
+                  gender={
+                    (() => {
+                      const gid = guestPlayerIdFromSlot(pid);
+                      const g = gid ? guestMap?.[gid] : undefined;
+                      return g?.gender === 'male' || g?.gender === 'female' ? g.gender : undefined;
+                    })()
+                  }
                   size="xs"
                 />
               ) : (
@@ -549,10 +570,11 @@ function BracketTeamBlock({
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, userMap }: Props) {
+export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, userMap, guestMap }: Props) {
+  const showAvatars = Boolean(userMap) || Boolean(guestMap && Object.keys(guestMap).length > 0);
   const layout = useMemo(
-    () => computeLayout(matches, 1, category, Boolean(userMap)),
-    [matches, category, userMap]
+    () => computeLayout(matches, 1, category, showAvatars),
+    [matches, category, showAvatars]
   );
 
   const { layers, ys, bronzeRows, bronzeY, width, height, paths, s, colW, colGap, matchH, colLabelH, medalAboveTitleExtra } =
@@ -593,6 +615,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
         <BracketTeamBlock
           team={m.teamA}
           userMap={userMap}
+          guestMap={guestMap}
           fTeam={fTeam}
           isWinner={wA}
           label={teamLabel(m.teamA)}
@@ -604,6 +627,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
         <BracketTeamBlock
           team={m.teamB}
           userMap={userMap}
+          guestMap={guestMap}
           fTeam={fTeam}
           isWinner={wB}
           label={teamLabel(m.teamB)}

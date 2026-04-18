@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
+import { isGuestPlayerSlot } from '../../../lib/playerSlots';
 
 export const teamsPostSchema = z
   .object({
@@ -14,7 +15,8 @@ export const teamsPostSchema = z
       ctx.addIssue({ code: 'custom', path: ['tournamentId'], message: 'Invalid tournament id' });
     }
     for (const pid of data.playerIds) {
-      if (!ObjectId.isValid(pid)) {
+      const ok = ObjectId.isValid(pid) || isGuestPlayerSlot(pid);
+      if (!ok) {
         ctx.addIssue({ code: 'custom', path: ['playerIds'], message: 'Invalid player id' });
       }
     }

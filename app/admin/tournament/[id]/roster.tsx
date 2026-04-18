@@ -22,7 +22,9 @@ import { usersApi } from '@/lib/api';
 import { config } from '@/lib/config';
 import { useUserStore } from '@/store/useUserStore';
 import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
-import type { Entry, Team, User } from '@/types';
+import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
+import { toGuestPlayerSlot } from '@/lib/playerSlots';
+import type { Entry, Team, TournamentGuestPlayer, User } from '@/types';
 import {
   normalizeGroupCount,
   teamGroupIndex,
@@ -34,10 +36,18 @@ import { useTheme } from '@/lib/theme/useTheme';
 
 const MAX_TEAM_PLAYERS = 2;
 
-function sortEntriesByUser(entries: Entry[], userMap: Record<string, User | undefined>): Entry[] {
+function sortEntriesByUser(
+  entries: Entry[],
+  userMap: Record<string, User | undefined>,
+  guestMap: Record<string, TournamentGuestPlayer | undefined>
+): Entry[] {
   return [...entries].sort((a, b) => {
-    const ka = getPlayerSortKey(userMap[a.userId]) || a.userId;
-    const kb = getPlayerSortKey(userMap[b.userId]) || b.userId;
+    const ka = a.userId
+      ? getPlayerSortKey(userMap[a.userId]) || a.userId
+      : (guestMap[a.guestPlayerId ?? '']?.displayName ?? a.guestPlayerId ?? '').toLowerCase();
+    const kb = b.userId
+      ? getPlayerSortKey(userMap[b.userId]) || b.userId
+      : (guestMap[b.guestPlayerId ?? '']?.displayName ?? b.guestPlayerId ?? '').toLowerCase();
     return ka.localeCompare(kb);
   });
 }
@@ -57,7 +67,19 @@ export default function AdminTournamentRosterScreen() {
     id ? { tournamentId: id } : undefined
   );
 
-  const playerIds = useMemo(() => [...new Set(entries.map((e) => e.userId))], [entries]);
+  const guestMap = useMemo(
+    () =>
+      Object.fromEntries((tournament?.guestPlayers ?? []).map((g) => [g._id, g])) as Record<
+        string,
+        TournamentGuestPlayer
+      >,
+    [tournament?.guestPlayers]
+  );
+
+  const playerIds = useMemo(
+    () => [...new Set(entries.map((e) => e.userId).filter((uid): uid is string => !!uid))],
+    [entries]
+  );
   const { data: users = [] } = useUsers(playerIds);
   const userMap = useMemo(() => {
     const m: Record<string, User> = {};
@@ -81,7 +103,7 @@ export default function AdminTournamentRosterScreen() {
   const [editPlayers, setEditPlayers] = useState<string[]>([]);
   const [editGroupIndex, setEditGroupIndex] = useState(0);
 
-  const sortedEntries = useMemo(() => sortEntriesByUser(entries, userMap), [entries, userMap]);
+  const sortedEntries = useMemo(() => sortEntriesByUser(entries, userMap, guestMap), [entries, userMap, guestMap]);
 
   const rosterGroupCount = tournament
     ? normalizeGroupCount(tournament.groupCount)
@@ -97,10 +119,24 @@ export default function AdminTournamentRosterScreen() {
     () => entries.filter((e) => !e.teamId),
     [entries]
   );
-  const freeUserIds = useMemo(
-    () => [...new Set(entriesWithoutTeam.map((e) => e.userId))],
-    [entriesWithoutTeam]
-  );
+  const freeRosterSlots = useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const e of entriesWithoutTeam) {
+      if (e.userId && !seen.has(e.userId)) {
+        seen.add(e.userId);
+        out.push(e.userId);
+      }
+      if (e.guestPlayerId) {
+        const slot = toGuestPlayerSlot(e.guestPlayerId);
+        if (!seen.has(slot)) {
+          seen.add(slot);
+          out.push(slot);
+        }
+      }
+    }
+    return out;
+  }, [entriesWithoutTeam]);
 
   const openEdit = (team: Team) => {
     setEditingTeamId(team._id);
@@ -136,7 +172,11 @@ export default function AdminTournamentRosterScreen() {
 
   const handleRemovePlayer = (entry: Entry) => {
     if (!adminId || !id) return;
-    const name = getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId;
+    const name = entry.userId
+      ? getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId
+      : entry.guestPlayerId
+        ? resolveRosterSlotLabel(toGuestPlayerSlot(entry.guestPlayerId), userMap as Record<string, User>, guestMap)
+        : entry._id;
     Alert.alert(t('admin.rosterRemovePlayer'), t('admin.rosterRemovePlayerConfirm', { name }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -177,7 +217,11 @@ export default function AdminTournamentRosterScreen() {
         ...(showGroupPicker ? { groupIndex: Math.min(rosterGc - 1, Math.max(0, newTeamGroupIndex)) } : {}),
       });
       for (const pid of selectedNewTeam) {
-        const ent = entries.find((e) => e.userId === pid && e.tournamentId === id);
+        const ent = entries.find((e) => {
+          if (e.tournamentId !== id) return false;
+          if (e.userId === pid) return true;
+          return e.guestPlayerId && toGuestPlayerSlot(e.guestPlayerId) === pid;
+        });
         if (ent?._id && team?._id) {
           await updateEntry.mutateAsync({
             id: ent._id,
@@ -252,7 +296,10 @@ export default function AdminTournamentRosterScreen() {
     if (!editingTeamId) return [];
     const set = new Set<string>();
     for (const e of entries) {
-      if (e.teamId === editingTeamId || !e.teamId) set.add(e.userId);
+      if (e.teamId === editingTeamId || !e.teamId) {
+        if (e.userId) set.add(e.userId);
+        if (e.guestPlayerId) set.add(toGuestPlayerSlot(e.guestPlayerId));
+      }
     }
     return [...set];
   }, [entries, editingTeamId]);
@@ -287,7 +334,17 @@ export default function AdminTournamentRosterScreen() {
           sortedEntries.map((entry) => (
             <View key={entry._id} style={styles.row}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId}</Text>
+                <Text style={styles.rowTitle}>
+                  {entry.userId
+                    ? getTournamentPlayerDisplayName(userMap[entry.userId]) || entry.userId
+                    : entry.guestPlayerId
+                      ? resolveRosterSlotLabel(
+                          toGuestPlayerSlot(entry.guestPlayerId),
+                          userMap as Record<string, User>,
+                          guestMap
+                        )
+                      : entry._id}
+                </Text>
                 <Text style={styles.rowMeta}>
                   {entry.teamId ? t('admin.rosterInTeam') : t('admin.rosterSolo')}
                 </Text>
@@ -368,7 +425,9 @@ export default function AdminTournamentRosterScreen() {
                           }
                         }}
                       >
-                        <Text style={styles.chipText}>{getTournamentPlayerDisplayName(userMap[uid]) || uid}</Text>
+                        <Text style={styles.chipText}>
+                          {resolveRosterSlotLabel(uid, userMap as Record<string, User>, guestMap)}
+                        </Text>
                       </Pressable>
                     ))}
                   </View>
@@ -405,7 +464,7 @@ export default function AdminTournamentRosterScreen() {
                   </Text>
                   <Text style={styles.teamPlayers}>
                     {(team.playerIds ?? [])
-                      .map((pid) => getTournamentPlayerDisplayName(userMap[pid]) || pid)
+                      .map((pid) => resolveRosterSlotLabel(pid, userMap as Record<string, User>, guestMap))
                       .join(' · ')}
                   </Text>
                 </>
@@ -447,7 +506,7 @@ export default function AdminTournamentRosterScreen() {
         )}
         <Text style={styles.subLabel}>{t('admin.rosterPickPlayersFree')}</Text>
         <View style={styles.chipWrap}>
-          {freeUserIds.map((uid) => (
+          {freeRosterSlots.map((uid) => (
             <Pressable
               key={uid}
               style={[styles.chip, selectedNewTeam.includes(uid) && styles.chipOn]}
@@ -459,11 +518,11 @@ export default function AdminTournamentRosterScreen() {
                 }
               }}
             >
-              <Text style={styles.chipText}>{getTournamentPlayerDisplayName(userMap[uid]) || uid}</Text>
+              <Text style={styles.chipText}>{resolveRosterSlotLabel(uid, userMap as Record<string, User>, guestMap)}</Text>
             </Pressable>
           ))}
         </View>
-        {freeUserIds.length === 0 ? (
+        {freeRosterSlots.length === 0 ? (
           <Text style={styles.muted}>{t('admin.rosterNoFreePlayers')}</Text>
         ) : null}
         <Button

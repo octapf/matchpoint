@@ -33,6 +33,12 @@ import {
   placeTournamentBet,
   settleBetsForMatch,
 } from '../../server/lib/tournamentBets';
+import {
+  createGuestPlayer,
+  deleteGuestPlayer,
+  updateGuestPlayer,
+} from '../../server/lib/tournamentGuestPlayerActions';
+import { isGuestPlayerSlot } from '../../lib/playerSlots';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -240,23 +246,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
       }
 
+      const guestPlayersDocs = await db
+        .collection('tournament_guest_players')
+        .find({ tournamentId: id })
+        .sort({ displayName: 1 })
+        .toArray();
+
+      const sessionActorId = getSessionUserId(req);
+      let sessionActorIsAdmin = false;
+      let sessionActorIsOrg = false;
+      if (
+        (includeBetting || guestPlayersDocs.length > 0) &&
+        sessionActorId &&
+        ObjectId.isValid(sessionActorId)
+      ) {
+        const au = await loadActorUserWithAdminRefresh(db, sessionActorId);
+        sessionActorIsAdmin = !!(au && isUserAdmin(au as { role?: string; email?: string }));
+        sessionActorIsOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, sessionActorId);
+      }
+      const viewerMaySeeGuestNotes = sessionActorIsAdmin || sessionActorIsOrg;
+
       let bettingSnapshot: unknown = undefined;
       if (includeBetting) {
-        const actorId = getSessionUserId(req);
-        let viewerIsOrg = false;
-        let viewerIsAdmin = false;
-        if (actorId && ObjectId.isValid(actorId)) {
-          viewerIsOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
-          const au = await loadActorUserWithAdminRefresh(db, actorId);
-          viewerIsAdmin = !!(au && isUserAdmin(au as { role?: string; email?: string }));
-        }
         bettingSnapshot = await buildBettingSnapshot(
           db,
           id,
           betsDivisionRaw as TournamentDivision,
-          viewerIsOrg || viewerIsAdmin
+          sessionActorIsOrg || sessionActorIsAdmin
         );
       }
+      const guestPlayersOut = guestPlayersDocs.map((g) => {
+        const row = serializeDoc(g as Record<string, unknown>)! as Record<string, unknown>;
+        if (!viewerMaySeeGuestNotes) {
+          const { note: _note, ...rest } = row;
+          return rest;
+        }
+        return row;
+      });
 
       return corsRes.status(200).json({
         ...serialized,
@@ -268,6 +294,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         groupsWithTeamsCountByDivision,
         waitlistCount,
         waitlistCountByDivision,
+        guestPlayers: guestPlayersOut,
         ...(includeMatches ? { matches: (matches ?? []).map((m) => serializeDoc(m as Record<string, unknown>)) } : null),
         ...(includeStandings ? { standings, fixture } : null),
         ...(includeBetting ? { bettingSnapshot } : null),
@@ -376,7 +403,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await Promise.all(
               teamIds.map(async (tid) => {
                 const cat = String((teamCategory as any)[tid] ?? '');
-                const pids = teamPlayers.get(tid) ?? [];
+                const pids = (teamPlayers.get(tid) ?? []).filter((p) => !isGuestPlayerSlot(String(p)));
                 if (!cat || pids.length === 0) return;
                 await notifyMany(db, pids, {
                   type: 'tournament.classified',
@@ -403,6 +430,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // organizer/admin only (enforced by action guard above)
         await removePlayerFromTournament(db, id, uid, { leaveTournament: mode === 'removeFromTournament' });
         await syncTournamentOpenFullStatus(db, id);
+        return corsRes.status(200).json({ ok: true });
+      }
+
+      if (action === 'createGuestPlayer') {
+        const r = await createGuestPlayer(db, id, actingUserId, body);
+        if (!r.ok) return corsRes.status(400).json({ error: r.error });
+        return corsRes.status(201).json(serializeDoc(r.doc));
+      }
+
+      if (action === 'updateGuestPlayer') {
+        const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
+        if (!gid || !ObjectId.isValid(gid)) {
+          return corsRes.status(400).json({ error: 'Invalid guestId' });
+        }
+        const r = await updateGuestPlayer(db, id, gid, body);
+        if (!r.ok) return corsRes.status(400).json({ error: r.error });
+        return corsRes.status(200).json(serializeDoc(r.doc));
+      }
+
+      if (action === 'deleteGuestPlayer') {
+        const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
+        if (!gid || !ObjectId.isValid(gid)) {
+          return corsRes.status(400).json({ error: 'Invalid guestId' });
+        }
+        const r = await deleteGuestPlayer(db, id, gid);
+        if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(200).json({ ok: true });
       }
 

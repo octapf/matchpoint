@@ -56,13 +56,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!entry) return corsRes.status(404).json({ error: 'Entry not found' });
       const tournamentId = String((entry as { tournamentId?: unknown }).tournamentId ?? '');
       const entryUserId = String((entry as { userId?: unknown }).userId ?? '');
+      const entryGuestId = String((entry as { guestPlayerId?: unknown }).guestPlayerId ?? '').trim();
 
       const tournament = await db.collection('tournaments').findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const actorIsOrganizer = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
-      const self = actingUserId === entryUserId;
+      const self = !entryGuestId && actingUserId === entryUserId;
       if (!self && !actorIsAdmin && !actorIsOrganizer) {
         return corsRes.status(403).json({ error: 'Not allowed' });
       }
@@ -88,6 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Clearing teamId must dissolve the team (both players → waitlist), never orphan one entry.
         if (!nextTeamId) {
           if (hadTeam) {
+            if (entryGuestId) {
+              return corsRes.status(400).json({
+                error: 'Guest roster rows cannot be cleared this way; update the team as an organizer',
+              });
+            }
             await removePlayerFromTournament(db, tournamentId, entryUserId, { leaveTournament: false });
             await syncTournamentOpenFullStatus(db, tournamentId);
             return corsRes.status(200).json({

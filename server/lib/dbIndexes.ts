@@ -16,8 +16,32 @@ export async function ensureDbIndexes(db: Db) {
   } catch {
     // ignore
   }
+  try {
+    await entries.dropIndex('entries_tournament_user_unique');
+  } catch {
+    // ignore
+  }
   created.push(
-    (await entries.createIndex({ tournamentId: 1, userId: 1 }, { unique: true, name: 'entries_tournament_user_unique' })) as unknown as string
+    (await entries.createIndex(
+      { tournamentId: 1, userId: 1 },
+      { unique: true, name: 'entries_tournament_user_unique', partialFilterExpression: { userId: { $type: 'string' } } }
+    )) as unknown as string
+  );
+  created.push(
+    (await entries.createIndex(
+      { tournamentId: 1, guestPlayerId: 1 },
+      {
+        unique: true,
+        name: 'entries_tournament_guest_unique',
+        partialFilterExpression: { guestPlayerId: { $type: 'string' } },
+      }
+    )) as unknown as string
+  );
+  created.push(
+    (await db.collection('tournament_guest_players').createIndex(
+      { tournamentId: 1, displayName: 1 },
+      { name: 'guest_players_tournament_name' }
+    )) as unknown as string
   );
   created.push(
     (await waitlist.createIndex(

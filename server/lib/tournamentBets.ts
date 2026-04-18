@@ -33,6 +33,19 @@ export async function ensureTournamentBetIndexes(db: Db): Promise<void> {
   indexesEnsured = true;
 }
 
+/** String form for comparing tournament ids from DB (ObjectId or string). */
+export function normalizeDbTournamentId(raw: unknown): string {
+  if (raw instanceof ObjectId) return raw.toString();
+  return String(raw ?? '');
+}
+
+/** Query fragment when `tournamentId` may be stored as string or ObjectId in Mongo. */
+export function tournamentIdMongoFilter(tournamentId: string): Record<string, unknown> {
+  if (!ObjectId.isValid(tournamentId)) return { tournamentId };
+  const oid = new ObjectId(tournamentId);
+  return { tournamentId: { $in: [tournamentId, oid] } };
+}
+
 function isDivision(d: string): d is TournamentDivision {
   return d === 'men' || d === 'women' || d === 'mixed';
 }
@@ -44,8 +57,9 @@ export async function assertBettingEligible(
   userId: string,
   division: TournamentDivision
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tid = tournamentIdMongoFilter(tournamentId);
   const entry = await db.collection('entries').findOne({
-    tournamentId,
+    ...tid,
     userId,
     teamId: { $exists: true, $nin: [null, ''] },
   });
@@ -55,7 +69,7 @@ export async function assertBettingEligible(
   const teamId = String((entry as { teamId?: unknown }).teamId ?? '');
   if (!ObjectId.isValid(teamId)) return { ok: false, error: 'Invalid team entry' };
   const team = await db.collection('teams').findOne(
-    { _id: new ObjectId(teamId), tournamentId },
+    { _id: new ObjectId(teamId), ...tid },
     { projection: { division: 1 } }
   );
   const div = String((team as { division?: unknown } | null)?.division ?? '');
@@ -75,7 +89,7 @@ export async function assertUserNotPlayingMatch(
   const [a, b] = await db
     .collection('teams')
     .find({
-      tournamentId,
+      ...tournamentIdMongoFilter(tournamentId),
       _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] },
     })
     .project({ playerIds: 1 })
@@ -124,18 +138,20 @@ export async function settleBetsForMatch(db: Db, tournamentId: string, matchId: 
   await ensureTournamentBetIndexes(db);
   if (!ObjectId.isValid(matchId)) return;
   const match = await db.collection('matches').findOne({ _id: new ObjectId(matchId) });
-  if (!match || String((match as { tournamentId?: unknown }).tournamentId ?? '') !== tournamentId) return;
+  const matchTid = normalizeDbTournamentId((match as { tournamentId?: unknown } | null)?.tournamentId);
+  if (!match || matchTid !== tournamentId) return;
 
   const status = String((match as { status?: unknown }).status ?? '');
   const now = new Date().toISOString();
   const c = db.collection(COL);
+  const tidf = tournamentIdMongoFilter(tournamentId);
 
-  const bets = (await c.find({ tournamentId, matchId }).toArray()) as unknown as TournamentBetDoc[];
+  const bets = (await c.find({ ...tidf, matchId }).toArray()) as unknown as TournamentBetDoc[];
   if (bets.length === 0) return;
 
   if (status !== 'completed') {
     await c.updateMany(
-      { tournamentId, matchId },
+      { ...tidf, matchId },
       { $set: { status: 'void', pointsAwarded: 0, settledAt: now, updatedAt: now } }
     );
     return;
@@ -147,7 +163,7 @@ export async function settleBetsForMatch(db: Db, tournamentId: string, matchId: 
 
   if (!winnerId) {
     await c.updateMany(
-      { tournamentId, matchId },
+      { ...tidf, matchId },
       { $set: { status: 'void', pointsAwarded: 0, settledAt: now, updatedAt: now } }
     );
     return;
@@ -211,7 +227,8 @@ export async function placeTournamentBet(
   if (kind === 'score' && !allowScore) return { ok: false, error: 'Score bets are disabled' };
 
   const match = await db.collection('matches').findOne({ _id: new ObjectId(matchId) });
-  if (!match || String((match as { tournamentId?: unknown }).tournamentId ?? '') !== tournamentId) {
+  const matchTid = normalizeDbTournamentId((match as { tournamentId?: unknown } | null)?.tournamentId);
+  if (!match || matchTid !== tournamentId) {
     return { ok: false, error: 'Match not found' };
   }
   const mstatus = String((match as { status?: unknown }).status ?? 'scheduled');
@@ -287,7 +304,7 @@ export async function buildBettingSnapshot(
   bettingAllowWinner: boolean;
   bettingAllowScore: boolean;
   bettingAnonymous: boolean;
-  leaderboard: { userId: string; points: number; exactHits: number }[];
+  leaderboard: { userId: string; points: number; exactHits: number; picksCount: number }[];
   matches: Array<{
     matchId: string;
     teamAId: string;
@@ -317,9 +334,10 @@ export async function buildBettingSnapshot(
   const bettingAllowScore = !!(tdoc as { bettingAllowScore?: unknown } | null)?.bettingAllowScore;
   const bettingAnonymous = !!(tdoc as { bettingAnonymous?: unknown } | null)?.bettingAnonymous;
 
+  const tidf = tournamentIdMongoFilter(tournamentId);
   const matches = (await db
     .collection('matches')
-    .find({ tournamentId, division })
+    .find({ ...tidf, division })
     .project({
       _id: 1,
       teamAId: 1,
@@ -343,7 +361,7 @@ export async function buildBettingSnapshot(
   }
   const teams = await db
     .collection('teams')
-    .find({ tournamentId, _id: { $in: [...teamIds].map((id) => new ObjectId(id)) } })
+    .find({ ...tidf, _id: { $in: [...teamIds].map((id) => new ObjectId(id)) } })
     .project({ name: 1 })
     .toArray();
   const teamName = new Map<string, string>();
@@ -353,14 +371,16 @@ export async function buildBettingSnapshot(
 
   const allBets = (await db
     .collection(COL)
-    .find({ tournamentId, division })
+    .find({ ...tidf, division })
     .toArray()) as unknown as TournamentBetDoc[];
 
   const pointsByUser = new Map<string, number>();
   const exactByUser = new Map<string, number>();
+  const picksByUser = new Map<string, number>();
   for (const b of allBets) {
-    if (b.status !== 'settled') continue;
     const uid = String(b.userId);
+    picksByUser.set(uid, (picksByUser.get(uid) ?? 0) + 1);
+    if (b.status !== 'settled') continue;
     pointsByUser.set(uid, (pointsByUser.get(uid) ?? 0) + (Number(b.pointsAwarded) || 0));
     if (b.kind === 'score' && (b.pointsAwarded ?? 0) > 0) {
       exactByUser.set(uid, (exactByUser.get(uid) ?? 0) + 1);
@@ -373,10 +393,12 @@ export async function buildBettingSnapshot(
       userId,
       points: pointsByUser.get(userId) ?? 0,
       exactHits: exactByUser.get(userId) ?? 0,
+      picksCount: picksByUser.get(userId) ?? 0,
     }))
     .sort((a, b) => {
       if (b.points !== a.points) return b.points - a.points;
       if (b.exactHits !== a.exactHits) return b.exactHits - a.exactHits;
+      if (b.picksCount !== a.picksCount) return b.picksCount - a.picksCount;
       return a.userId.localeCompare(b.userId);
     });
 
@@ -409,7 +431,9 @@ export async function buildBettingSnapshot(
 
     const revealPost = status === 'completed';
     const revealPublicLive = !bettingAnonymous;
-    const showLines = viewerIsOrganizer || revealPost || (status === 'in_progress' && revealPublicLive);
+    const showScheduledPicks = status === 'scheduled' && !bettingAnonymous;
+    const showLines =
+      viewerIsOrganizer || revealPost || (status === 'in_progress' && revealPublicLive) || showScheduledPicks;
 
     const lines = (list ?? []).map((b) => ({
       userId: String(b.userId),

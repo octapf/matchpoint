@@ -133,9 +133,13 @@ export async function assertOrganizersCoverAllDivisions(
   const entriesForTournament = await entriesCol.find({ tournamentId }).toArray();
   const teamsForTournament = await teamsCol.find({ tournamentId }).toArray();
   const userIds = new Set<string>();
-  for (const e of entriesForTournament) userIds.add(e.userId as string);
+  for (const e of entriesForTournament) {
+    if (e.userId && typeof e.userId === 'string') userIds.add(e.userId);
+  }
   for (const t of teamsForTournament) {
-    for (const pid of (t.playerIds as string[]) ?? []) userIds.add(pid);
+    for (const pid of (t.playerIds as string[]) ?? []) {
+      if (typeof pid === 'string' && ObjectId.isValid(pid)) userIds.add(pid);
+    }
   }
   const validUserIds = [...userIds].filter((id) => ObjectId.isValid(id));
   const usersForTournament =
@@ -146,13 +150,20 @@ export async function assertOrganizersCoverAllDivisions(
   for (const u of usersForTournament) {
     userGender.set(u._id.toString(), typeof u.gender === 'string' ? u.gender : '');
   }
+  const guestDocs = await db.collection('tournament_guest_players').find({ tournamentId }).toArray();
+  const guestGenderById = new Map<string, string>();
+  for (const g of guestDocs) {
+    guestGenderById.set((g._id as ObjectId).toString(), typeof g.gender === 'string' ? g.gender : '');
+  }
   const teamsById = new Map(
     teamsForTournament.map((t) => [t._id.toString(), { playerIds: (t.playerIds as string[]) ?? [] }])
   );
-  const entriesSlim = entriesForTournament.map((e) => ({
-    userId: e.userId as string,
-    teamId: typeof e.teamId === 'string' ? e.teamId : e.teamId == null ? undefined : String(e.teamId),
-  }));
+  const entriesSlim = entriesForTournament
+    .filter((e) => e.userId && typeof e.userId === 'string')
+    .map((e) => ({
+      userId: e.userId as string,
+      teamId: typeof e.teamId === 'string' ? e.teamId : e.teamId == null ? undefined : String(e.teamId),
+    }));
   const missing = missingDivisionForOrganizers(
     divisions,
     merged.organizerIds,
@@ -162,7 +173,8 @@ export async function assertOrganizersCoverAllDivisions(
     {
       organizerOnlyIds: merged.organizerOnlyIds,
       organizerOnlyCovers: merged.organizerOnlyCovers,
-    }
+    },
+    guestGenderById
   );
   if (missing) {
     return { ok: false, error: COVERAGE_ERROR };

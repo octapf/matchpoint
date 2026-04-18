@@ -80,7 +80,9 @@ export const tournamentsApi = {
 
   findOne: (id: string, params?: { betsDivision?: string }) =>
     apiRequest<unknown>(`/api/tournaments/${id}`, {
-      params: params as Record<string, string> | undefined,
+      params: {
+        ...(params?.betsDivision ? { betsDivision: params.betsDivision } : {}),
+      },
     }),
 
   insertOne: (document: Record<string, unknown>) =>

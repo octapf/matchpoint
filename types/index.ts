@@ -80,7 +80,8 @@ export interface TournamentBettingSnapshot {
   bettingAllowWinner: boolean;
   bettingAllowScore: boolean;
   bettingAnonymous: boolean;
-  leaderboard: { userId: string; points: number; exactHits: number }[];
+  /** Settled points / exact score hits; `picksCount` = all placed picks (pending + settled) so the tab is not empty before matches finish. */
+  leaderboard: { userId: string; points: number; exactHits: number; picksCount: number }[];
   matches: TournamentBettingMatchRow[];
 }
 
@@ -189,6 +190,8 @@ export interface Tournament {
    * Populated by GET /api/tournaments list and GET /api/tournaments/:id.
    */
   waitlistCountByDivision?: Partial<Record<TournamentDivision, number>>;
+  /** Loaded on GET /api/tournaments/:id. The `note` field on each guest is omitted unless the viewer is an organizer or admin. */
+  guestPlayers?: TournamentGuestPlayer[];
   /** Internal betting (virtual points); default false for older tournaments. */
   bettingEnabled?: boolean;
   bettingAllowWinner?: boolean;
@@ -324,13 +327,31 @@ export interface Notification {
 
 export type EntryStatus = 'joined' | 'in_team';
 
+/**
+ * Tournament roster row: either a registered user (`userId`) or a guest player (`guestPlayerId`), never both.
+ * Legacy rows only have `userId`.
+ */
 export interface Entry {
   _id: string;
   tournamentId: string;
-  userId: string;
+  userId?: string | null;
+  guestPlayerId?: string | null;
   teamId: string | null;
   lookingForPartner: boolean;
   status: EntryStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Physical player without app account; scoped to one tournament. Referenced from `teams.playerIds` as `guest:<_id>`. */
+export interface TournamentGuestPlayer {
+  _id: string;
+  tournamentId: string;
+  displayName: string;
+  gender: Gender;
+  /** Organizer memo; may be absent in tournament GET responses for non-organizers. */
+  note?: string;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
 }

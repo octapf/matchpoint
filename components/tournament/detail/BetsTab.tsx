@@ -111,6 +111,12 @@ export function BetsTab({
                 {name}
               </Text>
               <Text style={[styles.lbPts, { color: tokens.accent }]}>{row.points}</Text>
+              {(row.picksCount ?? 0) > 0 ? (
+                <Text style={[styles.lbPicks, { color: fgMuted }]} numberOfLines={1}>
+                  {' · '}
+                  {t('tournamentDetail.bettingLeaderboardPicks', { count: row.picksCount ?? 0 })}
+                </Text>
+              ) : null}
               <Text style={[styles.lbEx, { color: fgMuted }]}>({row.exactHits})</Text>
             </View>
           );
@@ -291,6 +297,7 @@ const styles = StyleSheet.create({
   lbRank: { width: 22, fontSize: 14 },
   lbName: { flex: 1, fontSize: 14 },
   lbPts: { fontSize: 14, fontWeight: '700' },
+  lbPicks: { fontSize: 12, fontWeight: '600', maxWidth: 120 },
   lbEx: { fontSize: 12 },
   card: {
     borderWidth: StyleSheet.hairlineWidth,

@@ -71,8 +71,8 @@ function hashStr(s: string): number {
   return h;
 }
 
-/** Max mock bettors per match (unique index: one winner + one score bet per user per match). */
-const MAX_MOCK_BETTORS_PER_MATCH = 8;
+/** Max mock bettors per match (each places winner + score; unique index per user/kind/match). */
+const MAX_MOCK_BETTORS_PER_MATCH = 16;
 
 /** Same rules as API: same division, not playing in the match; stable sort by userId. */
 function eligibleBettorsForMatch(

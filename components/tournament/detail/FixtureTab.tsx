@@ -3,7 +3,7 @@ import { View, Text, Pressable, Animated, Easing, StyleSheet, type ViewStyle } f
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
-import type { Team, User } from '@/types';
+import type { Team, TournamentGuestPlayer, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
 import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
@@ -194,6 +194,7 @@ export function FixtureTab({
   matchStandingMetaStyle,
   teamById,
   userMap,
+  guestMap,
   tournamentId,
   opponentTbdLabel,
   categoryTeamIdsByCategory,
@@ -237,6 +238,7 @@ export function FixtureTab({
   teamById: Record<string, Team>;
   /** For bracket avatars: profile photos above team names. */
   userMap: Record<string, User>;
+  guestMap?: Record<string, TournamentGuestPlayer | undefined>;
   tournamentId: string;
   opponentTbdLabel: string;
   categoryTeamIdsByCategory: Partial<Record<MatchCategoryTab, string[]>>;
@@ -586,6 +588,7 @@ export function FixtureTab({
                       category={tab}
                       matches={mergedRows as BracketMatchRow[]}
                       userMap={userMap}
+                      guestMap={guestMap}
                       onOpenMatch={safeOpenMatch ?? undefined}
                     />
                     <View

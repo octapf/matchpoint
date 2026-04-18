@@ -23,9 +23,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const filter: Record<string, unknown> = {};
-      const { tournamentId, userId, teamId, inTeamOnly } = req.query;
+      const { tournamentId, userId, guestPlayerId, teamId, inTeamOnly } = req.query;
       if (tournamentId && typeof tournamentId === 'string') filter.tournamentId = tournamentId;
       if (userId && typeof userId === 'string') filter.userId = userId;
+      if (guestPlayerId && typeof guestPlayerId === 'string') filter.guestPlayerId = guestPlayerId;
       if (teamId && typeof teamId === 'string') filter.teamId = teamId;
       if (inTeamOnly === '1' || inTeamOnly === 'true') {
         filter.teamId = { $ne: null };

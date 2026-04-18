@@ -18,6 +18,9 @@ export const tournamentPostActionSchema = z
       'setServeOrder',
       'auditTournament',
       'placeTournamentBet',
+      'createGuestPlayer',
+      'updateGuestPlayer',
+      'deleteGuestPlayer',
     ]),
   })
   .passthrough();

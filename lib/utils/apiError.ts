@@ -37,6 +37,15 @@ const API_ERROR_I18N: Record<string, string> = {
   'All team slots must be filled before creating groups': 'apiErrors.allTeamSlotsForGroups',
   'Distribute teams into groups before starting': 'apiErrors.distributeGroupsBeforeStart',
   'Internal server error': 'apiErrors.internal',
+  // Guest players (POST /api/tournaments/:id actions)
+  'Guest is on a team; remove them from the team first': 'apiErrors.guestPlayerOnTeam',
+  'Invalid displayName': 'apiErrors.guestInvalidDisplayName',
+  'Invalid gender': 'apiErrors.guestInvalidGender',
+  'Guest player not found': 'apiErrors.guestPlayerNotFound',
+  'Invalid guest id': 'apiErrors.guestInvalidId',
+  'Invalid guestId': 'apiErrors.guestInvalidId',
+  'No valid fields to update': 'apiErrors.guestNoFieldsToUpdate',
+  'Failed to create guest player': 'apiErrors.guestCreateFailed',
 };
 
 export function isNetworkError(e: unknown): boolean {
