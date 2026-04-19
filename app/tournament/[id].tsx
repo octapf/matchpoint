@@ -301,7 +301,13 @@ export default function TournamentDetailScreen() {
   const { t, i18n } = useTranslation();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const rawId = useLocalSearchParams<{ id: string | string[] }>().id;
+  const id =
+    typeof rawId === 'string'
+      ? rawId.trim() || undefined
+      : Array.isArray(rawId) && typeof rawId[0] === 'string'
+        ? rawId[0].trim() || undefined
+        : undefined;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TournamentTab>('players');
   const [activeDivision, setActiveDivision] = useState<DivisionTab>('mixed');
@@ -992,8 +998,8 @@ export default function TournamentDetailScreen() {
       const pa = sa?.points ?? 0;
       const pb = sb?.points ?? 0;
       if (pb !== pa) return pb - pa;
-      const oa = tieBreakOrdinal(id, a._id);
-      const ob = tieBreakOrdinal(id, b._id);
+      const oa = tieBreakOrdinal(id ?? '', a._id);
+      const ob = tieBreakOrdinal(id ?? '', b._id);
       if (oa !== ob) return oa < ob ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
@@ -1365,6 +1371,23 @@ export default function TournamentDetailScreen() {
     return 'reorganize';
   }, [canManageTournament, id, tournamentStarted, rosterFull, groupsDistributionPending]);
 
+  /** Only block the UI on error when there is no cached tournament (avoids hiding data after a failed refetch). */
+  if (isError && !tournament) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.errorText}>{tournamentError?.message || t('tournamentDetail.failedToLoad')}</Text>
+      </View>
+    );
+  }
+
+  if (!id) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.errorText}>{t('tournamentDetail.failedToLoad')}</Text>
+      </View>
+    );
+  }
+
   if (isLoading || !tournament) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -1385,14 +1408,6 @@ export default function TournamentDetailScreen() {
             </View>
           ))}
         </View>
-      </View>
-    );
-  }
-
-  if (isError) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{tournamentError?.message || t('tournamentDetail.failedToLoad')}</Text>
       </View>
     );
   }

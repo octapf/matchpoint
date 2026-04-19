@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import type { TournamentDivision } from '../../types';
+import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 import {
   missingDivisionForOrganizers,
   tournamentDivisionsNormalized,
@@ -130,8 +131,9 @@ export async function assertOrganizersCoverAllDivisions(
   const entriesCol = db.collection('entries');
   const teamsCol = db.collection('teams');
   const usersCol = db.collection('users');
-  const entriesForTournament = await entriesCol.find({ tournamentId }).toArray();
-  const teamsForTournament = await teamsCol.find({ tournamentId }).toArray();
+  const tidfCov = tournamentIdMongoFilter(tournamentId);
+  const entriesForTournament = await entriesCol.find(tidfCov).toArray();
+  const teamsForTournament = await teamsCol.find(tidfCov).toArray();
   const userIds = new Set<string>();
   for (const e of entriesForTournament) {
     if (e.userId && typeof e.userId === 'string') userIds.add(e.userId);
@@ -150,7 +152,10 @@ export async function assertOrganizersCoverAllDivisions(
   for (const u of usersForTournament) {
     userGender.set(u._id.toString(), typeof u.gender === 'string' ? u.gender : '');
   }
-  const guestDocs = await db.collection('tournament_guest_players').find({ tournamentId }).toArray();
+  const guestDocs = await db
+    .collection('tournament_guest_players')
+    .find(tournamentIdMongoFilter(tournamentId))
+    .toArray();
   const guestGenderById = new Map<string, string>();
   for (const g of guestDocs) {
     guestGenderById.set((g._id as ObjectId).toString(), typeof g.gender === 'string' ? g.gender : '');

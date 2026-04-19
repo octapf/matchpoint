@@ -16,6 +16,7 @@ import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusS
 import { notifyMany } from '../../server/lib/notify';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots } from '../../lib/playerSlots';
 import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
+import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import type { TournamentDivision } from '../../types';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
@@ -73,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const tidfTeam = tournamentIdMongoFilter(tournamentId);
       if (!ObjectId.isValid(actingUserId)) {
         return corsRes.status(400).json({ error: 'Invalid acting user' });
       }
@@ -125,7 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Prevent a player from being in 2 teams in the same tournament.
         const conflict = await col.findOne({
           _id: { $ne: oid },
-          tournamentId,
+          ...tidfTeam,
           playerIds: { $in: clean },
         });
         if (conflict) {
@@ -148,7 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const waitlistCol = db.collection('waitlist');
         for (const pid of added) {
           if (isGuestPlayerSlot(pid)) continue;
-          const w = await waitlistCol.findOne({ tournamentId, division, userId: pid });
+          const w = await waitlistCol.findOne({ ...tidfTeam, division, userId: pid });
           if (!w) {
             return corsRes.status(400).json({ error: 'Registered player must be on the waiting list for this division' });
           }
@@ -172,10 +174,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const pid of removed) {
               if (isGuestPlayerSlot(pid)) {
                 const gid = guestPlayerIdFromSlot(pid)!;
-                await ec.deleteMany({ tournamentId, guestPlayerId: gid }, { session });
+                await ec.deleteMany({ ...tidfTeam, guestPlayerId: gid }, { session });
               } else {
-                await ec.deleteMany({ tournamentId, userId: pid }, { session });
-                const dup = await wc.findOne({ tournamentId, division, userId: pid }, { session });
+                await ec.deleteMany({ ...tidfTeam, userId: pid }, { session });
+                const dup = await wc.findOne({ ...tidfTeam, division, userId: pid }, { session });
                 if (!dup) {
                   await wc.insertOne(
                     {
@@ -194,8 +196,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const pid of clean) {
               if (isGuestPlayerSlot(pid)) {
                 const gid = guestPlayerIdFromSlot(pid)!;
-                await ec.deleteMany({ tournamentId, guestPlayerId: gid, teamId: null }, { session });
-                const existing = await ec.findOne({ tournamentId, guestPlayerId: gid }, { session });
+                await ec.deleteMany({ ...tidfTeam, guestPlayerId: gid, teamId: null }, { session });
+                const existing = await ec.findOne({ ...tidfTeam, guestPlayerId: gid }, { session });
                 const entryPayload = {
                   teamId: teamIdStr,
                   status: 'in_team' as const,
@@ -217,8 +219,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   );
                 }
               } else {
-                await ec.deleteMany({ tournamentId, userId: pid, teamId: null }, { session });
-                const existing = await ec.findOne({ tournamentId, userId: pid }, { session });
+                await ec.deleteMany({ ...tidfTeam, userId: pid, teamId: null }, { session });
+                const existing = await ec.findOne({ ...tidfTeam, userId: pid }, { session });
                 const entryPayload = {
                   teamId: teamIdStr,
                   status: 'in_team' as const,
@@ -243,7 +245,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             const userIdsInTeam = clean.filter((p) => !isGuestPlayerSlot(p));
             if (userIdsInTeam.length) {
-              await wc.deleteMany({ tournamentId, userId: { $in: userIdsInTeam } }, { session });
+              await wc.deleteMany({ ...tidfTeam, userId: { $in: userIdsInTeam } }, { session });
             }
           });
         } finally {
@@ -280,6 +282,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const tidfDelTeam = tournamentIdMongoFilter(tournamentId);
       if (!ObjectId.isValid(actingUserId)) {
         return corsRes.status(400).json({ error: 'Invalid acting user' });
       }
@@ -303,14 +306,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const ec = tdb.collection('entries');
           const wc = tdb.collection('waitlist');
           const tc = tdb.collection('teams');
-          await ec.deleteMany({ tournamentId, teamId: id }, { session });
+          await ec.deleteMany({ ...tidfDelTeam, teamId: id }, { session });
           const result = await tc.deleteOne({ _id: oid }, { session });
           if (result.deletedCount === 0) {
             throw new Error('TEAM_NOT_FOUND');
           }
           for (const pid of playerIds) {
             if (isGuestPlayerSlot(pid)) continue;
-            const dup = await wc.findOne({ tournamentId, division, userId: pid }, { session });
+            const dup = await wc.findOne({ ...tidfDelTeam, division, userId: pid }, { session });
             if (!dup) {
               await wc.insertOne({ tournamentId, division, userId: pid, createdAt: now, updatedAt: now }, { session });
             }

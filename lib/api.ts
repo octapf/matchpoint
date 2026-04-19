@@ -61,12 +61,24 @@ function apiRequest<T>(
       typeof data === 'object' && data !== null && 'error' in data && typeof (data as { error: unknown }).error === 'string'
         ? (data as { error: string }).error
         : undefined;
+    const debugMessage =
+      typeof data === 'object' && data !== null && 'debugMessage' in data && typeof (data as { debugMessage: unknown }).debugMessage === 'string'
+        ? (data as { debugMessage: string }).debugMessage.trim()
+        : undefined;
+    const debugStack =
+      typeof data === 'object' && data !== null && 'debugStack' in data && typeof (data as { debugStack: unknown }).debugStack === 'string'
+        ? (data as { debugStack: string }).debugStack.trim()
+        : undefined;
     if (!res.ok) {
-      const e = new Error(errMsg || `API error: ${res.status}`);
+      const base = errMsg || `API error: ${res.status}`;
+      const withDetail =
+        debugMessage && !base.includes(debugMessage) ? `${base}\n${debugMessage}` : base;
+      const e = new Error(withDetail);
       if (typeof data === 'object' && data !== null) {
         const anyData = data as Record<string, unknown>;
         if (typeof anyData.remaining === 'number') (e as Error & { remaining?: number }).remaining = anyData.remaining;
       }
+      if (debugStack) (e as Error & { debugStack?: string }).debugStack = debugStack;
       throw e;
     }
     return data as T;

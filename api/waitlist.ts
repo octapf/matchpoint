@@ -6,6 +6,7 @@ import { waitlistPostSchema } from '../server/lib/schemas/waitlistPost';
 import { waitlistInvitePartnerPostSchema } from '../server/lib/schemas/waitlistInvitePartnerPost';
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { notifyOne } from '../server/lib/notify';
+import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -34,7 +35,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (division !== 'men' && division !== 'women' && division !== 'mixed') {
         return corsRes.status(400).json({ error: 'Invalid or missing division' });
       }
-      const rows = await col.find({ tournamentId, division }).sort({ createdAt: 1 }).toArray();
+      const tidf = tournamentIdMongoFilter(tournamentId);
+      const rows = await col.find({ ...tidf, division }).sort({ createdAt: 1 }).toArray();
       const count = rows.length;
       const users = rows.map((r) => ({
         userId: String((r as { userId?: unknown }).userId ?? ''),
@@ -66,15 +68,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Cannot invite yourself' });
         }
 
+        const tidfInv = tournamentIdMongoFilter(tournamentId);
         const entriesCol = db.collection('entries');
-        const playingActor = await entriesCol.findOne({ tournamentId, userId: actorId, teamId: { $ne: null } });
-        const playingTarget = await entriesCol.findOne({ tournamentId, userId: toUserId, teamId: { $ne: null } });
+        const playingActor = await entriesCol.findOne({ ...tidfInv, userId: actorId, teamId: { $ne: null } });
+        const playingTarget = await entriesCol.findOne({ ...tidfInv, userId: toUserId, teamId: { $ne: null } });
         if (playingActor || playingTarget) {
           return corsRes.status(400).json({ error: 'One or more players are already in a team' });
         }
 
-        const actorRow = await col.findOne({ tournamentId, division, userId: actorId });
-        const targetRow = await col.findOne({ tournamentId, division, userId: toUserId });
+        const actorRow = await col.findOne({ ...tidfInv, division, userId: actorId });
+        const targetRow = await col.findOne({ ...tidfInv, division, userId: toUserId });
         if (!actorRow) {
           return corsRes.status(400).json({ error: 'You must be on the waiting list to invite someone' });
         }
@@ -120,13 +123,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'You can only join the waiting list for yourself' });
       }
 
-      const dup = await col.findOne({ tournamentId, division, userId });
+      const tidfPost = tournamentIdMongoFilter(tournamentId);
+      const dup = await col.findOne({ ...tidfPost, division, userId });
       if (dup) {
         return corsRes.status(409).json({ error: 'Already on the waiting list' });
       }
 
       const entriesCol = db.collection('entries');
-      const playing = await entriesCol.findOne({ tournamentId, userId, teamId: { $ne: null } });
+      const playing = await entriesCol.findOne({ ...tidfPost, userId, teamId: { $ne: null } });
       if (playing) {
         return corsRes.status(400).json({ error: 'Already in a team for this tournament' });
       }
@@ -185,7 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const tournamentId =
         typeof req.query.tournamentId === 'string' ? req.query.tournamentId.trim() : '';
-      if (!tournamentId) {
+      if (!tournamentId || !ObjectId.isValid(tournamentId)) {
         return corsRes.status(400).json({ error: 'Missing tournamentId' });
       }
       const division =
@@ -203,12 +207,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Not allowed' });
       }
 
-      const existing = await col.findOne({ tournamentId, division, userId: targetUserId });
+      const tidfDel = tournamentIdMongoFilter(tournamentId);
+      const existing = await col.findOne({ ...tidfDel, division, userId: targetUserId });
       if (!existing) {
         return corsRes.status(404).json({ error: 'Not on the waiting list' });
       }
       // Leaving a division waitlist does NOT remove you from the tournament.
-      await col.deleteOne({ tournamentId, division, userId: targetUserId });
+      await col.deleteOne({ ...tidfDel, division, userId: targetUserId });
       return corsRes.status(204).end();
     }
 

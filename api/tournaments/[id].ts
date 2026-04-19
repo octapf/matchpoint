@@ -39,6 +39,9 @@ import {
   updateGuestPlayer,
 } from '../../server/lib/tournamentGuestPlayerActions';
 import { isGuestPlayerSlot } from '../../lib/playerSlots';
+import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/apiErrorResponse';
+import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
+import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -93,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
         if (!actorIsAdmin && !isOrg) {
           const entriesCol = db.collection('entries');
-          const hasEntry = await entriesCol.findOne({ tournamentId: id, userId: actorId });
+          const hasEntry = await entriesCol.findOne({ ...tournamentIdMongoFilter(id), userId: actorId });
           if (!hasEntry) {
             return corsRes.status(404).json({ error: 'Tournament not found' });
           }
@@ -106,11 +109,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamsCol = db.collection('teams');
       const waitCol = db.collection('waitlist');
 
+      const tidfDetail = tournamentIdMongoFilter(id);
       const [teamsList, waitByDiv] = await Promise.all([
-        teamsCol.find({ tournamentId: id }).project({ groupIndex: 1, division: 1, playerIds: 1 }).toArray(),
+        teamsCol.find({ ...tidfDetail }).project({ groupIndex: 1, division: 1, playerIds: 1 }).toArray(),
         waitCol
           .aggregate<{ _id: { division: string }; count: number }>([
-            { $match: { tournamentId: id, division: { $in: ['men', 'women', 'mixed'] } } },
+            { $match: { ...tidfDetail, division: { $in: ['men', 'women', 'mixed'] } } },
             { $group: { _id: { division: '$division' }, count: { $sum: 1 } } },
           ])
           .toArray(),
@@ -246,11 +250,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
       }
 
-      const guestPlayersDocs = await db
-        .collection('tournament_guest_players')
-        .find({ tournamentId: id })
-        .sort({ displayName: 1 })
-        .toArray();
+      let guestPlayersDocs: Record<string, unknown>[] = [];
+      try {
+        guestPlayersDocs = (await db
+          .collection('tournament_guest_players')
+          .find(tournamentIdMongoFilter(id))
+          .sort({ displayName: 1 })
+          .toArray()) as Record<string, unknown>[];
+      } catch (guestListErr) {
+        console.error('[GET tournament] tournament_guest_players list failed', guestListErr);
+      }
 
       const sessionActorId = getSessionUserId(req);
       let sessionActorIsAdmin = false;
@@ -260,29 +269,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sessionActorId &&
         ObjectId.isValid(sessionActorId)
       ) {
-        const au = await loadActorUserWithAdminRefresh(db, sessionActorId);
-        sessionActorIsAdmin = !!(au && isUserAdmin(au as { role?: string; email?: string }));
-        sessionActorIsOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, sessionActorId);
+        try {
+          const au = await loadActorUserWithAdminRefresh(db, sessionActorId);
+          sessionActorIsAdmin = !!(au && isUserAdmin(au as { role?: string; email?: string }));
+          sessionActorIsOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, sessionActorId);
+        } catch (actorErr) {
+          console.error('[GET tournament] loadActorUserWithAdminRefresh failed', actorErr);
+        }
       }
       const viewerMaySeeGuestNotes = sessionActorIsAdmin || sessionActorIsOrg;
 
       let bettingSnapshot: unknown = undefined;
       if (includeBetting) {
-        bettingSnapshot = await buildBettingSnapshot(
-          db,
-          id,
-          betsDivisionRaw as TournamentDivision,
-          sessionActorIsOrg || sessionActorIsAdmin
-        );
-      }
-      const guestPlayersOut = guestPlayersDocs.map((g) => {
-        const row = serializeDoc(g as Record<string, unknown>)! as Record<string, unknown>;
-        if (!viewerMaySeeGuestNotes) {
-          const { note: _note, ...rest } = row;
-          return rest;
+        try {
+          bettingSnapshot = await buildBettingSnapshot(
+            db,
+            id,
+            betsDivisionRaw as TournamentDivision,
+            sessionActorIsOrg || sessionActorIsAdmin
+          );
+        } catch (betSnapErr) {
+          console.error('[GET tournament] buildBettingSnapshot failed', betSnapErr);
         }
-        return row;
-      });
+      }
+
+      let guestPlayersOut: unknown[] = [];
+      try {
+        guestPlayersOut = guestPlayersDocs.map((g) => {
+          const row = serializeDoc(g as Record<string, unknown>) as Record<string, unknown> | null;
+          if (!row) return null;
+          if (!viewerMaySeeGuestNotes) {
+            const { note: _note, ...rest } = row;
+            return rest;
+          }
+          return row;
+        });
+        guestPlayersOut = guestPlayersOut.filter((x) => x != null);
+      } catch (guestMapErr) {
+        console.error('[GET tournament] guestPlayers serialize failed', guestMapErr);
+        guestPlayersOut = [];
+      }
 
       return corsRes.status(200).json({
         ...serialized,
@@ -1831,22 +1857,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
       const entriesCol = db.collection('entries');
-      const entryCount = await entriesCol.countDocuments({ tournamentId: id });
+      const entryCount = await entriesCol.countDocuments(tournamentIdMongoFilter(id));
       if (entryCount > 0) {
         return corsRes.status(400).json({
           error:
             'Cannot delete tournament while players are registered. Remove all players from the roster first.',
         });
       }
-      await entriesCol.deleteMany({ tournamentId: id });
-      await db.collection('teams').deleteMany({ tournamentId: id });
+      const teamsColDel = db.collection('teams');
+      const teamsCount = await teamsColDel.countDocuments(tournamentIdMongoFilter(id));
+      if (teamsCount > 0) {
+        return corsRes.status(400).json({
+          error: 'Cannot delete tournament while teams exist. Remove all teams first.',
+        });
+      }
+      await purgeTournamentRelatedData(db, id);
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();
     }
 
     return corsRes.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
-    console.error(err);
-    return corsRes.status(500).json({ error: 'Internal server error' });
+    logApiHandlerError('tournaments/[id]', { method: req.method, id: req.query?.id }, err);
+    return corsRes.status(500).json(jsonBodyForServerError(err));
   }
 }

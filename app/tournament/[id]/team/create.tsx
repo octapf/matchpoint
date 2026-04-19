@@ -15,7 +15,13 @@ import { isPairValidForTournamentDivisions } from '@/lib/teamDivisionPairing';
 import { useUserStore } from '@/store/useUserStore';
 import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
-import type { TournamentDivision } from '@/types';
+import { toGuestPlayerSlot } from '@/lib/playerSlots';
+import type { TournamentDivision, TournamentGuestPlayer } from '@/types';
+
+type SecondPick =
+  | { kind: 'waitlist'; userId: string }
+  | { kind: 'guest'; guest: TournamentGuestPlayer }
+  | null;
 
 export default function CreateTeamScreen() {
   const { t } = useTranslation();
@@ -42,7 +48,7 @@ export default function CreateTeamScreen() {
   const { data: waitlistInfo } = useWaitlist(id, div as TournamentDivision);
   const userHasTeam = teams.some((t) => t.playerIds?.includes(userId ?? ''));
 
-  const inTeamUserIds = useMemo(() => {
+  const inTeamSlotIds = useMemo(() => {
     const s = new Set<string>();
     for (const tm of teams) for (const pid of tm.playerIds ?? []) if (pid) s.add(pid);
     return s;
@@ -50,8 +56,14 @@ export default function CreateTeamScreen() {
 
   const partnerCandidates = useMemo(() => {
     const wl = (waitlistInfo?.users ?? []).map((w) => w.userId).filter(Boolean);
-    return wl.filter((uid) => uid !== userId && !inTeamUserIds.has(uid));
-  }, [waitlistInfo?.users, userId, inTeamUserIds]);
+    return wl.filter((uid) => uid !== userId && !inTeamSlotIds.has(uid));
+  }, [waitlistInfo?.users, userId, inTeamSlotIds]);
+
+  const guestPlayers = tournament?.guestPlayers ?? [];
+  const availableGuests = useMemo(
+    () => guestPlayers.filter((g) => !inTeamSlotIds.has(toGuestPlayerSlot(g._id))),
+    [guestPlayers, inTeamSlotIds]
+  );
 
   const { data: partnerUsers = [] } = useUsers(partnerCandidates);
   const partnerMap = useMemo(() => Object.fromEntries(partnerUsers.map((u) => [u._id, u])), [partnerUsers]);
@@ -62,7 +74,7 @@ export default function CreateTeamScreen() {
   );
 
   const [teamName, setTeamName] = useState('');
-  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [secondPick, setSecondPick] = useState<SecondPick>(null);
 
   const sortedPartners = useMemo(() => {
     return [...partnerCandidates].sort((a, b) =>
@@ -96,7 +108,7 @@ export default function CreateTeamScreen() {
       Alert.alert(t('common.error'), t('team.missingTournamentOrUser'));
       return;
     }
-    if (!partnerId) {
+    if (!secondPick) {
       Alert.alert(t('common.error'), t('team.twoPlayersRequired'));
       return;
     }
@@ -105,8 +117,17 @@ export default function CreateTeamScreen() {
       return;
     }
 
-    const partnerUser = partnerMap[partnerId];
-    const divCheck = isPairValidForTournamentDivisions(divisions, user?.gender, partnerUser?.gender);
+    let partnerGender: string | undefined;
+    let playerIds: [string, string];
+    if (secondPick.kind === 'waitlist') {
+      partnerGender = partnerMap[secondPick.userId]?.gender;
+      playerIds = [userId, secondPick.userId];
+    } else {
+      partnerGender = secondPick.guest.gender;
+      playerIds = [userId, toGuestPlayerSlot(secondPick.guest._id)];
+    }
+
+    const divCheck = isPairValidForTournamentDivisions(divisions, user?.gender, partnerGender);
     if (!divCheck.ok) {
       Alert.alert(t('common.error'), t('apiErrors.divisionNotEnabledForPair'));
       return;
@@ -116,7 +137,7 @@ export default function CreateTeamScreen() {
       {
         tournamentId: id,
         name: teamName.trim(),
-        playerIds: [userId, partnerId],
+        playerIds,
         createdBy: userId,
       },
       {
@@ -179,12 +200,16 @@ export default function CreateTeamScreen() {
         <View style={styles.partnerList}>
           {sortedPartners.map((pid) => {
             const u = partnerMap[pid];
-            const selected = partnerId === pid;
+            const selected = secondPick?.kind === 'waitlist' && secondPick.userId === pid;
             return (
               <Pressable
                 key={pid}
                 style={[styles.partnerRow, selected && styles.partnerRowSelected]}
-                onPress={() => setPartnerId((prev) => (prev === pid ? null : pid))}
+                onPress={() =>
+                  setSecondPick((prev) =>
+                    prev?.kind === 'waitlist' && prev.userId === pid ? null : { kind: 'waitlist', userId: pid }
+                  )
+                }
               >
                 <Avatar
                   firstName={u?.firstName ?? ''}
@@ -198,6 +223,33 @@ export default function CreateTeamScreen() {
             );
           })}
           {sortedPartners.length === 0 ? <Text style={styles.emptyPartners}>{t('common.noResults')}</Text> : null}
+        </View>
+
+        <Text style={[styles.partnerHint, styles.guestSectionHint]}>{t('team.guestPlayersSection')}</Text>
+        <View style={styles.partnerList}>
+          {availableGuests.map((g) => {
+            const selected = secondPick?.kind === 'guest' && secondPick.guest._id === g._id;
+            return (
+              <Pressable
+                key={g._id}
+                style={[styles.partnerRow, selected && styles.partnerRowSelected]}
+                onPress={() =>
+                  setSecondPick((prev) =>
+                    prev?.kind === 'guest' && prev.guest._id === g._id ? null : { kind: 'guest', guest: g }
+                  )
+                }
+              >
+                <View style={styles.guestAvatar}>
+                  <Text style={styles.guestAvatarText}>G</Text>
+                </View>
+                <View style={styles.guestTextCol}>
+                  <Text style={styles.partnerName}>{(g.displayName ?? '').trim() || t('common.player')}</Text>
+                  <Text style={styles.guestMeta}>{g.gender}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+          {availableGuests.length === 0 ? <Text style={styles.emptyPartners}>{t('team.noGuestPlayers')}</Text> : null}
         </View>
       </View>
 
@@ -230,6 +282,7 @@ const styles = StyleSheet.create({
   playerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   playerLabel: { fontSize: 16, color: Colors.text },
   partnerHint: { fontSize: 13, color: Colors.textMuted, marginBottom: 8 },
+  guestSectionHint: { marginTop: 16 },
   partnerList: { marginTop: 8, gap: 8 },
   partnerRow: {
     flexDirection: 'row',
@@ -242,4 +295,15 @@ const styles = StyleSheet.create({
   partnerRowSelected: { borderWidth: 1, borderColor: Colors.surfaceLight },
   partnerName: { fontSize: 16, color: Colors.text, fontWeight: '600' },
   emptyPartners: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', padding: 12 },
+  guestAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestAvatarText: { fontSize: 14, fontWeight: '800', color: Colors.textMuted },
+  guestTextCol: { flex: 1 },
+  guestMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
 });

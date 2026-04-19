@@ -1,4 +1,5 @@
 import type { Db } from 'mongodb';
+import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 /** Pick the group with the fewest teams (ties → lowest index). Respects equal capacity per group. */
 export async function pickLeastLoadedGroup(
@@ -25,11 +26,12 @@ export async function countTeamsInGroup(
   groupIndex: number
 ): Promise<number> {
   const col = db.collection('teams');
+  const tid = tournamentIdMongoFilter(tournamentId);
   if (groupIndex === 0) {
     return col.countDocuments({
-      tournamentId,
+      ...tid,
       $or: [{ groupIndex: 0 }, { groupIndex: { $exists: false } }, { groupIndex: null }],
     });
   }
-  return col.countDocuments({ tournamentId, groupIndex });
+  return col.countDocuments({ ...tid, groupIndex });
 }

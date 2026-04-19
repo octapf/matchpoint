@@ -6,6 +6,7 @@ import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { entriesPostSchema } from '../server/lib/schemas/entriesPost';
 import { parseLimitOffset } from '../server/lib/pagination';
 import { notifyOne } from '../server/lib/notify';
+import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -24,7 +25,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const filter: Record<string, unknown> = {};
       const { tournamentId, userId, guestPlayerId, teamId, inTeamOnly } = req.query;
-      if (tournamentId && typeof tournamentId === 'string') filter.tournamentId = tournamentId;
+      if (tournamentId && typeof tournamentId === 'string') {
+        Object.assign(filter, tournamentIdMongoFilter(tournamentId.trim()));
+      }
       if (userId && typeof userId === 'string') filter.userId = userId;
       if (guestPlayerId && typeof guestPlayerId === 'string') filter.guestPlayerId = guestPlayerId;
       if (teamId && typeof teamId === 'string') filter.teamId = teamId;
@@ -81,11 +84,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const waitlistCol = db.collection('waitlist');
-      const dupW = await waitlistCol.findOne({ tournamentId, userId });
+      const tidf = tournamentIdMongoFilter(tournamentId);
+      const dupW = await waitlistCol.findOne({ ...tidf, userId });
       if (dupW) {
         return corsRes.status(409).json({ error: 'Already on the waiting list' });
       }
-      const playing = await col.findOne({ tournamentId, userId, teamId: { $ne: null } });
+      const playing = await col.findOne({ ...tidf, userId, teamId: { $ne: null } });
       if (playing) {
         return corsRes.status(409).json({ error: 'Already in a team for this tournament' });
       }
@@ -98,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         createdAt: now,
         updatedAt: now,
       });
-      await col.deleteMany({ tournamentId, userId, teamId: null });
+      await col.deleteMany({ ...tidf, userId, teamId: null });
 
       // In-app notification.
       await notifyOne(db, {

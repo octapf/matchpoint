@@ -27,6 +27,12 @@ const API_ERROR_I18N: Record<string, string> = {
   'Only organizers can delete this tournament': 'apiErrors.onlyOrganizersDelete',
   'Cannot delete tournament while players are registered. Remove all players from the roster first.':
     'apiErrors.cannotDeleteWithPlayers',
+  'Cannot delete tournament while teams exist. Remove all teams first.': 'apiErrors.cannotDeleteWithTeams',
+  'Guests can only be added by an organizer': 'apiErrors.guestsOnlyByOrganizer',
+  'You must be the registered player pairing with a guest': 'apiErrors.mustBeRegisteredPlayerWithGuest',
+  'You must be on the waiting list for this division': 'apiErrors.youMustBeOnWaitlistForDivision',
+  'Registered player must be on the waiting list for this division':
+    'apiErrors.registeredPlayerMustBeOnWaitlistDivision',
   'Match is locked by another referee': 'apiErrors.matchLockedByOtherReferee',
   'Referee changed': 'apiErrors.refereeChanged',
   'Both players must be on the waiting list': 'apiErrors.bothPlayersMustBeOnWaitlist',

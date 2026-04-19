@@ -1,8 +1,9 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import type { TournamentDivision } from '../../types';
-import { isPairValidForTournamentDivisions } from './teamDivisionPairing';
 import { parsePlayerSlot } from '../../lib/playerSlots';
+import { isPairValidForTournamentDivisions } from './teamDivisionPairing';
+import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const COL = 'tournament_guest_players';
 
@@ -20,7 +21,7 @@ export type GuestPlayerDoc = {
 export async function guestPlayerInUse(db: Db, tournamentId: string, guestId: string): Promise<boolean> {
   if (!ObjectId.isValid(guestId)) return false;
   const slot = `guest:${new ObjectId(guestId).toString()}`;
-  const hit = await db.collection('teams').findOne({ tournamentId, playerIds: slot });
+  const hit = await db.collection('teams').findOne({ ...tournamentIdMongoFilter(tournamentId), playerIds: slot });
   return !!hit;
 }
 
@@ -35,7 +36,7 @@ export async function assertGuestIdsBelongToTournament(
   }
   const docs = (await db
     .collection(COL)
-    .find({ tournamentId, _id: { $in: oids } })
+    .find({ ...tournamentIdMongoFilter(tournamentId), _id: { $in: oids } })
     .toArray()) as unknown as GuestPlayerDoc[];
   if (docs.length !== guestIds.length) {
     return { ok: false, error: 'Guest player not found for this tournament' };

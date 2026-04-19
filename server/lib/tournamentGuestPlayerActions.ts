@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { guestPlayerInUse } from './guestPlayersDb';
+import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const COL = 'tournament_guest_players';
 
@@ -41,7 +42,7 @@ export async function updateGuestPlayer(
 ): Promise<{ ok: true; doc: Record<string, unknown> } | { ok: false; error: string }> {
   if (!ObjectId.isValid(guestId)) return { ok: false, error: 'Invalid guest id' };
   const oid = new ObjectId(guestId);
-  const existing = await db.collection(COL).findOne({ _id: oid, tournamentId });
+  const existing = await db.collection(COL).findOne({ _id: oid, ...tournamentIdMongoFilter(tournamentId) });
   if (!existing) return { ok: false, error: 'Guest player not found' };
   const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   if (body.displayName !== undefined) {
@@ -59,8 +60,8 @@ export async function updateGuestPlayer(
     update.note = note || null;
   }
   if (Object.keys(update).length <= 1) return { ok: false, error: 'No valid fields to update' };
-  await db.collection(COL).updateOne({ _id: oid, tournamentId }, { $set: update });
-  const doc = await db.collection(COL).findOne({ _id: oid, tournamentId });
+  await db.collection(COL).updateOne({ _id: oid, ...tournamentIdMongoFilter(tournamentId) }, { $set: update });
+  const doc = await db.collection(COL).findOne({ _id: oid, ...tournamentIdMongoFilter(tournamentId) });
   return { ok: true, doc: doc as Record<string, unknown> };
 }
 
@@ -73,7 +74,7 @@ export async function deleteGuestPlayer(
   const gid = new ObjectId(guestId).toString();
   const inUse = await guestPlayerInUse(db, tournamentId, gid);
   if (inUse) return { ok: false, error: 'Guest is on a team; remove them from the team first' };
-  const r = await db.collection(COL).deleteOne({ _id: new ObjectId(guestId), tournamentId });
+  const r = await db.collection(COL).deleteOne({ _id: new ObjectId(guestId), ...tournamentIdMongoFilter(tournamentId) });
   if (r.deletedCount === 0) return { ok: false, error: 'Guest player not found' };
   return { ok: true };
 }

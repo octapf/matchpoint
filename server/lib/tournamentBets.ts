@@ -1,5 +1,6 @@
 import { ObjectId, type Db } from 'mongodb';
 import type { TournamentDivision } from '../../types';
+import { normalizeDbTournamentId, tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const COL = 'tournamentBets';
 
@@ -27,23 +28,16 @@ let indexesEnsured = false;
 export async function ensureTournamentBetIndexes(db: Db): Promise<void> {
   if (indexesEnsured) return;
   const c = db.collection(COL);
-  await c.createIndex({ tournamentId: 1, matchId: 1, userId: 1, kind: 1 }, { unique: true });
-  await c.createIndex({ tournamentId: 1, division: 1 });
-  await c.createIndex({ matchId: 1 });
-  indexesEnsured = true;
-}
-
-/** String form for comparing tournament ids from DB (ObjectId or string). */
-export function normalizeDbTournamentId(raw: unknown): string {
-  if (raw instanceof ObjectId) return raw.toString();
-  return String(raw ?? '');
-}
-
-/** Query fragment when `tournamentId` may be stored as string or ObjectId in Mongo. */
-export function tournamentIdMongoFilter(tournamentId: string): Record<string, unknown> {
-  if (!ObjectId.isValid(tournamentId)) return { tournamentId };
-  const oid = new ObjectId(tournamentId);
-  return { tournamentId: { $in: [tournamentId, oid] } };
+  try {
+    await c.createIndex({ tournamentId: 1, matchId: 1, userId: 1, kind: 1 }, { unique: true });
+    await c.createIndex({ tournamentId: 1, division: 1 });
+    await c.createIndex({ matchId: 1 });
+  } catch (e) {
+    // Serverless cold starts can race; duplicate/conflicting index specs should not break reads.
+    console.warn('[tournamentBets] ensureTournamentBetIndexes', e);
+  } finally {
+    indexesEnsured = true;
+  }
 }
 
 function isDivision(d: string): d is TournamentDivision {
@@ -359,11 +353,22 @@ export async function buildBettingSnapshot(
     if (ObjectId.isValid(a)) teamIds.add(a);
     if (ObjectId.isValid(b)) teamIds.add(b);
   }
-  const teams = await db
-    .collection('teams')
-    .find({ ...tidf, _id: { $in: [...teamIds].map((id) => new ObjectId(id)) } })
-    .project({ name: 1 })
-    .toArray();
+  const teamOids: ObjectId[] = [];
+  for (const tid of teamIds) {
+    try {
+      if (ObjectId.isValid(tid)) teamOids.push(new ObjectId(tid));
+    } catch {
+      /* skip malformed ids */
+    }
+  }
+  const teams =
+    teamOids.length > 0
+      ? await db
+          .collection('teams')
+          .find({ ...tidf, _id: { $in: teamOids } })
+          .project({ name: 1 })
+          .toArray()
+      : [];
   const teamName = new Map<string, string>();
   for (const tm of teams) {
     teamName.set(String(tm._id), String((tm as { name?: unknown }).name ?? ''));
