@@ -3,6 +3,7 @@ import { useTranslation } from '@/lib/i18n';
 import { View, Text, StyleSheet, Share, Alert, Pressable, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type {
   Gender,
@@ -70,6 +71,7 @@ import {
   organizerOnlyCoversFromTournament,
   tournamentDivisionsNormalized,
 } from '@/lib/tournamentOrganizerCoverage';
+import { tournamentsApi } from '@/lib/api';
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { openVenueInMaps } from '@/components/tournament/venueMapShared';
@@ -331,6 +333,7 @@ export default function TournamentDetailScreen() {
     return false;
   }, [isOffline, t]);
 
+  const queryClient = useQueryClient();
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
   const { data: entries = [] } = useEntries(id ? { tournamentId: id, inTeamOnly: true } : undefined);
@@ -355,6 +358,16 @@ export default function TournamentDetailScreen() {
   const finalizeClassificationMutation = useFinalizeClassification();
   const removeTournamentPlayer = useRemoveTournamentPlayer();
   const placeTournamentBetMutation = usePlaceTournamentBet(id);
+
+  const guestMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => tournamentsApi.action(id!, body) as Promise<unknown>,
+    onSuccess: () => {
+      if (!id) return;
+      void queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      void queryClient.invalidateQueries({ queryKey: ['teams'] });
+      void queryClient.invalidateQueries({ queryKey: ['entries'] });
+    },
+  });
 
   const { data: allMatches = [] } = useMatches(
     id ? { tournamentId: id } : undefined,
@@ -477,6 +490,29 @@ export default function TournamentDetailScreen() {
       title: t('tournamentDetail.inviteTitle'),
     }).catch(() => Alert.alert(t('common.error'), t('tournamentDetail.couldNotShare')));
   }, [i18n.locale, storedLanguage, t, tournament?.inviteLink, tournament?.name]);
+
+  const confirmDeleteGuest = useCallback(
+    (g: TournamentGuestPlayer) => {
+      if (!id) return;
+      Alert.alert(
+        t('tournamentDetail.guestDeleteTitle'),
+        t('tournamentDetail.guestDeleteConfirm', { name: g.displayName }),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.delete'),
+            style: 'destructive',
+            onPress: () =>
+              guestMutation.mutate(
+                { action: 'deleteGuestPlayer', guestId: g._id },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              ),
+          },
+        ]
+      );
+    },
+    [id, t, guestMutation]
+  );
 
   const organizerMenuBaseItems = useMemo((): OrganizerMenuItem[] => {
     const list: OrganizerMenuItem[] = [];
@@ -783,6 +819,11 @@ export default function TournamentDetailScreen() {
     for (const team of teams) map[team._id] = divisionForTeam(team, userMap, guestMap);
     return map;
   }, [teams, userMap, guestMap]);
+
+  const userHasTeam = useMemo(() => {
+    if (!userId) return false;
+    return teams.some((tm) => (tm.playerIds ?? []).includes(userId));
+  }, [teams, userId]);
 
   const userHasTeamInDivision = useMemo(() => {
     if (!userId || !id) return false;
@@ -1354,7 +1395,8 @@ export default function TournamentDetailScreen() {
     randomizeGroupsMutation.isPending ||
     startTournamentMutation.isPending ||
     updateTeam.isPending ||
-    leaveWaitlist.isPending;
+    leaveWaitlist.isPending ||
+    guestMutation.isPending;
 
   const isOrganizer = organizerIds.includes(userId ?? '');
   const isAdmin = user?.role === 'admin';
@@ -1974,9 +2016,67 @@ export default function TournamentDetailScreen() {
         <>
           <View style={[styles.tabPanel, activeTab === 'fixture' ? styles.tabPanelTight : styles.tabPanelSpaced]}>
         {activeTab === 'players' ? (
+          <>
+            {canManageTournament && id && !shouldUseDevMocks() ? (
+              <View style={styles.teamsTabCreateRow}>
+                <Pressable
+                  style={styles.teamCard as never}
+                  onPress={() => router.push(`/tournament/${id}/guest-players` as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('tournamentDetail.menuGuestPlayers')}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', fontStyle: 'italic', color: Colors.text }} numberOfLines={1}>
+                        {t('tournamentDetail.newGuestPlayerPlaceholder')}
+                      </Text>
+                    </View>
+                    <Ionicons name="person-add-outline" size={26} color={tokens.accentHover} />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 10 }}>
+                    {[0, 1].map((i) => (
+                      <View
+                        key={i}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          flexGrow: 0,
+                          flexShrink: 1,
+                          maxWidth: '48%',
+                          minWidth: 0,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 13,
+                            backgroundColor: Colors.surfaceLight,
+                            borderWidth: 1,
+                            borderColor: Colors.surfaceLight,
+                          }}
+                        />
+                        <View
+                          style={{
+                            height: 10,
+                            width: 70,
+                            borderRadius: 6,
+                            backgroundColor: Colors.surfaceLight,
+                          }}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </Pressable>
+              </View>
+            ) : null}
           <PlayersTab
             t={t}
             sortedEntries={sortedEntries}
+            guestPlayers={guestPlayersList}
             guestMap={guestMap}
             waitlistUserIds={waitlistUserIds}
             userMap={userMap}
@@ -1994,6 +2094,7 @@ export default function TournamentDetailScreen() {
             organizeOnlyUserIds={organizeOnlyUserIds}
             onConfirmLeave={confirmLeave}
             onConfirmRemovePlayer={confirmRemovePlayer}
+            onDeleteGuestPlayer={canManageTournament ? confirmDeleteGuest : undefined}
             onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
             viewerOnWaitlist={onWaitlistInDivision}
             onInviteWaitlistUser={
@@ -2021,12 +2122,13 @@ export default function TournamentDetailScreen() {
             playerRowRightStyle={styles.playerRowRight}
             waitlistRankTextStyle={styles.waitlistRankText}
           />
+          </>
         ) : null}
 
         {activeTab === 'teams' ? (
           <TeamsTab
             t={t}
-            canCreateTeam={!canManageTournament && !userHasTeamInDivision && onWaitlistInDivision && canEnroll && !!id}
+            canCreateTeam={!canManageTournament && !userHasTeam && onWaitlistInDivision && canEnroll && !!id}
                       onCreateTeam={() => router.push(`/tournament/${id}/team/create?division=${currentDivision}`)}
             organizerActions={
               canManageTournament && id ? (

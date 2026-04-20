@@ -13,7 +13,8 @@ import { useTheme } from '@/lib/theme/useTheme';
 type PlayerRow =
   | { kind: 'section'; sectionId: 'withTeam' | 'noTeamYet' | 'waitlist' }
   | { kind: 'roster'; entry: Entry }
-  | { kind: 'waitlist'; userId: string };
+  | { kind: 'waitlist'; userId: string }
+  | { kind: 'guest'; guest: TournamentGuestPlayer };
 
 function comparePlayerName(userMap: Record<string, User>, userIdA: string, userIdB: string): number {
   const na = getTournamentPlayerDisplayName(userMap[userIdA]).toLowerCase();
@@ -65,6 +66,7 @@ function MatchStyleStatusPill({ children }: { children: React.ReactNode }) {
 export function PlayersTab({
   t,
   sortedEntries,
+  guestPlayers = [],
   guestMap = {},
   waitlistUserIds,
   userMap,
@@ -82,6 +84,7 @@ export function PlayersTab({
   organizeOnlyUserIds,
   onConfirmLeave,
   onConfirmRemovePlayer,
+  onDeleteGuestPlayer,
   onRemoveWaitlistPlayer,
   viewerOnWaitlist,
   onInviteWaitlistUser,
@@ -102,6 +105,8 @@ export function PlayersTab({
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   sortedEntries: Entry[];
+  /** All tournament guest players (even those not currently in a team). */
+  guestPlayers?: TournamentGuestPlayer[];
   guestMap?: Record<string, TournamentGuestPlayer | undefined>;
   /** Same division waitlist user ids (merged into one A–Z list with roster). */
   waitlistUserIds?: string[];
@@ -121,6 +126,7 @@ export function PlayersTab({
   organizeOnlyUserIds: string[];
   onConfirmLeave: () => void;
   onConfirmRemovePlayer: (entry: Entry, playerName: string) => void;
+  onDeleteGuestPlayer?: (guest: TournamentGuestPlayer) => void;
   onRemoveWaitlistPlayer?: (userId: string, playerName: string) => void;
   viewerOnWaitlist?: boolean;
   onInviteWaitlistUser?: (userId: string) => void;
@@ -176,14 +182,39 @@ export function PlayersTab({
     [organizeOnlyUserIds, userMap]
   );
 
+  const guestIdsInRoster = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of sortedEntries) {
+      if (typeof e.guestPlayerId === 'string' && e.guestPlayerId) s.add(e.guestPlayerId);
+    }
+    return s;
+  }, [sortedEntries]);
+  const guestsNotInRoster = useMemo(
+    () => guestPlayers.filter((g) => g && typeof g._id === 'string' && !guestIdsInRoster.has(g._id)),
+    [guestPlayers, guestIdsInRoster]
+  );
+
   const listData = useMemo<PlayerRow[]>(() => {
     const wlIds = waitlistUserIds ?? [];
     const withTeam = [...sortedEntries.filter((e) => !!e.teamId)].sort((a, b) =>
       compareEntry(a, b, userMap, guestMap)
     );
-    const noTeamYet = [...sortedEntries.filter((e) => !e.teamId)].sort((a, b) =>
-      compareEntry(a, b, userMap, guestMap)
-    );
+    const entriesNoTeam = [...sortedEntries.filter((e) => !e.teamId)];
+    const guestsNoTeam = [...guestsNotInRoster];
+    const noTeamYet: PlayerRow[] = [
+      ...entriesNoTeam.map((entry) => ({ kind: 'roster' as const, entry })),
+      ...guestsNoTeam.map((guest) => ({ kind: 'guest' as const, guest })),
+    ].sort((a, b) => {
+      const na =
+        a.kind === 'roster'
+          ? entryDisplayName(a.entry, userMap, guestMap)
+          : (a.guest.displayName ?? '').trim() || tournamentGuestDisplayName(a.guest) || '';
+      const nb =
+        b.kind === 'roster'
+          ? entryDisplayName(b.entry, userMap, guestMap)
+          : (b.guest.displayName ?? '').trim() || tournamentGuestDisplayName(b.guest) || '';
+      return na.toLowerCase().localeCompare(nb.toLowerCase(), undefined, { sensitivity: 'base' });
+    });
     const waitSorted = [...wlIds].sort((a, b) => comparePlayerName(userMap, a, b));
 
     const out: PlayerRow[] = [];
@@ -193,14 +224,14 @@ export function PlayersTab({
     }
     if (noTeamYet.length) {
       out.push({ kind: 'section', sectionId: 'noTeamYet' });
-      for (const entry of noTeamYet) out.push({ kind: 'roster', entry });
+      for (const row of noTeamYet) out.push(row);
     }
     if (waitSorted.length) {
       out.push({ kind: 'section', sectionId: 'waitlist' });
       for (const userId of waitSorted) out.push({ kind: 'waitlist', userId });
     }
     return out;
-  }, [sortedEntries, waitlistUserIds, userMap, guestMap]);
+  }, [sortedEntries, waitlistUserIds, userMap, guestMap, guestsNotInRoster]);
 
   const rightClusterStyle = [playerRowRightStyle as never, { gap: 8, alignItems: 'center' } as never];
   const rightSlotStyle = { width: 34, alignItems: 'center', justifyContent: 'center' } as const;
@@ -280,7 +311,12 @@ export function PlayersTab({
       const cap = Number.isFinite(Number(playersPerDivisionCap)) ? Math.max(0, Number(playersPerDivisionCap)) : null;
       return cap != null ? `${t('tournamentDetail.playersGroupWithTeam')} ${withTeamCount}/${cap}` : t('tournamentDetail.playersGroupWithTeam');
     }
-    if (sectionId === 'noTeamYet') return t('tournamentDetail.playersGroupNoTeamYet');
+    if (sectionId === 'noTeamYet') {
+      const entriesNoTeamCount = sortedEntries.filter((e) => !e.teamId).length;
+      const guestsNoTeamCount = guestsNotInRoster.length;
+      const total = entriesNoTeamCount + guestsNoTeamCount;
+      return `${t('tournamentDetail.playersGroupNoTeamYet')} (${total})`;
+    }
     const wlTotal = (waitlistUserIds ?? []).length;
     return `${t('tournamentDetail.tabWaitingList')} (${wlTotal})`;
   };
@@ -293,7 +329,9 @@ export function PlayersTab({
           ? `sec-${row.sectionId}`
           : row.kind === 'roster'
             ? row.entry._id
-            : `wl-${row.userId}`
+            : row.kind === 'waitlist'
+              ? `wl-${row.userId}`
+              : `guest-${row.guest._id}`
       }
       ListHeaderComponent={header}
       renderItem={({ item: row, index }) => {
@@ -388,6 +426,43 @@ export function PlayersTab({
           );
         }
 
+        if (row.kind === 'guest') {
+          const g = row.guest;
+          const playerName = tournamentGuestDisplayName(g) || t('common.player');
+          const guestGender = g.gender === 'male' || g.gender === 'female' ? g.gender : undefined;
+          return (
+            <View style={playerRowStyle as never}>
+              <View style={playerRowTopStyle as never}>
+                <View style={playerRowMainStyle as never}>
+                  <Avatar firstName={playerName} lastName="" gender={guestGender} size="sm" />
+                  <View style={playerRowTextStyle as never}>
+                    <Text style={playerRowNameStyle as never}>{playerName}</Text>
+                  </View>
+                </View>
+                <View style={rightClusterStyle}>
+                  <View style={rightSlotStyle}>
+                    <MatchStyleStatusPill>
+                      <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+                    </MatchStyleStatusPill>
+                  </View>
+                  {canManageTournament && onDeleteGuestPlayer ? (
+                    <View style={rightSlotStyle}>
+                      <IconButton
+                        icon="trash-outline"
+                        onPress={() => onDeleteGuestPlayer(g)}
+                        disabled={mutationBusy}
+                        accessibilityLabel={t('tournamentDetail.guestDeleteTitle')}
+                        color="#f87171"
+                        compact
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          );
+        }
+
         const entry = row.entry;
         const isGuestEntry = !entry.userId && !!entry.guestPlayerId;
         const u = entry.userId ? userMap[entry.userId] : undefined;
@@ -406,6 +481,7 @@ export function PlayersTab({
           guest?.gender === 'male' || guest?.gender === 'female' ? guest.gender : undefined;
         const rosterUserId =
           !isGuestEntry && typeof entry.userId === 'string' && entry.userId ? entry.userId : undefined;
+        const showGuestTrash = canManageTournament && isGuestEntry && !hasTeam && !!guest && !!onDeleteGuestPlayer;
 
         return (
           <View
@@ -452,6 +528,25 @@ export function PlayersTab({
                     <MatchStyleStatusPill>
                       <Ionicons name="checkmark" size={14} color="#22c55e" />
                     </MatchStyleStatusPill>
+                  </View>
+                ) : null}
+                {isGuestEntry ? (
+                  <View style={rightSlotStyle}>
+                    <MatchStyleStatusPill>
+                      <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+                    </MatchStyleStatusPill>
+                  </View>
+                ) : null}
+                {showGuestTrash ? (
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon="trash-outline"
+                      onPress={() => onDeleteGuestPlayer!(guest!)}
+                      disabled={mutationBusy}
+                      accessibilityLabel={t('tournamentDetail.guestDeleteTitle')}
+                      color="#f87171"
+                      compact
+                    />
                   </View>
                 ) : null}
                 {showOrganizerToggleIcon && rosterUserId ? (
