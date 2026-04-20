@@ -25,6 +25,8 @@
     "db:indexes": "tsx scripts/create-indexes.ts",
     "create-indexes": "npm run db:indexes",
     "db:backfill:waitlist-division": "tsx scripts/backfill-waitlist-division.ts",
+    "smoke:tournament-detail": "tsx scripts/smoke-tournament-detail.ts",
+    "smoke:api-imports": "tsx -e \"(async () => { await import('./api/tournaments/[id].ts'); await import('./api/tournaments.ts'); await import('./api/teams.ts'); await import('./api/waitlist.ts'); console.log('api import smoke ok'); })().catch(e => { console.error(e); process.exit(1); })\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "export:web": "npx expo export -p web && node scripts/verify-web-og.js",

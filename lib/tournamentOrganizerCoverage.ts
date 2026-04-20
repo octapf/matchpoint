@@ -1,5 +1,5 @@
-import type { TournamentDivision } from '@/types';
-import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
+import type { TournamentDivision } from '../types';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot } from './playerSlots';
 
 export type EntryDivisionInput = { userId: string; teamId?: string | null };
 
