@@ -237,7 +237,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               await ec.insertOne(
                 {
                   tournamentId,
-                  userId: null,
+                  // Avoid unique index collisions on (tournamentId, userId) for guest entries.
+                  // This is not a real user id; guest identity is `guestPlayerId`.
+                  userId: pid,
                   guestPlayerId: gid,
                   teamId: tidStr,
                   status: 'in_team',

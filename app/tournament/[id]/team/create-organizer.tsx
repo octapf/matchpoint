@@ -112,7 +112,6 @@ export default function CreateTeamOrganizerScreen() {
   return (
     <View style={[styles.container, { paddingBottom: 20 + insets.bottom }]}>
       <Text style={styles.title}>{t('team.createTeam')}</Text>
-      <Text style={styles.hint}>{t('tournamentDetail.organizerCreateTeamHint')}</Text>
 
       <View style={styles.field}>
         <Text style={styles.label}>{t('team.teamName')}</Text>
@@ -125,17 +124,12 @@ export default function CreateTeamOrganizerScreen() {
         />
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>{t('team.players')}</Text>
-      </View>
-
       <View style={styles.picksRow}>
         <Text style={styles.pickText}>{p1 ? resolveRosterSlotLabel(p1, userMap, guestMap) : t('team.pickPlayer1')}</Text>
         <Text style={styles.pickText}>{p2 ? resolveRosterSlotLabel(p2, userMap, guestMap) : t('team.pickPlayer2')}</Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <Text style={styles.subsectionLabel}>{t('team.pickPartnerFromWaitlist')}</Text>
         <View style={styles.list}>
           {availablePlayers.map((uid) => {
             const u = userMap[uid];
@@ -156,20 +150,19 @@ export default function CreateTeamOrganizerScreen() {
           {availablePlayers.length === 0 ? <Text style={styles.empty}>{t('common.noResults')}</Text> : null}
         </View>
 
-        <Text style={styles.subsectionLabel}>{t('team.guestPlayersSection')}</Text>
         <View style={styles.listGuests}>
           {availableGuests.map((g) => {
             const slot = toGuestPlayerSlot(g._id);
             const selected = slot === p1 || slot === p2;
             return (
               <Pressable key={g._id} style={[styles.row, selected && styles.rowSelected]} onPress={() => pick(slot)}>
-                <View style={styles.guestAvatar}>
-                  <Text style={styles.guestAvatarText}>G</Text>
-                </View>
-                <View style={styles.guestTextCol}>
-                  <Text style={styles.rowText}>{(g.displayName ?? '').trim() || t('common.player')}</Text>
-                  <Text style={styles.guestMeta}>{g.gender}</Text>
-                </View>
+                <Avatar
+                  firstName={(g.displayName ?? '').trim()}
+                  lastName=""
+                  gender={g.gender === 'male' || g.gender === 'female' ? g.gender : undefined}
+                  size="sm"
+                />
+                <Text style={styles.rowText}>{(g.displayName ?? '').trim() || t('common.player')}</Text>
               </Pressable>
             );
           })}
@@ -198,21 +191,9 @@ const styles = StyleSheet.create({
   pickText: { flex: 1, fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 12 },
-  subsectionLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, marginTop: 8, marginBottom: 6 },
   list: { marginBottom: 8 },
   listGuests: { marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12 },
-  guestAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  guestAvatarText: { fontSize: 14, fontWeight: '800', color: Colors.textMuted },
-  guestTextCol: { flex: 1 },
-  guestMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   rowSelected: { backgroundColor: Colors.surfaceLight },
   rowText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
   empty: { padding: 14, color: Colors.textMuted, textAlign: 'center' },

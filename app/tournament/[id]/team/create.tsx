@@ -179,7 +179,6 @@ export default function CreateTeamScreen() {
       )}
 
       <View style={styles.players}>
-        <Text style={styles.label}>{t('team.players')}</Text>
         <Pressable
           style={styles.playerRow}
           onPress={openMyProfile}
@@ -196,7 +195,6 @@ export default function CreateTeamScreen() {
           <Text style={styles.playerLabel}>{t('team.youCreator')}</Text>
         </Pressable>
 
-        <Text style={styles.partnerHint}>{t('team.pickPartnerFromWaitlist')}</Text>
         <View style={styles.partnerList}>
           {sortedPartners.map((pid) => {
             const u = partnerMap[pid];
@@ -225,7 +223,6 @@ export default function CreateTeamScreen() {
           {sortedPartners.length === 0 ? <Text style={styles.emptyPartners}>{t('common.noResults')}</Text> : null}
         </View>
 
-        <Text style={[styles.partnerHint, styles.guestSectionHint]}>{t('team.guestPlayersSection')}</Text>
         <View style={styles.partnerList}>
           {availableGuests.map((g) => {
             const selected = secondPick?.kind === 'guest' && secondPick.guest._id === g._id;
@@ -239,13 +236,13 @@ export default function CreateTeamScreen() {
                   )
                 }
               >
-                <View style={styles.guestAvatar}>
-                  <Text style={styles.guestAvatarText}>G</Text>
-                </View>
-                <View style={styles.guestTextCol}>
-                  <Text style={styles.partnerName}>{(g.displayName ?? '').trim() || t('common.player')}</Text>
-                  <Text style={styles.guestMeta}>{g.gender}</Text>
-                </View>
+                <Avatar
+                  firstName={(g.displayName ?? '').trim()}
+                  lastName=""
+                  gender={g.gender === 'male' || g.gender === 'female' ? g.gender : undefined}
+                  size="sm"
+                />
+                <Text style={styles.partnerName}>{(g.displayName ?? '').trim() || t('common.player')}</Text>
               </Pressable>
             );
           })}
@@ -281,8 +278,6 @@ const styles = StyleSheet.create({
   players: { marginBottom: 24 },
   playerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   playerLabel: { fontSize: 16, color: Colors.text },
-  partnerHint: { fontSize: 13, color: Colors.textMuted, marginBottom: 8 },
-  guestSectionHint: { marginTop: 16 },
   partnerList: { marginTop: 8, gap: 8 },
   partnerRow: {
     flexDirection: 'row',
@@ -295,15 +290,4 @@ const styles = StyleSheet.create({
   partnerRowSelected: { borderWidth: 1, borderColor: Colors.surfaceLight },
   partnerName: { fontSize: 16, color: Colors.text, fontWeight: '600' },
   emptyPartners: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', padding: 12 },
-  guestAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  guestAvatarText: { fontSize: 14, fontWeight: '800', color: Colors.textMuted },
-  guestTextCol: { flex: 1 },
-  guestMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
 });

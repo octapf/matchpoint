@@ -464,7 +464,7 @@ export function PlayersTab({
         }
 
         const entry = row.entry;
-        const isGuestEntry = !entry.userId && !!entry.guestPlayerId;
+        const isGuestEntry = !!entry.guestPlayerId;
         const u = entry.userId ? userMap[entry.userId] : undefined;
         const guest = entry.guestPlayerId ? guestMap[entry.guestPlayerId] : undefined;
         const playerName = isGuestEntry
