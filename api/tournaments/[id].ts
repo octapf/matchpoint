@@ -95,9 +95,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
         const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
         if (!actorIsAdmin && !isOrg) {
+          const tidfVis = tournamentIdMongoFilter(id);
           const entriesCol = db.collection('entries');
-          const hasEntry = await entriesCol.findOne({ ...tournamentIdMongoFilter(id), userId: actorId });
-          if (!hasEntry) {
+          const waitlistCol = db.collection('waitlist');
+          const [hasEntry, onWaitlist] = await Promise.all([
+            entriesCol.findOne({ ...tidfVis, userId: actorId }),
+            waitlistCol.findOne({ ...tidfVis, userId: actorId }),
+          ]);
+          if (!hasEntry && !onWaitlist) {
             return corsRes.status(404).json({ error: 'Tournament not found' });
           }
         }
