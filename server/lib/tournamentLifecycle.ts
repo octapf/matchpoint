@@ -26,6 +26,15 @@ export async function actionRandomizeGroups(db: Db, tournamentId: string) {
   const pointsToWin = Math.max(1, Math.min(99, Number((doc as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
   const setsPerMatch = Math.max(1, Math.min(7, Number((doc as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
 
+  // Defensive cleanup: category brackets must be created only after classification completes.
+  // If stale category matches exist (e.g. from a previous run), wipe them when groups are (re)created.
+  await db.collection('matches').deleteMany({ tournamentId, stage: 'category' });
+  await db.collection('teams').updateMany({ tournamentId }, { $unset: { category: '' } });
+  await db.collection('tournaments').updateOne(
+    { _id: new ObjectId(tournamentId) },
+    { $unset: { categoriesSnapshot: '' } }
+  );
+
   await db.collection('matches').deleteMany({ tournamentId, stage: 'classification' });
   const gen = await generateClassificationMatches(db, tournamentId, {
     matchesPerOpponent,
