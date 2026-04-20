@@ -12,7 +12,28 @@ function tournamentStarted(doc: Record<string, unknown>) {
 }
 
 export async function actionRandomizeGroups(db: Db, tournamentId: string) {
-  return randomizeTeamGroups(db, tournamentId);
+  const r = await randomizeTeamGroups(db, tournamentId);
+
+  // Creating/reorganizing groups also (re)generates classification matches so the schedule is ready
+  // before the organizer starts the tournament (referees can only start matches after start).
+  const tournaments = db.collection('tournaments');
+  const t = await tournaments.findOne({ _id: new ObjectId(tournamentId) });
+  if (!t) throw new Error('Tournament not found');
+  const doc = t as Record<string, unknown>;
+
+  const matchesPerOpponentRaw = Number((doc as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1);
+  const matchesPerOpponent = Math.max(1, Math.min(5, Math.floor(matchesPerOpponentRaw) || 1));
+  const pointsToWin = Math.max(1, Math.min(99, Number((doc as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
+  const setsPerMatch = Math.max(1, Math.min(7, Number((doc as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
+
+  await db.collection('matches').deleteMany({ tournamentId, stage: 'classification' });
+  const gen = await generateClassificationMatches(db, tournamentId, {
+    matchesPerOpponent,
+    pointsToWin,
+    setsPerMatch,
+  });
+
+  return { ...r, matches: gen };
 }
 
 export async function actionStartTournament(
@@ -26,6 +47,22 @@ export async function actionStartTournament(
   if (!current) throw new Error('Tournament not found');
   const cur = current as Record<string, unknown>;
   if (tournamentStarted(cur)) throw new Error('Tournament already started');
+
+  // Only allow starting on tournament day, and only when the roster is full.
+  const startDateRaw = String((cur as { startDate?: unknown }).startDate ?? (cur as { date?: unknown }).date ?? '');
+  const tournamentIsoDate = startDateRaw ? startDateRaw.slice(0, 10) : '';
+  const todayLocal = new Date();
+  const todayIsoDate = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}-${String(todayLocal.getDate()).padStart(2, '0')}`;
+  if (!tournamentIsoDate || tournamentIsoDate !== todayIsoDate) {
+    throw new Error('Tournament can only be started on its scheduled date');
+  }
+  const teamsColForCount = db.collection('teams');
+  const maxT = Math.max(2, Math.floor(Number((cur as { maxTeams?: unknown }).maxTeams ?? 0) || 0));
+  const teamsCount = await teamsColForCount.countDocuments({ tournamentId });
+  if (teamsCount < maxT) {
+    throw new Error('Tournament can only be started when team cap is reached');
+  }
+
   const groupsDistributedAt = (cur as { groupsDistributedAt?: unknown }).groupsDistributedAt;
   if (groupsDistributedAt === null) {
     const teamsCol = db.collection('teams');
@@ -47,8 +84,6 @@ export async function actionStartTournament(
     params.matchesPerOpponent ?? (cur as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1
   );
   const matchesPerOpponent = Math.max(1, Math.min(5, Math.floor(matchesPerOpponentRaw) || 1));
-  const pointsToWin = Math.max(1, Math.min(99, Number((cur as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
-  const setsPerMatch = Math.max(1, Math.min(7, Number((cur as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
 
   const now = new Date().toISOString();
 
@@ -73,14 +108,16 @@ export async function actionStartTournament(
   );
   if (!transitioned) throw new Error('Tournament already started');
 
-  // Clear previous classification matches only after successful transition.
-  await db.collection('matches').deleteMany({ tournamentId: tournamentId, stage: 'classification' });
+  // Matches are normally created when the organizer creates groups. Keep a safe fallback for older tournaments.
+  const matchesCol = db.collection('matches');
+  const existing = await matchesCol.countDocuments({ tournamentId, stage: 'classification' });
+  if (existing > 0) {
+    return { startedAt: now, matches: { created: 0, total: existing } };
+  }
 
-  const gen = await generateClassificationMatches(db, tournamentId, {
-    matchesPerOpponent,
-    pointsToWin,
-    setsPerMatch,
-  });
+  const pointsToWin = Math.max(1, Math.min(99, Number((cur as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
+  const setsPerMatch = Math.max(1, Math.min(7, Number((cur as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
+  const gen = await generateClassificationMatches(db, tournamentId, { matchesPerOpponent, pointsToWin, setsPerMatch });
 
   return { startedAt: now, matches: gen };
 }

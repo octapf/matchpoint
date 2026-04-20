@@ -50,7 +50,7 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
-import { isGuestPlayerSlot } from '@/lib/playerSlots';
+import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 import { resolveRosterSlotLabel, tournamentGuestDisplayName } from '@/lib/utils/resolveParticipant';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
@@ -191,6 +191,9 @@ function TeamCard({
                 : null;
               const isYou = pid === currentUserId;
               const isGuest = !!(pid && isGuestPlayerSlot(pid));
+              const guestId = pid && isGuest ? guestPlayerIdFromSlot(pid) : null;
+              const guest = guestId && guestMap ? guestMap[guestId] : undefined;
+              const guestGender = guest?.gender === 'male' || guest?.gender === 'female' ? guest.gender : undefined;
               return pid ? (
                 <Pressable
                   key={i}
@@ -201,9 +204,9 @@ function TeamCard({
                   disabled={isGuest}
                 >
                   <Avatar
-                    firstName={user?.firstName ?? ''}
-                    lastName={user?.lastName ?? ''}
-                    gender={user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined}
+                    firstName={isGuest ? (playerName ?? '') : (user?.firstName ?? '')}
+                    lastName={isGuest ? '' : (user?.lastName ?? '')}
+                    gender={isGuest ? guestGender : (user?.gender === 'male' || user?.gender === 'female' ? user.gender : undefined)}
                     size="xs"
                     photoUrl={user?.photoUrl}
                   />
@@ -531,11 +534,18 @@ export default function TournamentDetailScreen() {
     const groupsDistributionPendingMenu =
       !shouldUseDevMocks() && !groupsDistributedMenu && !anyGroupAssignedMenu;
     const rosterFull = teams.length >= (tournament.maxTeams ?? 0);
+    const startDateRaw = String((tournament as { startDate?: unknown }).startDate ?? (tournament as { date?: unknown }).date ?? '');
+    const todayLocal = new Date();
+    const todayIsoDate = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}-${String(todayLocal.getDate()).padStart(2, '0')}`;
+    const tournamentIsoDate = startDateRaw ? String(startDateRaw).slice(0, 10) : '';
+    const isTournamentDayToday = !!tournamentIsoDate && tournamentIsoDate === todayIsoDate;
     const allTeamsPlacedInGroups =
       rosterFull &&
       teams.length > 0 &&
       teams.every((tm) => typeof tm.groupIndex === 'number' && tm.groupIndex >= 0);
-    const cannotStartForGroups = !groupsDistributedMenu && !allTeamsPlacedInGroups;
+    const cannotStartForGroups = rosterFull && !groupsDistributedMenu && !allTeamsPlacedInGroups;
+    const cannotStartForRoster = !rosterFull;
+    const cannotStartForDate = !isTournamentDayToday;
 
     if (id) {
       list.push(
@@ -566,7 +576,7 @@ export default function TournamentDetailScreen() {
           label: t('tournamentDetail.menuStartTournament'),
           icon: 'play-outline',
           color: Colors.success,
-          disabled: startTournamentMutation.isPending || cannotStartForGroups,
+          disabled: startTournamentMutation.isPending || cannotStartForRoster || cannotStartForDate || cannotStartForGroups,
           onPress: () =>
             Alert.alert(
               t('tournamentDetail.menuStartTournament'),
@@ -725,7 +735,7 @@ export default function TournamentDetailScreen() {
   const guestPlayersList = tournament?.guestPlayers ?? [];
   const guestMap = useMemo(
     () =>
-      Object.fromEntries(guestPlayersList.map((g: TournamentGuestPlayer) => [g._id, g])) as Record<
+      Object.fromEntries(guestPlayersList.map((g: TournamentGuestPlayer) => [g._id.toLowerCase(), g])) as Record<
         string,
         TournamentGuestPlayer
       >,
@@ -2095,6 +2105,7 @@ export default function TournamentDetailScreen() {
             onConfirmLeave={confirmLeave}
             onConfirmRemovePlayer={confirmRemovePlayer}
             onDeleteGuestPlayer={canManageTournament ? confirmDeleteGuest : undefined}
+            onEditGuestPlayer={canManageTournament && id ? (g) => router.push(`/tournament/${id}/guest-players?guestId=${g._id}` as never) : undefined}
             onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
             viewerOnWaitlist={onWaitlistInDivision}
             onInviteWaitlistUser={

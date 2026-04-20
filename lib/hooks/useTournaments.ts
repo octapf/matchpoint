@@ -126,6 +126,8 @@ export function useRandomizeTournamentGroups() {
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      // Classification matches are (re)generated on group creation/reorg.
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
   });
 }

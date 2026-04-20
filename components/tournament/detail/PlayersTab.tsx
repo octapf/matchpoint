@@ -85,6 +85,7 @@ export function PlayersTab({
   onConfirmLeave,
   onConfirmRemovePlayer,
   onDeleteGuestPlayer,
+  onEditGuestPlayer,
   onRemoveWaitlistPlayer,
   viewerOnWaitlist,
   onInviteWaitlistUser,
@@ -127,6 +128,7 @@ export function PlayersTab({
   onConfirmLeave: () => void;
   onConfirmRemovePlayer: (entry: Entry, playerName: string) => void;
   onDeleteGuestPlayer?: (guest: TournamentGuestPlayer) => void;
+  onEditGuestPlayer?: (guest: TournamentGuestPlayer) => void;
   onRemoveWaitlistPlayer?: (userId: string, playerName: string) => void;
   viewerOnWaitlist?: boolean;
   onInviteWaitlistUser?: (userId: string) => void;
@@ -445,6 +447,17 @@ export function PlayersTab({
                       <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
                     </MatchStyleStatusPill>
                   </View>
+                  {canManageTournament && onEditGuestPlayer ? (
+                    <View style={rightSlotStyle}>
+                      <IconButton
+                        icon="create-outline"
+                        onPress={() => onEditGuestPlayer(g)}
+                        disabled={mutationBusy}
+                        accessibilityLabel={t('tournamentDetail.guestEditAccessibility')}
+                        compact
+                      />
+                    </View>
+                  ) : null}
                   {canManageTournament && onDeleteGuestPlayer ? (
                     <View style={rightSlotStyle}>
                       <IconButton
@@ -481,7 +494,8 @@ export function PlayersTab({
           guest?.gender === 'male' || guest?.gender === 'female' ? guest.gender : undefined;
         const rosterUserId =
           !isGuestEntry && typeof entry.userId === 'string' && entry.userId ? entry.userId : undefined;
-        const showGuestTrash = canManageTournament && isGuestEntry && !hasTeam && !!guest && !!onDeleteGuestPlayer;
+        const showGuestTrash = canManageTournament && isGuestEntry && !!guest && !!onDeleteGuestPlayer;
+        const showGuestEdit = canManageTournament && isGuestEntry && !!guest && !!onEditGuestPlayer;
 
         return (
           <View
@@ -523,18 +537,22 @@ export function PlayersTab({
               )}
 
               <View style={rightClusterStyle}>
-                {hasTeam ? (
-                  <View style={rightSlotStyle}>
-                    <MatchStyleStatusPill>
-                      <Ionicons name="checkmark" size={14} color="#22c55e" />
-                    </MatchStyleStatusPill>
-                  </View>
-                ) : null}
                 {isGuestEntry ? (
                   <View style={rightSlotStyle}>
                     <MatchStyleStatusPill>
                       <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
                     </MatchStyleStatusPill>
+                  </View>
+                ) : null}
+                {showGuestEdit ? (
+                  <View style={rightSlotStyle}>
+                    <IconButton
+                      icon="create-outline"
+                      onPress={() => onEditGuestPlayer!(guest!)}
+                      disabled={mutationBusy}
+                      accessibilityLabel={t('tournamentDetail.guestEditAccessibility')}
+                      compact
+                    />
                   </View>
                 ) : null}
                 {showGuestTrash ? (

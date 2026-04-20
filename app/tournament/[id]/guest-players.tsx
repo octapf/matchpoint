@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
-import { IconButton } from '@/components/ui/IconButton';
 import { useTournament } from '@/lib/hooks/useTournaments';
 import { tournamentsApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
@@ -26,7 +25,7 @@ import type { Gender, TournamentGuestPlayer } from '@/types';
 
 export default function TournamentGuestPlayersScreen() {
   const { t } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, guestId } = useLocalSearchParams<{ id: string; guestId?: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const user = useUserStore((s) => s.user);
@@ -56,10 +55,13 @@ export default function TournamentGuestPlayersScreen() {
     },
   });
 
-  const sortedGuests = useMemo(
-    () => [...guests].sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' })),
-    [guests]
-  );
+  useEffect(() => {
+    if (!canManage) return;
+    const gid = String(guestId ?? '').trim();
+    if (!gid) return;
+    const target = guests.find((g) => String(g?._id ?? '') === gid);
+    if (target) openEditGuest(target);
+  }, [guestId, guests, canManage]);
 
   const handleCreate = () => {
     const n = displayName.trim();
@@ -106,20 +108,7 @@ export default function TournamentGuestPlayersScreen() {
     );
   };
 
-  const confirmDelete = (g: TournamentGuestPlayer) => {
-    Alert.alert(t('tournamentDetail.guestDeleteTitle'), t('tournamentDetail.guestDeleteConfirm', { name: g.displayName }), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'),
-        style: 'destructive',
-        onPress: () =>
-          guestMutation.mutate(
-            { action: 'deleteGuestPlayer', guestId: g._id },
-            { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-          ),
-      },
-    ]);
-  };
+  // Guest delete is available from the Players tab (only when not in a team).
 
   if (!id) {
     return (
@@ -247,46 +236,14 @@ export default function TournamentGuestPlayersScreen() {
           placeholderTextColor={Colors.textMuted}
           multiline
         />
-        <Button
-          title={t('tournamentDetail.guestPlayersAddButton')}
-          onPress={handleCreate}
-          disabled={guestMutation.isPending}
-          fullWidth
-        />
-
-        <Text style={[styles.section, { marginTop: 28 }]}>{t('tournamentDetail.guestPlayersList')}</Text>
-        {sortedGuests.length === 0 ? (
-          <Text style={styles.muted}>{t('team.noGuestPlayers')}</Text>
-        ) : (
-          sortedGuests.map((g) => (
-            <View key={g._id} style={styles.row}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rowTitle}>{g.displayName}</Text>
-                <Text style={styles.rowMeta}>
-                  {g.gender === 'male' ? t('profile.genderMale') : t('profile.genderFemale')}
-                  {g.note ? ` · ${g.note}` : ''}
-                </Text>
-              </View>
-              <View style={styles.rowActions}>
-                <IconButton
-                  icon="create-outline"
-                  onPress={() => openEditGuest(g)}
-                  disabled={guestMutation.isPending}
-                  accessibilityLabel={t('tournamentDetail.guestEditAccessibility')}
-                  compact
-                />
-                <IconButton
-                  icon="trash-outline"
-                  onPress={() => confirmDelete(g)}
-                  disabled={guestMutation.isPending}
-                  accessibilityLabel={t('common.delete')}
-                  color="#f87171"
-                  compact
-                />
-              </View>
-            </View>
-          ))
-        )}
+        <View style={{ marginTop: 14 }}>
+          <Button
+            title={t('tournamentDetail.guestPlayersAddButton')}
+            onPress={handleCreate}
+            disabled={guestMutation.isPending}
+            fullWidth
+          />
+        </View>
       </ScrollView>
     </>
   );

@@ -81,10 +81,35 @@ export function GroupsTab({
     );
   }
 
-  /** Grupos aún no creados: solo la leyenda (crear grupos sigue en el menú del organizador). */
+  // When groups are not created yet: show only the legend + (if allowed) the Create Groups CTA.
+  // Do not render empty group blocks or duplicate CTAs.
   if (groupsDistributionPending) {
     return (
-      <Text style={groupsPendingLegendStyle as never}>{t('tournamentDetail.groupsTabNoGroupsLegend')}</Text>
+      <>
+        <Text style={groupsPendingLegendStyle as never}>{t('tournamentDetail.groupsTabNoGroupsLegend')}</Text>
+        {canManageTournament && primaryGroupAction === 'distribute' ? (
+          <View style={{ marginTop: 12 }}>
+            <Button
+              title={t('tournamentDetail.createGroupsButton')}
+              variant="primary"
+              size="sm"
+              iconLeft="grid-outline"
+              onPress={() => {
+                Alert.alert(
+                  t('tournamentDetail.createGroupsButton'),
+                  t('tournamentDetail.createGroupsConfirm'),
+                  [
+                    { text: t('common.cancel'), style: 'cancel' },
+                    { text: t('common.ok'), onPress: onPrimaryGroupAction },
+                  ]
+                );
+              }}
+              disabled={primaryGroupPending}
+              fullWidth
+            />
+          </View>
+        ) : null}
+      </>
     );
   }
 

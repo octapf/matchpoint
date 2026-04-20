@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { guestPlayerInUse } from './guestPlayersDb';
+import { getMongoClient } from './mongodb';
 import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const COL = 'tournament_guest_players';
@@ -72,9 +73,64 @@ export async function deleteGuestPlayer(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!ObjectId.isValid(guestId)) return { ok: false, error: 'Invalid guest id' };
   const gid = new ObjectId(guestId).toString();
+
+  const tidf = tournamentIdMongoFilter(tournamentId);
+  const guestOid = new ObjectId(guestId);
+  const guestSlot = `guest:${gid}`;
+
   const inUse = await guestPlayerInUse(db, tournamentId, gid);
-  if (inUse) return { ok: false, error: 'Guest is on a team; remove them from the team first' };
-  const r = await db.collection(COL).deleteOne({ _id: new ObjectId(guestId), ...tournamentIdMongoFilter(tournamentId) });
-  if (r.deletedCount === 0) return { ok: false, error: 'Guest player not found' };
-  return { ok: true };
+  if (!inUse) {
+    const r = await db.collection(COL).deleteOne({ _id: guestOid, ...tidf });
+    if (r.deletedCount === 0) return { ok: false, error: 'Guest player not found' };
+    // Also clean up any orphan roster rows, if any exist.
+    await db.collection('entries').deleteMany({ ...tidf, guestPlayerId: gid });
+    return { ok: true };
+  }
+
+  // Guest is on a team: dissolve the team and move the remaining player back to "no team" roster.
+  // Do this in a transaction to avoid partial state (team deleted but entries still pointing to it, etc).
+  const client = await getMongoClient();
+  const session = client.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const teamsCol = db.collection('teams');
+      const entriesCol = db.collection('entries');
+      const guestCol = db.collection(COL);
+      const now = new Date().toISOString();
+
+      const team = await teamsCol.findOne({ ...tidf, playerIds: guestSlot }, { session });
+      if (!team) {
+        // Team disappeared between the inUse check and transaction; treat as normal delete.
+        await guestCol.deleteOne({ _id: guestOid, ...tidf }, { session });
+        await entriesCol.deleteMany({ ...tidf, guestPlayerId: gid }, { session });
+        return;
+      }
+      const teamIdStr = (team._id as ObjectId).toString();
+
+      await teamsCol.deleteOne({ _id: team._id as ObjectId }, { session });
+
+      // Move any roster rows for that team back to "joined" without a team.
+      await entriesCol.updateMany(
+        { ...tidf, teamId: teamIdStr },
+        { $set: { teamId: null, status: 'joined', updatedAt: now } },
+        { session }
+      );
+
+      // Remove the deleted guest from roster entirely (so they disappear from Players tab).
+      await entriesCol.deleteMany({ ...tidf, guestPlayerId: gid }, { session });
+
+      const r = await guestCol.deleteOne({ _id: guestOid, ...tidf }, { session });
+      if (r.deletedCount === 0) {
+        throw new Error('Guest player not found');
+      }
+    });
+    return { ok: true };
+  } catch (e) {
+    if (String((e as any)?.message ?? '').includes('Guest player not found')) {
+      return { ok: false, error: 'Guest player not found' };
+    }
+    throw e;
+  } finally {
+    await session.endSession();
+  }
 }
