@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   Platform,
+  Alert,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +18,8 @@ import { useNetInfo } from '@react-native-community/netinfo';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
+import { isRallySetComplete } from '@/lib/matchRallyScoring';
+import { isTournamentPaused, isTournamentPlayActive, isTournamentStarted } from '@/lib/tournamentPlayAllowed';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme/useTheme';
 import { useTournament } from '@/lib/hooks/useTournaments';
@@ -29,11 +32,13 @@ import {
   useSetServeOrder,
   useStartMatch,
   usePauseMatch,
+  useUpdateMatch,
 } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
+import { normalizeMongoIdString } from '@/lib/mongoId';
 import { isMongoObjectId, teamDisplayName } from '@/lib/tournamentMatchDisplay';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
@@ -66,6 +71,7 @@ export default function EditMatchScreen() {
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
   const pauseMatch = usePauseMatch();
+  const updateMatch = useUpdateMatch();
   const refereePoint = useRefereePoint();
   const setServeOrder = useSetServeOrder();
   const refereeHeartbeat = useRefereeHeartbeat();
@@ -86,7 +92,21 @@ export default function EditMatchScreen() {
 
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
 
-  const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
+  /** Live play + betting gate (day started and organizer has not paused the tournament). */
+  const tournamentPlayActive = useMemo(() => isTournamentPlayActive(tournament), [tournament]);
+  const tournamentPlayLockedReason = useMemo((): 'not_started' | 'paused' | null => {
+    if (!tournament) return null;
+    if (!isTournamentStarted(tournament)) return 'not_started';
+    if (isTournamentPaused(tournament)) return 'paused';
+    return null;
+  }, [tournament]);
+
+  const teamById = useMemo(() => {
+    const entries = teams
+      .map((tm) => [normalizeMongoIdString(tm._id), tm] as const)
+      .filter(([k]) => k.length > 0);
+    return Object.fromEntries(entries);
+  }, [teams]);
   const match = useMemo(() => matches.find((m) => m._id === matchId) ?? null, [matches, matchId]);
 
   /** Same limit resolution as the API (match field, else tournament default) so validation matches the server. */
@@ -117,13 +137,13 @@ export default function EditMatchScreen() {
 
   const teamAPlayerIds = useMemo(() => {
     if (!match) return [] as string[];
-    const t = teamById[match.teamAId] as { playerIds?: unknown } | undefined;
+    const t = teamById[normalizeMongoIdString(match.teamAId)] as { playerIds?: unknown } | undefined;
     return Array.isArray(t?.playerIds) ? (t!.playerIds as string[]).filter(Boolean) : ([] as string[]);
   }, [match, teamById]);
 
   const teamBPlayerIds = useMemo(() => {
     if (!match) return [] as string[];
-    const t = teamById[match.teamBId] as { playerIds?: unknown } | undefined;
+    const t = teamById[normalizeMongoIdString(match.teamBId)] as { playerIds?: unknown } | undefined;
     return Array.isArray(t?.playerIds) ? (t!.playerIds as string[]).filter(Boolean) : ([] as string[]);
   }, [match, teamById]);
 
@@ -137,8 +157,10 @@ export default function EditMatchScreen() {
 
   const playerIdsForNames = useMemo(() => {
     if (!match) return [] as string[];
-    const a = teams.find((t) => t._id === match.teamAId)?.playerIds ?? [];
-    const b = teams.find((t) => t._id === match.teamBId)?.playerIds ?? [];
+    const aid = normalizeMongoIdString(match.teamAId);
+    const bid = normalizeMongoIdString(match.teamBId);
+    const a = teams.find((t) => normalizeMongoIdString(t._id) === aid)?.playerIds ?? [];
+    const b = teams.find((t) => normalizeMongoIdString(t._id) === bid)?.playerIds ?? [];
     const ref = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
     const all = [...new Set([...a, ...b, ...(ref ? [ref] : [])].filter(Boolean))];
     return all.filter((pid) => !isGuestPlayerSlot(pid));
@@ -164,6 +186,10 @@ export default function EditMatchScreen() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [startCountdown, setStartCountdown] = useState<{ seconds: number; action: 'startMatch' | 'claimReferee' } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tournamentPlayActive && startCountdown) setStartCountdown(null);
+  }, [tournamentPlayActive, startCountdown]);
 
   const drainPointQueue = useCallback(async () => {
     if (!id || !matchId) return;
@@ -269,6 +295,7 @@ export default function EditMatchScreen() {
     if (startCountdown.seconds <= 1) {
       const action = startCountdown.action;
       setStartCountdown(null);
+      if (!tournamentPlayActive) return;
       if (action === 'startMatch') {
         startMatch.mutate(
           { id: matchId, tournamentId: id },
@@ -284,7 +311,7 @@ export default function EditMatchScreen() {
     }
     const h = setTimeout(() => setStartCountdown((prev) => (prev ? { ...prev, seconds: prev.seconds - 1 } : prev)), 1000);
     return () => clearTimeout(h);
-  }, [startCountdown, claimReferee, id, matchId, startMatch, t]);
+  }, [startCountdown, claimReferee, id, matchId, startMatch, t, tournamentPlayActive]);
 
   // Serving indicator is now the rotating volleyball icon (and no avatar ring).
 
@@ -322,6 +349,7 @@ export default function EditMatchScreen() {
   useEffect(() => {
     if (!id || !matchId) return;
     if (!match) return;
+    if (!tournamentPlayActive) return;
     // Keep referee lock fresh: assigned referee, or organizer/admin (server assigns lock to them on heartbeat).
     if (!isReferee && !canManageTournament) return;
     if ((match as { status?: string }).status !== 'in_progress') return;
@@ -336,7 +364,7 @@ export default function EditMatchScreen() {
       );
     }, 5_000);
     return () => clearInterval(h);
-  }, [id, matchId, match, isReferee, canManageTournament, refereeHeartbeat]);
+  }, [id, matchId, match, isReferee, canManageTournament, refereeHeartbeat, tournamentPlayActive]);
 
   const eligibleRefTeam = useMemo(() => {
     if (!userId || !match) return null;
@@ -344,11 +372,13 @@ export default function EditMatchScreen() {
     const division = (match as { division?: string }).division;
     const category = (match as { category?: string }).category;
     const groupIndex = (match as { groupIndex?: number }).groupIndex;
-    const matchTeamIds = new Set([match.teamAId, match.teamBId]);
+    const matchTeamIds = new Set(
+      [normalizeMongoIdString(match.teamAId), normalizeMongoIdString(match.teamBId)].filter(Boolean)
+    );
 
     const myTeam = teams.find((tm) => (tm.playerIds ?? []).includes(userId));
     if (!myTeam) return null;
-    if (matchTeamIds.has(myTeam._id)) return null;
+    if (matchTeamIds.has(normalizeMongoIdString(myTeam._id))) return null;
 
     if (division && myTeam.division && myTeam.division !== division) return null;
     if (stage === 'classification') {
@@ -361,9 +391,13 @@ export default function EditMatchScreen() {
     }
 
     // Must not be playing in any in-progress match.
-    const playingNow = matches.some(
-      (m) => (m as { status?: string }).status === 'in_progress' && (m.teamAId === myTeam._id || m.teamBId === myTeam._id)
-    );
+    const myTid = normalizeMongoIdString(myTeam._id);
+    const playingNow = matches.some((m) => {
+      if ((m as { status?: string }).status !== 'in_progress') return false;
+      const a = normalizeMongoIdString(m.teamAId);
+      const b = normalizeMongoIdString(m.teamBId);
+      return a === myTid || b === myTid;
+    });
     if (playingNow) return null;
     return myTeam;
   }, [match, matches, teams, userId]);
@@ -374,12 +408,14 @@ export default function EditMatchScreen() {
     const division = (match as { division?: string }).division;
     const category = (match as { category?: string }).category;
     const groupIndex = (match as { groupIndex?: number }).groupIndex;
-    const matchTeamIds = new Set([match.teamAId, match.teamBId]);
+    const matchTeamIds = new Set(
+      [normalizeMongoIdString(match.teamAId), normalizeMongoIdString(match.teamBId)].filter(Boolean)
+    );
 
     const inProgressTeamIds = new Set(
       matches
         .filter((m) => (m as { status?: string }).status === 'in_progress')
-        .flatMap((m) => [m.teamAId, m.teamBId])
+        .flatMap((m) => [normalizeMongoIdString(m.teamAId), normalizeMongoIdString(m.teamBId)])
         .filter(Boolean)
     );
 
@@ -411,15 +447,16 @@ export default function EditMatchScreen() {
           return Date.parse(a.createdAt) - Date.parse(b.createdAt);
         })
         .slice(0, 2)
-        .flatMap((m) => [m.teamAId, m.teamBId])
+        .flatMap((m) => [normalizeMongoIdString(m.teamAId), normalizeMongoIdString(m.teamBId)])
         .filter(Boolean)
     );
 
     const candidates = teams
       .filter((tm) => {
-      if (matchTeamIds.has(tm._id)) return false;
-      if (inProgressTeamIds.has(tm._id)) return false;
-      if (nextScheduledTeamIds.has(tm._id)) return false;
+      const tid = normalizeMongoIdString(tm._id);
+      if (matchTeamIds.has(tid)) return false;
+      if (inProgressTeamIds.has(tid)) return false;
+      if (nextScheduledTeamIds.has(tid)) return false;
       if (division && tm.division && tm.division !== division) return false;
       if (stage === 'classification') {
         if (typeof groupIndex !== 'number') return false;
@@ -451,8 +488,8 @@ export default function EditMatchScreen() {
   }, [match, tournament, displayedMatchForPoints, matchWithPointsLimit]);
 
   /**
-   * Who would win the match if they score the next point (same rule as API: first to `pointsToWin` wins the set/match).
-   * At deuce (e.g. 20–20 at 21), both sides are on match point → `both`.
+   * Who would win the set on the next rally if it lands (same rule as API `refereePoint`): reached `pointsToWin` and lead ≥ 2.
+   * When both sides can win on their next point (e.g. 20–20 going to 21), returns `both`.
    */
   const matchPointSide = useMemo((): 'A' | 'B' | 'both' | null => {
     if (!match) return null;
@@ -465,19 +502,15 @@ export default function EditMatchScreen() {
     const winnerIf = (side: 'A' | 'B'): 'A' | 'B' | null => {
       const na = side === 'A' ? a + 1 : a;
       const nb = side === 'B' ? b + 1 : b;
-      if (na < ptw && nb < ptw) return null;
-      if (na >= ptw || nb >= ptw) {
-        if (na === nb) return null;
-        return na > nb ? 'A' : 'B';
-      }
-      return null;
+      if (!isRallySetComplete(na, nb, ptw)) return null;
+      return na > nb ? 'A' : 'B';
     };
     const aScoresWins = winnerIf('A') === 'A';
     const bScoresWins = winnerIf('B') === 'B';
     if (!aScoresWins && !bScoresWins) return null;
     if (aScoresWins && bScoresWins) return 'both';
     return aScoresWins ? 'A' : 'B';
-  }, [match, tournament, displayedMatchForPoints, matchWithPointsLimit]);
+  }, [match, displayedMatchForPoints, matchWithPointsLimit]);
 
   useEffect(() => {
     if (!showSwitchSidesReminder && !matchPointSide) {
@@ -535,6 +568,67 @@ export default function EditMatchScreen() {
   }, [match, t]);
 
   const canEditScore = isReferee || canManageTournament;
+  const canEditLiveScore = canEditScore && tournamentPlayActive;
+
+  const finalizeMatchWithWinner = useCallback(
+    (side: 'A' | 'B') => {
+      if (!id || !matchId || !matchWithPointsLimit) return;
+      const rawPw = Number((matchWithPointsLimit as { pointsToWin?: unknown }).pointsToWin ?? NaN);
+      const pw =
+        Number.isFinite(rawPw) && rawPw > 0 ? Math.max(1, Math.min(99, Math.floor(rawPw))) : 21;
+      const update =
+        side === 'A'
+          ? { finalize: true, setsWonA: 1, setsWonB: 0, pointsA: pw, pointsB: 0 }
+          : { finalize: true, setsWonA: 0, setsWonB: 1, pointsA: 0, pointsB: pw };
+      pendingPointOpsRef.current = [];
+      updateMatch.mutate(
+        { id: matchId, tournamentId: id, update },
+        {
+          onSuccess: () => {
+            bumpPendingVersion();
+          },
+          onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+        }
+      );
+    },
+    [id, matchId, matchWithPointsLimit, updateMatch, bumpPendingVersion, t]
+  );
+
+  const openEndMatchWinnerPicker = useCallback(() => {
+    if (!match || !matchWithPointsLimit || !id || !matchId) return;
+    const ta = teamById[normalizeMongoIdString(match.teamAId)];
+    const tb = teamById[normalizeMongoIdString(match.teamBId)];
+    if (!ta || !tb) return;
+    const tbdLabel = t('tournamentDetail.matchOpponentTbd');
+    const nameA = teamDisplayName(match.teamAId, ta, tbdLabel);
+    const nameB = teamDisplayName(match.teamBId, tb, tbdLabel);
+    const rawPw = Number((matchWithPointsLimit as { pointsToWin?: unknown }).pointsToWin ?? NaN);
+    const pw =
+      Number.isFinite(rawPw) && rawPw > 0 ? Math.max(1, Math.min(99, Math.floor(rawPw))) : 21;
+
+    const showWinnerPicker = () => {
+      Alert.alert(
+        t('tournamentDetail.endMatchPickWinnerTitle'),
+        t('tournamentDetail.endMatchPickWinnerMessage', { points: pw }),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: nameA, onPress: () => finalizeMatchWithWinner('A') },
+          { text: nameB, onPress: () => finalizeMatchWithWinner('B') },
+        ],
+        { cancelable: true }
+      );
+    };
+
+    Alert.alert(
+      t('tournamentDetail.endMatchConfirmTitle'),
+      t('tournamentDetail.endMatchConfirmMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('settings.continue'), onPress: showWinnerPicker },
+      ],
+      { cancelable: true }
+    );
+  }, [match, matchWithPointsLimit, teamById, finalizeMatchWithWinner, t, id, matchId]);
 
   if (!id || !matchId || !tournament || !match) {
     return (
@@ -553,13 +647,32 @@ export default function EditMatchScreen() {
     );
   }
 
-  const teamA = teamById[match.teamAId];
-  const teamB = teamById[match.teamBId];
+  const teamA = teamById[normalizeMongoIdString(match.teamAId)];
+  const teamB = teamById[normalizeMongoIdString(match.teamBId)];
   const tbdLabel = t('tournamentDetail.matchOpponentTbd');
   const teamAName = teamDisplayName(match.teamAId, teamA, tbdLabel);
   const teamBName = teamDisplayName(match.teamBId, teamB, tbdLabel);
+
   const matchTeamsReady =
-    isMongoObjectId(match.teamAId) && isMongoObjectId(match.teamBId) && !!teamA && !!teamB;
+    isMongoObjectId(normalizeMongoIdString(match.teamAId)) &&
+    isMongoObjectId(normalizeMongoIdString(match.teamBId)) &&
+    !!teamA &&
+    !!teamB;
+
+  /** Single start CTA: org/admin uses `startMatch`, others use `claimReferee` — both assign the starter as referee (API). */
+  const matchStatusForUi = String((match as { status?: string }).status ?? 'scheduled');
+  const canShowStartMatchCta =
+    matchTeamsReady &&
+    matchStatusForUi !== 'in_progress' &&
+    matchStatusForUi !== 'completed' &&
+    matchStatusForUi !== 'paused';
+  const primaryStartAction: 'startMatch' | 'claimReferee' | null = !canShowStartMatchCta
+    ? null
+    : canManageTournament
+      ? 'startMatch'
+      : eligibleRefTeam
+        ? 'claimReferee'
+        : null;
 
   const livePointsA = Number(displayedMatchForPoints?.pointsA ?? match.pointsA ?? 0) || 0;
   const livePointsB = Number(displayedMatchForPoints?.pointsB ?? match.pointsB ?? 0) || 0;
@@ -603,7 +716,8 @@ export default function EditMatchScreen() {
   const renderServeLine = (teamAName: string, teamBName: string, order: string[]) => {
     const status = (match as { status?: string }).status;
     /** Serve order must be editable at any time (except after completion). */
-    const canEditServeSetup = status !== 'completed' && (canManageTournament || isReferee);
+    const canEditServeSetup =
+      status !== 'completed' && (canManageTournament || isReferee) && tournamentPlayActive;
     const bumpOrderNumber = (pid: string) => {
       if (!canEditServeSetup || order.length !== 4) return;
       const idx = order.findIndex((p) => p === pid);
@@ -771,12 +885,12 @@ export default function EditMatchScreen() {
   const totalSets = Math.max(1, Number(match.setsPerMatch ?? tournament.setsPerMatch ?? 1) || 1);
   const currentSet = Math.min(totalSets, Math.max(1, aNum + bNum + 1));
   const isCompleted = (match as { status?: string }).status === 'completed';
-  const winnerId = String((match as { winnerId?: unknown }).winnerId ?? '');
+  const winnerId = normalizeMongoIdString((match as { winnerId?: unknown }).winnerId);
   const winnerSide: 'A' | 'B' | null =
     isCompleted && winnerId
-      ? winnerId === String(match.teamAId)
+      ? winnerId === normalizeMongoIdString(match.teamAId)
         ? 'A'
-        : winnerId === String(match.teamBId)
+        : winnerId === normalizeMongoIdString(match.teamBId)
           ? 'B'
           : null
       : null;
@@ -786,6 +900,7 @@ export default function EditMatchScreen() {
       setNotice(t('common.networkError'));
       return;
     }
+    if (!tournamentPlayActive) return;
     if ((match as { status?: string }).status !== 'in_progress') {
       return;
     }
@@ -970,12 +1085,12 @@ export default function EditMatchScreen() {
                 <GHPressable
                   style={[
                     styles.scoreTouchSurface,
-                    !(canEditScore && (match as { status?: string }).status === 'in_progress')
+                    !(canEditLiveScore && (match as { status?: string }).status === 'in_progress')
                       ? styles.scoreOverlayDisabled
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('A', e)}
-                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
+                  disabled={!canEditLiveScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
                   accessibilityLabel={t('tournamentDetail.matchScoreSideA')}
                 />
@@ -1048,12 +1163,12 @@ export default function EditMatchScreen() {
                 <GHPressable
                   style={[
                     styles.scoreTouchSurface,
-                    !(canEditScore && (match as { status?: string }).status === 'in_progress')
+                    !(canEditLiveScore && (match as { status?: string }).status === 'in_progress')
                       ? styles.scoreOverlayDisabled
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('B', e)}
-                  disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
+                  disabled={!canEditLiveScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
                   accessibilityLabel={t('tournamentDetail.matchScoreSideB')}
                 />
@@ -1074,23 +1189,40 @@ export default function EditMatchScreen() {
               {t('tournamentDetail.refereeSuggested', { name: suggestedRefTeam.name })}
             </Text>
           ) : null}
-          {canManageTournament && (match as { status?: string }).status !== 'in_progress' ? (
-            <Button
-              title={startMatch.isPending ? t('common.loading') : String(t('tournamentDetail.startMatch') ?? '').toUpperCase()}
-              onPress={() => setStartCountdown({ seconds: 5, action: 'startMatch' })}
-              disabled={startMatch.isPending || !!startCountdown || isOffline || !matchTeamsReady}
-              variant="secondary"
-              size="sm"
-              fullWidth
-            />
-          ) : null}
-          {eligibleRefTeam ? (
-            <Button
-              title={claimReferee.isPending ? t('common.loading') : t('tournamentDetail.startAsReferee')}
-              onPress={() => setStartCountdown({ seconds: 5, action: 'claimReferee' })}
-              disabled={claimReferee.isPending || !!startCountdown || isOffline || !matchTeamsReady}
-              fullWidth
-            />
+          {primaryStartAction ? (
+            <>
+              {tournamentPlayLockedReason === 'not_started' ? (
+                <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
+                  {t('tournamentDetail.tournamentNotStartedYet')}
+                </Text>
+              ) : null}
+              {tournamentPlayLockedReason === 'paused' ? (
+                <Text style={[styles.hint, styles.centerText, styles.refereeLine]}>
+                  {t('tournamentDetail.tournamentPausedHint')}
+                </Text>
+              ) : null}
+              <Button
+                title={
+                  (primaryStartAction === 'startMatch' ? startMatch.isPending : claimReferee.isPending)
+                    ? t('common.loading')
+                    : String(t('tournamentDetail.startMatch') ?? '').toUpperCase()
+                }
+                onPress={() => {
+                  if (!tournamentPlayActive) return;
+                  setStartCountdown({ seconds: 5, action: primaryStartAction });
+                }}
+                disabled={
+                  !tournamentPlayActive ||
+                  (primaryStartAction === 'startMatch' ? startMatch.isPending : claimReferee.isPending) ||
+                  !!startCountdown ||
+                  isOffline
+                }
+                variant="secondary"
+                size="sm"
+                fullWidth
+                titleStyle={styles.startMatchButtonTitle}
+              />
+            </>
           ) : null}
         </View>
       ) : null}
@@ -1106,8 +1238,26 @@ export default function EditMatchScreen() {
                 { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
               );
             }}
-            disabled={pauseMatch.isPending || isOffline}
+            disabled={pauseMatch.isPending || isOffline || !tournamentPlayActive}
             variant="outline"
+            size="sm"
+            fullWidth
+          />
+        </View>
+      ) : null}
+
+      {((match as { status?: string }).status === 'in_progress' ||
+        (match as { status?: string }).status === 'paused') &&
+      canEditLiveScore &&
+      matchTeamsReady ? (
+        <View style={{ marginTop: 8 }}>
+          <Button
+            title={
+              updateMatch.isPending ? t('common.loading') : t('tournamentDetail.endMatchPickWinner')
+            }
+            onPress={openEndMatchWinnerPicker}
+            disabled={updateMatch.isPending || isOffline || !tournamentPlayActive}
+            variant="danger"
             size="sm"
             fullWidth
           />
@@ -1119,7 +1269,7 @@ export default function EditMatchScreen() {
           <Button
             title={startMatch.isPending ? t('common.loading') : String(t('common.resume') ?? 'Resume').toUpperCase()}
             onPress={() => setStartCountdown({ seconds: 3, action: 'startMatch' })}
-            disabled={startMatch.isPending || !!startCountdown || isOffline}
+            disabled={startMatch.isPending || !!startCountdown || isOffline || !tournamentPlayActive}
             variant="secondary"
             size="sm"
             fullWidth
@@ -1151,9 +1301,9 @@ export default function EditMatchScreen() {
                 variant="outline"
                 size="sm"
                 fullWidth
-                disabled={claimReferee.isPending || isOffline}
+                disabled={claimReferee.isPending || isOffline || !tournamentPlayActive}
                 onPress={() => {
-                  if (!id || !matchId) return;
+                  if (!id || !matchId || !tournamentPlayActive) return;
                   claimReferee.mutate(
                     { id: matchId, tournamentId: id, mode: 'takeover' },
                     { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
@@ -1230,6 +1380,7 @@ const styles = StyleSheet.create({
   },
   noticeText: { fontSize: 12, fontWeight: '800', color: Colors.textMuted, textAlign: 'center' },
   refereeLine: { fontSize: 11, fontStyle: 'italic', textTransform: 'uppercase' },
+  startMatchButtonTitle: { fontStyle: 'italic' },
   refereeFooterBlock: { alignSelf: 'stretch', alignItems: 'center', gap: 6, marginTop: 2 },
   switchSidesReminderRow: {
     flexDirection: 'row',

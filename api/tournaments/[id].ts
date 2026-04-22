@@ -5,6 +5,7 @@ import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { getSessionUserId, isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
+import { isRallySetComplete, RALLY_POINTS_ABS_CAP } from '../../lib/matchRallyScoring';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import { deriveTournamentGroupConfig } from '../../server/lib/tournamentConfig';
 import { computeStandingsForGroup } from '../../server/lib/tournamentStandings';
@@ -33,13 +34,8 @@ import {
   placeTournamentBet,
   settleBetsForMatch,
 } from '../../server/lib/tournamentBets';
-
-/** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
-function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
-  const aa = [...tournamentDivisionsNormalized(a)].sort().join('\0');
-  const bb = [...tournamentDivisionsNormalized(b)].sort().join('\0');
-  return aa === bb;
-}
+import { assertTournamentAllowsLiveMatchActions } from '../../server/lib/tournamentLivePlayGate';
+import { isTournamentStarted } from '../../lib/tournamentPlayAllowed';
 import {
   createGuestPlayer,
   deleteGuestPlayer,
@@ -49,11 +45,26 @@ import { isGuestPlayerSlot } from '../../lib/playerSlots';
 import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/apiErrorResponse';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
+import { normalizeMongoIdString } from '../../lib/mongoId';
+
+/** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
+function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
+  const aa = [...tournamentDivisionsNormalized(a)].sort().join('\0');
+  const bb = [...tournamentDivisionsNormalized(b)].sort().join('\0');
+  return aa === bb;
+}
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
   const { _id, ...rest } = doc;
-  return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
+  const next: Record<string, unknown> = {
+    _id: _id instanceof ObjectId ? _id.toString() : _id,
+  };
+  for (const [k, v] of Object.entries(rest)) {
+    if (v instanceof ObjectId) next[k] = v.toString();
+    else next[k] = v;
+  }
+  return next;
 }
 
 const REFEREE_LOCK_MS = 15_000;
@@ -73,6 +84,14 @@ function isRefereeLockActive(match: Record<string, unknown>, nowMs: number): boo
   const expMs = lockExpiresAtMs((match as any).refereeLockExpiresAt);
   if (!refereeUserId || expMs == null) return false;
   return expMs > nowMs;
+}
+
+/** Both sides must be real 24-char ObjectIds or the driver throws on queries. */
+function validMatchTeamIdsFromDoc(match: { teamAId?: unknown; teamBId?: unknown }): { teamAId: string; teamBId: string } | null {
+  const teamAId = normalizeMongoIdString(match.teamAId);
+  const teamBId = normalizeMongoIdString(match.teamBId);
+  if (!teamAId || !teamBId || !ObjectId.isValid(teamAId) || !ObjectId.isValid(teamBId)) return null;
+  return { teamAId, teamBId };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -391,6 +410,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      if (action === 'pauseTournament') {
+        const tdoc = await col.findOne({ _id: oid }, { projection: { startedAt: 1, phase: 1, paused: 1 } });
+        if (!isTournamentStarted(tdoc as { startedAt?: unknown; phase?: unknown } | null)) {
+          return corsRes.status(400).json({ error: 'Tournament has not started' });
+        }
+        const nowIso = new Date().toISOString();
+        const r = await col.findOneAndUpdate(
+          { _id: oid },
+          { $set: { paused: true, updatedAt: nowIso } },
+          { returnDocument: 'after' }
+        );
+        if (!r) return corsRes.status(404).json({ error: 'Tournament not found' });
+        return corsRes.status(200).json(serializeDoc(r as Record<string, unknown>));
+      }
+
+      if (action === 'resumeTournament') {
+        const nowIso = new Date().toISOString();
+        const r = await col.findOneAndUpdate(
+          { _id: oid },
+          { $set: { paused: false, updatedAt: nowIso } },
+          { returnDocument: 'after' }
+        );
+        if (!r) return corsRes.status(404).json({ error: 'Tournament not found' });
+        return corsRes.status(200).json(serializeDoc(r as Record<string, unknown>));
+      }
+
       if (action === 'generateCategoryMatches') {
         try {
           const result = await actionPublishCategoryMatches(db, id, { actorId: actingUserId });
@@ -538,6 +583,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
+        const liveGateUpdate = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGateUpdate) return corsRes.status(liveGateUpdate.status).json({ error: liveGateUpdate.error });
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         const prevScheduledAt = String((match as any).scheduledAt ?? '');
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
@@ -594,10 +641,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (stage === 'category' && !category) {
           return corsRes.status(400).json({ error: 'Category matches must have a category' });
         }
-        const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
-        const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
-        const hasTeamA = ObjectId.isValid(teamAId);
-        const hasTeamB = ObjectId.isValid(teamBId);
+        const teamAIdNorm = normalizeMongoIdString((match as { teamAId?: unknown }).teamAId);
+        const teamBIdNorm = normalizeMongoIdString((match as { teamBId?: unknown }).teamBId);
+        const hasTeamA = !!teamAIdNorm && ObjectId.isValid(teamAIdNorm);
+        const hasTeamB = !!teamBIdNorm && ObjectId.isValid(teamBIdNorm);
+        const teamAId = teamAIdNorm;
+        const teamBId = teamBIdNorm;
 
         if (stage === 'category') {
           const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { categoriesSnapshot: 1 } });
@@ -763,8 +812,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const division = String((match as { division?: unknown }).division ?? '');
         const groupIndex = (match as { groupIndex?: unknown }).groupIndex;
         const category = String((match as { category?: unknown }).category ?? '');
-        const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
-        const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
+        const teamIdsClaim = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
+        if (!teamIdsClaim) {
+          return corsRes.status(400).json({ error: 'Match teams are not ready' });
+        }
+        const { teamAId, teamBId } = teamIdsClaim;
+
+        const liveGateClaim = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGateClaim) return corsRes.status(liveGateClaim.status).json({ error: liveGateClaim.error });
 
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
@@ -780,7 +835,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             { tournamentId: id, playerIds: actingUserId },
             { projection: { _id: 1, division: 1, category: 1, groupIndex: 1, playerIds: 1 } }
           );
-        const actorTeamId = actorTeam ? (actorTeam as { _id: ObjectId })._id.toString() : '';
+        const actorTeamId = actorTeam ? normalizeMongoIdString((actorTeam as { _id: ObjectId })._id) : '';
         if (actorTeamId && (actorTeamId === teamAId || actorTeamId === teamBId)) {
           return corsRes.status(400).json({ error: 'Playing teams cannot referee their own match' });
         }
@@ -799,7 +854,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const refTeam = await db
               .collection('teams')
               .findOne({ tournamentId: id, playerIds: currentRef }, { projection: { _id: 1 } });
-            const refTeamId = refTeam ? (refTeam as { _id: ObjectId })._id.toString() : '';
+            const refTeamId = refTeam ? normalizeMongoIdString((refTeam as { _id: ObjectId })._id) : '';
             if (!refTeamId || !actorTeamId || refTeamId !== actorTeamId) {
               return corsRes.status(409).json({
                 error: 'Match is locked by another referee',
@@ -962,6 +1017,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
 
+        const liveGateHb = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGateHb) return corsRes.status(liveGateHb.status).json({ error: liveGateHb.error });
+
         const currentRef = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
         const nowMs = Date.now();
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
@@ -1001,20 +1059,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
 
-        // A match cannot start unless the tournament has been started.
-        const tour = await db.collection('tournaments').findOne({ _id: oid }, { projection: { startedAt: 1, phase: 1 } });
-        const startedAt = (tour as { startedAt?: unknown })?.startedAt;
-        const phase = String((tour as { phase?: unknown })?.phase ?? '');
-        const tournamentStarted = !!startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed';
-        if (!tournamentStarted) {
-          return corsRes.status(400).json({ error: 'Tournament has not started' });
-        }
+        const liveGateStart = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGateStart) return corsRes.status(liveGateStart.status).json({ error: liveGateStart.error });
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         if (matchStatus === 'completed') return corsRes.status(400).json({ error: 'Match already completed' });
 
-        const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
-        const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
-        if (!teamAId || !teamBId) return corsRes.status(400).json({ error: 'Match missing teams' });
+        const teamIds = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
+        if (!teamIds) {
+          return corsRes.status(400).json({ error: 'Match teams are not ready' });
+        }
+        const { teamAId, teamBId } = teamIds;
 
         const [teamA, teamB] = await db
           .collection('teams')
@@ -1156,6 +1210,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Match is not in progress' });
         }
 
+        const liveGatePoint = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGatePoint) return corsRes.status(liveGatePoint.status).json({ error: liveGatePoint.error });
+
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
         const nowMs = Date.now();
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
@@ -1178,9 +1235,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
-        const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
-        if (!teamAId || !teamBId) return corsRes.status(400).json({ error: 'Match missing teams' });
+        const idsRefPoint = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
+        if (!idsRefPoint) {
+          return corsRes.status(400).json({ error: 'Match teams are not ready' });
+        }
+        const { teamAId, teamBId } = idsRefPoint;
 
         const [teamA, teamB] = await db
           .collection('teams')
@@ -1206,7 +1265,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const nextA = side === 'A' ? Math.max(0, curA + delta) : curA;
         const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
 
-        if (delta === 1 && (nextA > pointsToWin || nextB > pointsToWin)) {
+        if (delta === 1 && (nextA > RALLY_POINTS_ABS_CAP || nextB > RALLY_POINTS_ABS_CAP)) {
           return corsRes.status(400).json({ error: 'Score exceeds points limit' });
         }
 
@@ -1275,8 +1334,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         update.servingPlayerId = servingPlayerId;
         if (!(match as { startedAt?: unknown }).startedAt) update.startedAt = now;
 
-        // Auto-complete on reaching pointsToWin (simple rule as requested).
-        if (nextA >= pointsToWin || nextB >= pointsToWin) {
+        // Auto-complete when regulation set is won: reached pointsToWin and lead ≥ 2 (deuce). Non–win-by-2 finals use "End match".
+        if (isRallySetComplete(nextA, nextB, pointsToWin)) {
           const winnerId = nextA === nextB ? '' : nextA > nextB ? teamAId : teamBId;
           if (winnerId) {
             update.status = 'completed';
@@ -1387,6 +1446,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (matchStatus === 'completed') {
           return corsRes.status(400).json({ error: 'Match is completed' });
         }
+
+        const liveGateServe = await assertTournamentAllowsLiveMatchActions(db, id);
+        if (liveGateServe) return corsRes.status(liveGateServe.status).json({ error: liveGateServe.error });
 
         const order = Array.isArray(body?.order) ? (body.order as unknown[]).map(String).filter(Boolean) : [];
         const servingPlayerId = typeof body?.servingPlayerId === 'string' ? body.servingPlayerId.trim() : '';

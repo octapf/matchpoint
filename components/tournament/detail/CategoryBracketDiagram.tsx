@@ -115,7 +115,7 @@ export type BracketMatchRow = {
   pointsA: number;
   pointsB: number;
   winnerId: string;
-  status?: 'scheduled' | 'in_progress' | 'completed';
+  status?: 'scheduled' | 'in_progress' | 'completed' | 'paused';
   bracketRound?: number;
   isBronzeMatch?: boolean;
   orderIndex?: number;

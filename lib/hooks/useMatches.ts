@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tournamentsApi } from '@/lib/api';
+import { RALLY_POINTS_ABS_CAP } from '@/lib/matchRallyScoring';
 import { shouldUseDevMocks } from '@/lib/config';
 import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES } from '@/lib/mocks/devTournamentMocks';
 import type { Match } from '@/types';
@@ -61,15 +62,14 @@ function computeOptimisticServeAfterRefereePoint(
 
 /**
  * Pure “what-if” one referee tap — used to derive UI from server match + pending ops queue.
- * Returns null if the delta is invalid (e.g. would exceed pointsToWin on +1).
+ * Returns null if the delta is invalid (e.g. would exceed the absolute rally cap on +1).
  */
 export function applyRefereeDeltaToMatch(m: Match, side: 'A' | 'B', delta: 1 | -1): Match | null {
   const curA = Number(m.pointsA ?? 0) || 0;
   const curB = Number(m.pointsB ?? 0) || 0;
   const nextA = side === 'A' ? Math.max(0, curA + delta) : curA;
   const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
-  const pts = Math.max(1, Math.min(99, Number(m.pointsToWin ?? 21) || 21));
-  if (delta === 1 && (nextA > pts || nextB > pts)) {
+  if (delta === 1 && (nextA > RALLY_POINTS_ABS_CAP || nextB > RALLY_POINTS_ABS_CAP)) {
     return null;
   }
   if (delta === -1) {

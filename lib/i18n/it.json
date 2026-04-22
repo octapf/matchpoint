@@ -70,6 +70,14 @@
     "guestInvalidId": "Id ospite non valido.",
     "guestNoFieldsToUpdate": "Nessuna modifica da salvare.",
     "guestCreateFailed": "Impossibile creare l’ospite. Riprova.",
+    "bettingWinnerFirst": "Scegli prima il vincitore di questa partita prima della scommessa sul punteggio.",
+    "bettingScoreRange": "Ogni punteggio deve essere tra 0 e 35.",
+    "bettingScoreTie": "I due punteggi non possono essere uguali: una squadra deve averne di più.",
+    "bettingScoreWinnerMismatch": "Il punteggio più alto deve essere dalla squadra che hai scelto come vincente.",
+    "matchStartTournamentNotStarted": "Il torneo non è ancora stato avviato. L’organizzatore deve prima aprire la giornata del torneo; poi le partite possono andare in diretta.",
+    "tournamentIsPaused": "Il torneo è in pausa. L’organizzatore deve riprenderlo per continuare partite o scommesse.",
+    "matchTeamsNotReady": "Questa partita non ha due squadre valide assegnate. Controlla tabellone e squadre, poi riprova.",
+    "onlyOrganizersStartMatch": "Solo un organizzatore (o un admin) può avviare la partita in questo modo.",
     "tournamentFullJoinTeamSlotWaitlist": "Il torneo ha il numero massimo di squadre. Unisciti alla lista d’attesa nel tab Squadre.",
     "tournamentNotFullCreateTeamNormally": "C’è ancora posto per nuove squadre — crea la squadra con il flusso normale.",
     "pairAlreadyOnTeamSlotWaitlist": "Questa coppia è già in lista d’attesa.",
@@ -110,8 +118,14 @@
         "body": "Sei entrato in %{team} in %{tournament}."
       },
       "dissolved": {
-        "title": "Squadra sciolta",
-        "body": "La tua squadra è stata sciolta. Sei tornato in lista d'attesa per %{tournament}."
+        "title": "Squadra ritirata dal torneo",
+        "body": "Ci dispiace vedere %{team} uscire da %{tournament}. Grazie per esserci stato e per l’impegno: ti abbiamo rimesso in lista d’attesa con cura. Speriamo di rivederti presto in campo."
+      },
+      "removed": {
+        "organizer": {
+          "title": "Una squadra è stata ritirata dal tuo torneo",
+          "body": "%{team} è stata rimossa da %{tournament}. Grazie per il tempo e la dedizione con cui organizzi: una community così esiste grazie a persone come te."
+        }
       }
     },
     "waitlist": {
@@ -472,7 +486,18 @@
     "statusScheduled": "programmata",
     "editMatch": "Modifica partita",
     "startMatch": "Avvia partita",
-    "startMatchHint": "Anteprima. Avvia la partita per abilitare il punteggio.",
+    "tournamentNotStartedYet": "Il torneo non è ancora iniziato.",
+    "tournamentPausedHint": "Il torneo è in pausa — partite e scommesse disattivate finché un organizzatore non riprende.",
+    "menuPauseTournament": "Metti in pausa il torneo",
+    "menuResumeTournament": "Riprendi il torneo",
+    "pauseTournamentConfirm": "Mettere in pausa il torneo? Punteggio live e scommesse restano disattivati fino alla ripresa.",
+    "resumeTournamentConfirm": "Riprendere il torneo e riabilitare partite e scommesse?",
+    "startMatchHint": "Chi avvia diventa arbitro e controlla il tabellone.",
+    "endMatchPickWinner": "Termina partita — scegli vincitore",
+    "endMatchPickWinnerTitle": "Chi ha vinto?",
+    "endMatchPickWinnerMessage": "Il vincitore viene registrato con %{points} punti e l’altro lato con 0. La partita termina.",
+    "endMatchConfirmTitle": "Terminare la partita?",
+    "endMatchConfirmMessage": "Sei sicuro? Nel passaggio successivo scegli il vincitore. Dal tabellone non si può annullare.",
     "startAsReferee": "Avvia partita come arbitro",
     "refereeSuggested": "Arbitro suggerito: %{name}",
     "refereeActual": "Arbitro: %{name}",
@@ -582,8 +607,16 @@
     "bettingNoCrowdData": "Nessuna scelta sul vincitore da mostrare.",
     "bettingPickWinner": "Scegli vincitore",
     "bettingPickWinnerTitle": "Chi vince?",
+    "bettingScorePickTitle": "Punti — %{name}",
+    "bettingYourWinner": "La tua scelta",
+    "bettingTapTeamToPickWinner": "Tocca la squadra vincente.",
     "bettingSaveScore": "Salva punteggio",
-    "bettingInvalidScore": "Inserisci due numeri ≥ 0 per il set.",
+    "bettingInvalidScore": "Scegli un punteggio (0–35) per entrambe le squadre.",
+    "bettingInvalidScoreRange": "Ogni punteggio deve essere tra 0 e 35.",
+    "bettingScoreAfterWinner": "Scegli prima il vincitore — poi potrai inserire la scommessa sul punteggio.",
+    "bettingInvalidScoreTie": "I due punteggi non possono essere uguali: sul tabellone deve esserci un vincitore.",
+    "bettingInvalidScoreVsWinner": "Il vincente deve avere più punti del perdente, in linea con la squadra che hai scelto.",
+    "bettingScoreNoValidChoices": "Nessun punteggio valido per questa scelta — modifica prima i punti dell’altra squadra.",
     "bettingPlaceFailed": "Impossibile salvare la scommessa.",
     "matchesClassification": "Classificazione",
     "groupLabel": "Girone",

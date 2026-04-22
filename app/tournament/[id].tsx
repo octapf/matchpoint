@@ -7,7 +7,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import type {
   Gender,
-  User,
   TournamentDivision,
   Team,
   Entry,
@@ -50,10 +49,11 @@ import { useUserStore } from '@/store/useUserStore';
 import { useLanguageStore } from '@/store/useLanguageStore';
 import { getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { useNetInfo } from '@react-native-community/netinfo';
-import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
+import { isGuestPlayerSlot } from '@/lib/playerSlots';
 import { resolveRosterSlotLabel, tournamentGuestDisplayName } from '@/lib/utils/resolveParticipant';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
+import { normalizeMongoIdString } from '@/lib/mongoId';
 import { resolveTeamForFixture } from '@/lib/tournamentMatchDisplay';
 import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
 import { useTheme } from '@/lib/theme/useTheme';
@@ -66,6 +66,7 @@ import {
   validateTournamentGroups,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
+import { isTournamentPaused, isTournamentPlayActive, isTournamentStarted } from '@/lib/tournamentPlayAllowed';
 import {
   missingDivisionForOrganizers,
   organizerOnlyCoversFromTournament,
@@ -203,11 +204,16 @@ export default function TournamentDetailScreen() {
 
   const guestMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => tournamentsApi.action(id!, body) as Promise<unknown>,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       if (!id) return;
       void queryClient.invalidateQueries({ queryKey: ['tournament', id] });
       void queryClient.invalidateQueries({ queryKey: ['teams'] });
       void queryClient.invalidateQueries({ queryKey: ['entries'] });
+      const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
+      if (act === 'pauseTournament' || act === 'resumeTournament') {
+        void queryClient.invalidateQueries({ queryKey: ['matches'] });
+        void queryClient.invalidateQueries({ queryKey: ['tournament', id, 'betting'] });
+      }
     },
   });
 
@@ -276,7 +282,12 @@ export default function TournamentDetailScreen() {
     return fromApi;
   }, [allMatches, tournament]);
 
-  const teamById = useMemo(() => Object.fromEntries(teams.map((tm) => [tm._id, tm])), [teams]);
+  const teamById = useMemo(() => {
+    const entries = teams
+      .map((tm) => [normalizeMongoIdString(tm._id), tm] as const)
+      .filter(([k]) => k.length > 0);
+    return Object.fromEntries(entries);
+  }, [teams]);
 
   const navigation = useNavigation();
   useLayoutEffect(() => {
@@ -584,6 +595,38 @@ export default function TournamentDetailScreen() {
       });
     }
 
+    if (
+      started &&
+      id &&
+      !shouldUseDevMocks() &&
+      ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin')
+    ) {
+      const tp = isTournamentPaused(tournament);
+      list.push({
+        key: tp ? 'resumeTournament' : 'pauseTournament',
+        label: tp ? t('tournamentDetail.menuResumeTournament') : t('tournamentDetail.menuPauseTournament'),
+        icon: (tp ? 'play-outline' : 'pause-outline') as keyof typeof Ionicons.glyphMap,
+        color: tp ? Colors.success : Colors.text,
+        disabled: guestMutation.isPending,
+        onPress: () =>
+          Alert.alert(
+            tp ? t('tournamentDetail.menuResumeTournament') : t('tournamentDetail.menuPauseTournament'),
+            tp ? t('tournamentDetail.resumeTournamentConfirm') : t('tournamentDetail.pauseTournamentConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.ok'),
+                onPress: () =>
+                  guestMutation.mutate(
+                    { action: tp ? 'resumeTournament' : 'pauseTournament' },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  ),
+              },
+            ]
+          ),
+      });
+    }
+
     list.push({
       key: 'delete',
       label: t('tournamentDetail.menuCancel'),
@@ -608,6 +651,9 @@ export default function TournamentDetailScreen() {
     startTournamentMutation,
     finalizeClassificationMutation,
     classificationMatches,
+    userId,
+    user?.role,
+    guestMutation,
   ]);
 
   // Everything below must be declared before any early `return` so hook order stays stable.
@@ -755,14 +801,6 @@ export default function TournamentDetailScreen() {
       label(a).toLowerCase().localeCompare(label(b).toLowerCase(), undefined, { sensitivity: 'base' })
     );
   }, [filteredEntries, userMap, guestMap]);
-
-  const canPlaceTournamentBet = useMemo(
-    () =>
-      !!userId &&
-      sortedEntries.some((e) => e.userId === userId && e.teamId) &&
-      !!(tournament as { bettingEnabled?: boolean } | undefined)?.bettingEnabled,
-    [userId, sortedEntries, tournament]
-  );
 
   /**
    * Until organizer runs Create groups (or legacy data has numeric groupIndex), show one bucket — not fake "Grupo 1".
@@ -1173,6 +1211,24 @@ export default function TournamentDetailScreen() {
     (tournament as { phase?: unknown } | undefined)?.phase === 'classification' ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'categories' ||
     (tournament as { phase?: unknown } | undefined)?.phase === 'completed';
+
+  const tournamentPlayLockedReason = useMemo((): 'not_started' | 'paused' | null => {
+    if (!tournament) return null;
+    if (!isTournamentStarted(tournament)) return 'not_started';
+    if (isTournamentPaused(tournament)) return 'paused';
+    return null;
+  }, [tournament]);
+
+  const tournamentPlayActive = useMemo(() => isTournamentPlayActive(tournament), [tournament]);
+
+  const canPlaceTournamentBet = useMemo(
+    () =>
+      !!userId &&
+      sortedEntries.some((e) => e.userId === userId && e.teamId) &&
+      !!(tournament as { bettingEnabled?: boolean } | undefined)?.bettingEnabled &&
+      tournamentPlayActive,
+    [userId, sortedEntries, tournament, tournamentPlayActive]
+  );
 
   const teamSlotsFull = useMemo(() => {
     if (!tournament) return false;
@@ -1890,6 +1946,13 @@ export default function TournamentDetailScreen() {
             </View>
           ) : null}
 
+          {tournament && tournamentStarted && isTournamentPaused(tournament) ? (
+            <View style={[styles.privateBanner, { marginBottom: 12 }]}>
+              <Ionicons name="pause-circle-outline" size={22} color={Colors.textMuted} />
+              <Text style={styles.privateBannerText}>{t('tournamentDetail.tournamentPausedHint')}</Text>
+            </View>
+          ) : null}
+
           {/* Join / leave tournament (waitlist join + leave waitlist or delete entry when on a team) */}
           {canEnroll && !isCancelled && !isOrganizeOnlyOrganizer ? (
             <>
@@ -2262,6 +2325,7 @@ export default function TournamentDetailScreen() {
             snapshot={bettingSnapshot ?? undefined}
             userMap={userMap}
             currentUserId={userId}
+            playLockedReason={tournamentPlayLockedReason}
             canBet={canPlaceTournamentBet}
             onPlaceWinner={(matchId, teamId) => {
               if (!requireOnline()) return;

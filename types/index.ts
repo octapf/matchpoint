@@ -135,6 +135,8 @@ export interface Tournament {
   /** Tournament lifecycle; defaults to registration until started. */
   phase?: TournamentPhase;
   startedAt?: string;
+  /** When true, live matches and betting are frozen until the organizer resumes. */
+  paused?: boolean;
   /** Classification configuration. */
   classificationMatchesPerOpponent?: number;
   /**
@@ -306,6 +308,7 @@ export type NotificationType =
   | 'waitlist.teamInvite'
   | 'team.created'
   | 'team.dissolved'
+  | 'team.removed.organizer'
   | 'match.scheduled'
   | 'match.started'
   | 'match.ended'

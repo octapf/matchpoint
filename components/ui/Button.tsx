@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet, View } from 'react-native';
+import { Pressable, Text, StyleSheet, View, type StyleProp, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { readableTextOnBackground } from '@/lib/theme/colors';
@@ -13,9 +13,20 @@ type ButtonProps = {
   size?: 'md' | 'sm';
   iconLeft?: keyof typeof Ionicons.glyphMap;
   disabled?: boolean;
+  /** Merged after variant text styles (e.g. `{ fontStyle: 'italic' }`). */
+  titleStyle?: StyleProp<TextStyle>;
 };
 
-export function Button({ title, onPress, variant = 'primary', fullWidth, size = 'md', iconLeft, disabled }: ButtonProps) {
+export function Button({
+  title,
+  onPress,
+  variant = 'primary',
+  fullWidth,
+  size = 'md',
+  iconLeft,
+  disabled,
+  titleStyle,
+}: ButtonProps) {
   const { tokens } = useTheme();
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
@@ -73,6 +84,7 @@ export function Button({ title, onPress, variant = 'primary', fullWidth, size = 
             variant === 'outline' && styles.outlineText,
             isDanger && styles.dangerText,
             isDangerOutline && styles.dangerOutlineText,
+            titleStyle,
           ]}
         >
           {title}

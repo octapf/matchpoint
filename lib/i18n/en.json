@@ -71,6 +71,14 @@
     "guestInvalidId": "Invalid guest id.",
     "guestNoFieldsToUpdate": "No changes to save.",
     "guestCreateFailed": "Could not create the guest player. Try again.",
+    "bettingWinnerFirst": "Pick a winner for this match before placing a score bet.",
+    "bettingScoreRange": "Each score must be between 0 and 35.",
+    "bettingScoreTie": "The two scores can’t be equal — one side must have more points.",
+    "bettingScoreWinnerMismatch": "The higher score must be on the team you picked as winner.",
+    "matchStartTournamentNotStarted": "The tournament hasn’t been started yet. The organizer must start the tournament day first; then matches can go live.",
+    "tournamentIsPaused": "The tournament is paused. The organizer must resume it before matches or bets can continue.",
+    "matchTeamsNotReady": "This match doesn’t have two valid teams assigned. Check the fixture and team IDs, then try again.",
+    "onlyOrganizersStartMatch": "Only an organizer (or admin) can start a match this way.",
     "tournamentFullJoinTeamSlotWaitlist": "The tournament has the maximum number of teams. Join the waiting list on the Teams tab.",
     "tournamentNotFullCreateTeamNormally": "There is still room for teams — create a team normally.",
     "pairAlreadyOnTeamSlotWaitlist": "This pair is already on the waiting list.",
@@ -111,8 +119,14 @@
         "body": "You joined %{team} in %{tournament}."
       },
       "dissolved": {
-        "title": "Team dissolved",
-        "body": "Your team was dissolved. You're back on the waiting list for %{tournament}."
+        "title": "Team removed from the tournament",
+        "body": "We’re sorry to see %{team} leave %{tournament}. Thank you for showing up and giving it your all—we’ve placed you back on the waiting list with care, and we hope our paths cross on the court again soon."
+      },
+      "removed": {
+        "organizer": {
+          "title": "Team removed from your tournament",
+          "body": "%{team} has been removed from %{tournament}. Thank you for the heart and time you put into organizing—communities like this only work because of people like you."
+        }
       }
     },
     "waitlist": {
@@ -473,7 +487,18 @@
     "statusScheduled": "scheduled",
     "editMatch": "Edit match",
     "startMatch": "Start match",
-    "startMatchHint": "Preview. Start the match to enable scoring.",
+    "tournamentNotStartedYet": "The tournament hasn’t started yet.",
+    "tournamentPausedHint": "The tournament is paused — matches and bets are disabled until an organizer resumes.",
+    "menuPauseTournament": "Pause tournament",
+    "menuResumeTournament": "Resume tournament",
+    "pauseTournamentConfirm": "Pause the tournament? Live scoring and betting will be disabled until you resume.",
+    "resumeTournamentConfirm": "Resume the tournament and re-enable matches and betting?",
+    "startMatchHint": "Whoever starts becomes the referee and controls the scoreboard.",
+    "endMatchPickWinner": "End match — pick winner",
+    "endMatchPickWinnerTitle": "Who won?",
+    "endMatchPickWinnerMessage": "The winner is recorded with %{points} points and the other side with 0. This ends the match.",
+    "endMatchConfirmTitle": "End this match?",
+    "endMatchConfirmMessage": "Are you sure? On the next step you will choose the winner. This cannot be undone from the scoreboard.",
     "startAsReferee": "Start match as referee",
     "refereeSuggested": "Suggested referee: %{name}",
     "refereeActual": "Referee: %{name}",
@@ -635,8 +660,16 @@
     "bettingNoCrowdData": "No winner picks yet to show the crowd split.",
     "bettingPickWinner": "Pick winner",
     "bettingPickWinnerTitle": "Who wins?",
+    "bettingScorePickTitle": "Points — %{name}",
+    "bettingYourWinner": "Your pick",
+    "bettingTapTeamToPickWinner": "Tap the winning team.",
     "bettingSaveScore": "Save score bet",
-    "bettingInvalidScore": "Enter two non-negative numbers for the set score.",
+    "bettingInvalidScore": "Choose a score (0–35) for each team.",
+    "bettingInvalidScoreRange": "Each score must be between 0 and 35.",
+    "bettingScoreAfterWinner": "Pick a winner first — then you can enter your score bet.",
+    "bettingInvalidScoreTie": "The two scores can’t be equal — one team must win the set on the scoreboard.",
+    "bettingInvalidScoreVsWinner": "The winning team’s score must be higher than the loser’s, matching the winner you picked.",
+    "bettingScoreNoValidChoices": "No valid scores for this pick — change the other team’s points first.",
     "bettingPlaceFailed": "Could not save your bet.",
     "matchesClassification": "Classification",
     "groupLabel": "Group",

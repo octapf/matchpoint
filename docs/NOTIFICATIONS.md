@@ -41,7 +41,8 @@ Client types live in `types/index.ts` as `Notification` + `NotificationType`.
 
 - **Join waitlist**: `api/entries.ts` → `tournament.waitlistJoined`
 - **Team created**: `api/teams.ts` → `team.created`
-- **Team dissolved**: `api/teams/[id].ts` → `team.dissolved`
+- **Team removed (players)**: `api/teams/[id].ts` DELETE → `team.dissolved` (players on the team; empathetic copy + `team` / `tournament` params)
+- **Team removed (organizers)**: same handler → `team.removed.organizer` (every `organizerIds` user, including awareness for the organizer who removed the team)
 - **Match scheduled**: `api/tournaments/[id].ts` action `updateMatch` when `scheduledAt` changes → `match.scheduled` (both teams)
 - **Match started**: `api/tournaments/[id].ts` action `startMatch` → `match.started` (both teams)
 - **Referee assigned**: `api/tournaments/[id].ts` actions `claimReferee` / `startMatch` → `match.refereeAssigned` (referee only)

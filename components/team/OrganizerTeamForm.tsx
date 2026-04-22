@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useTournament } from '@/lib/hooks/useTournaments';
 import { useWaitlist } from '@/lib/hooks/useWaitlist';
-import { useTeams, useCreateTeam, useUpdateTeam } from '@/lib/hooks/useTeams';
+import { useTeams, useCreateTeam, useUpdateTeam, useDeleteTeam } from '@/lib/hooks/useTeams';
 import { useJoinTeamSlotWaitlist, useTeamSlotWaitlist } from '@/lib/hooks/useTeamSlotWaitlist';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
@@ -18,7 +18,7 @@ import { toGuestPlayerSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { isTournamentStarted } from '@/lib/isTournamentStarted';
 import { divisionForTeam } from '@/lib/tournamentDivision';
-import type { Team, Tournament, TournamentDivision, TournamentGuestPlayer } from '@/types';
+import type { Team, TournamentDivision, TournamentGuestPlayer } from '@/types';
 import { TeamSlotWaitlistSection } from '@/components/tournament/detail/TeamSlotWaitlistSection';
 import { TournamentTeamCard } from '@/components/tournament/detail/TournamentTeamCard';
 import { useUserStore } from '@/store/useUserStore';
@@ -41,6 +41,7 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
   const { data: teamSlotWaitlistRows = [] } = useTeamSlotWaitlist(tournamentId);
   const createTeam = useCreateTeam();
   const updateTeam = useUpdateTeam();
+  const deleteTeam = useDeleteTeam();
   const joinTeamSlotWaitlist = useJoinTeamSlotWaitlist();
   const tournamentStarted = isTournamentStarted(tournament ?? null);
   const viewerRole = useUserStore((s) => s.user?.role);
@@ -163,6 +164,35 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
       return prev;
     });
   }, [suggestedTeamName, editTeam, tournamentStarted]);
+
+  const confirmRemoveTeam = useCallback(
+    (team: Team) => {
+      if (!userId) return;
+      const pNames = (team.playerIds ?? [])
+        .map((pid) => (pid ? resolveRosterSlotLabel(pid, userMap, guestMap) : ''))
+        .filter(Boolean)
+        .join(' · ');
+      Alert.alert(
+        t('tournamentDetail.removeTeam'),
+        `${t('tournamentDetail.removeTeamConfirm', { name: team.name })}${pNames ? `\n\n${pNames}` : ''}`,
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.delete'),
+            style: 'destructive',
+            onPress: () =>
+              deleteTeam.mutate(
+                { id: team._id, tournamentId },
+                {
+                  onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+                },
+              ),
+          },
+        ],
+      );
+    },
+    [userId, tournamentId, t, userMap, guestMap, deleteTeam],
+  );
 
   if (!tournament) {
     return (
@@ -327,6 +357,7 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           disabled={
             createTeam.isPending ||
             updateTeam.isPending ||
+            deleteTeam.isPending ||
             joinTeamSlotWaitlist.isPending ||
             (!editTeam && groupsConfigInvalid)
           }
@@ -361,6 +392,9 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
                   guestMap={guestMap}
                   currentUserId={userId}
                   t={t}
+                  canRemoveTeam={canManageTournament}
+                  onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(tm) : undefined}
+                  removeTeamPending={deleteTeam.isPending}
                   onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
                   onPressTeam={() =>
                     router.push(`/tournament/${tournamentId}/team/${tm._id}?division=${division}` as never)

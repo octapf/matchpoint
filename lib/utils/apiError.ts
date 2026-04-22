@@ -62,6 +62,15 @@ const API_ERROR_I18N: Record<string, string> = {
   'Invalid guestId': 'apiErrors.guestInvalidId',
   'No valid fields to update': 'apiErrors.guestNoFieldsToUpdate',
   'Failed to create guest player': 'apiErrors.guestCreateFailed',
+  'Place a winner pick first': 'apiErrors.bettingWinnerFirst',
+  'Score must be between 0 and 35': 'apiErrors.bettingScoreRange',
+  'Score must be between 0 and 40': 'apiErrors.bettingScoreRange',
+  'Score picks cannot be a tie': 'apiErrors.bettingScoreTie',
+  'Score picks must match your winner pick': 'apiErrors.bettingScoreWinnerMismatch',
+  'Tournament has not started': 'apiErrors.matchStartTournamentNotStarted',
+  'Tournament is paused': 'apiErrors.tournamentIsPaused',
+  'Match teams are not ready': 'apiErrors.matchTeamsNotReady',
+  'Only organizers can start matches': 'apiErrors.onlyOrganizersStartMatch',
 };
 
 export function isNetworkError(e: unknown): boolean {

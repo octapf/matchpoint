@@ -113,65 +113,73 @@ export function GroupsTab({
     );
   }
 
-  const showRebalance = offerGroupRebalance;
+  /**
+   * One CTA only: when teams need fixing (bunched / over capacity), show rebalance; otherwise
+   * create groups or random reorganize. Random reorganize stays available from the header menu.
+   */
+  const groupCtaKind: 'distribute' | 'reorganize' | 'rebalance' | null = offerGroupRebalance
+    ? 'rebalance'
+    : primaryGroupAction === 'distribute'
+      ? 'distribute'
+      : primaryGroupAction === 'reorganize'
+        ? 'reorganize'
+        : null;
 
   return (
     <>
-      {canManageTournament && (primaryGroupAction != null || showRebalance) ? (
+      {canManageTournament && groupCtaKind != null ? (
         <View style={{ flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-          {primaryGroupAction ? (
-            <View style={{ gap: 6 }}>
-              <Button
-                title={
-                  primaryGroupAction === 'distribute'
-                    ? t('tournamentDetail.createGroupsButton')
+          <View style={{ gap: 6 }}>
+            <Button
+              title={
+                groupCtaKind === 'distribute'
+                  ? t('tournamentDetail.createGroupsButton')
+                  : groupCtaKind === 'rebalance'
+                    ? t('tournamentDetail.rebalanceGroups')
                     : t('tournamentDetail.menuReorganizeGroups')
-                }
-                variant="primary"
-                size="sm"
-                iconLeft={primaryGroupAction === 'distribute' ? 'grid-outline' : 'shuffle-outline'}
-                onPress={() => {
-                  const isDist = primaryGroupAction === 'distribute';
+              }
+              variant="primary"
+              size="sm"
+              iconLeft={groupCtaKind === 'distribute' ? 'grid-outline' : 'shuffle-outline'}
+              onPress={() => {
+                if (groupCtaKind === 'distribute') {
                   Alert.alert(
-                    isDist ? t('tournamentDetail.createGroupsButton') : t('tournamentDetail.menuReorganizeGroups'),
-                    isDist ? t('tournamentDetail.createGroupsConfirm') : t('tournamentDetail.reorganizeGroupsConfirm'),
+                    t('tournamentDetail.createGroupsButton'),
+                    t('tournamentDetail.createGroupsConfirm'),
                     [
                       { text: t('common.cancel'), style: 'cancel' },
                       { text: t('common.ok'), onPress: onPrimaryGroupAction },
-                    ]
+                    ],
                   );
-                }}
-                disabled={primaryGroupPending}
-                fullWidth
-              />
-              <Text style={rebalanceHintStyle as never}>
-                {primaryGroupAction === 'distribute'
-                  ? t('tournamentDetail.createGroupsHint')
-                  : t('tournamentDetail.reorganizeGroupsHint')}
-              </Text>
-            </View>
-          ) : null}
-
-          {showRebalance ? (
-            <Button
-              title={t('tournamentDetail.rebalanceGroups')}
-              variant="outline"
-              size="sm"
-              iconLeft="shuffle-outline"
-              onPress={() => {
+                  return;
+                }
+                if (groupCtaKind === 'rebalance') {
+                  Alert.alert(
+                    t('tournamentDetail.rebalanceGroups'),
+                    t('tournamentDetail.rebalanceGroupsConfirm'),
+                    [
+                      { text: t('common.cancel'), style: 'cancel' },
+                      { text: t('common.ok'), onPress: onRebalancePress },
+                    ],
+                  );
+                  return;
+                }
                 Alert.alert(
-                  t('tournamentDetail.rebalanceGroups'),
-                  t('tournamentDetail.rebalanceGroupsConfirm'),
+                  t('tournamentDetail.menuReorganizeGroups'),
+                  t('tournamentDetail.reorganizeGroupsConfirm'),
                   [
                     { text: t('common.cancel'), style: 'cancel' },
-                    { text: t('common.ok'), onPress: onRebalancePress },
-                  ]
+                    { text: t('common.ok'), onPress: onPrimaryGroupAction },
+                  ],
                 );
               }}
-              disabled={rebalancePending}
+              disabled={primaryGroupPending || rebalancePending}
               fullWidth
             />
-          ) : null}
+            {groupCtaKind === 'distribute' ? (
+              <Text style={rebalanceHintStyle as never}>{t('tournamentDetail.createGroupsHint')}</Text>
+            ) : null}
+          </View>
         </View>
       ) : null}
 

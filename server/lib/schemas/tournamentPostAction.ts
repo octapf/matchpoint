@@ -18,6 +18,8 @@ export const tournamentPostActionSchema = z
       'setServeOrder',
       'auditTournament',
       'placeTournamentBet',
+      'pauseTournament',
+      'resumeTournament',
       'createGuestPlayer',
       'updateGuestPlayer',
       'deleteGuestPlayer',

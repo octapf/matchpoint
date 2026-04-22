@@ -13,7 +13,7 @@ import {
 } from '../../lib/tournamentGroups';
 import { countTeamsInGroup } from '../../server/lib/tournamentGroupDb';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
-import { notifyMany } from '../../server/lib/notify';
+import { notifyMany, notifyOne } from '../../server/lib/notify';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots } from '../../lib/playerSlots';
 import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
@@ -368,14 +368,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await syncTournamentOpenFullStatus(db, tournamentId);
       await promoteNextTeamFromSlotWaitlist(db, tournamentId);
 
-      // In-app notifications: team dissolved (both players back to waitlist).
-      const tournamentName = String((tournament as { name?: unknown }).name ?? '');
-      await notifyMany(db, playerIds.filter((p) => !isGuestPlayerSlot(p)), {
-        type: 'team.dissolved',
-        params: { tournament: tournamentName || 'Tournament' },
-        data: { tournamentId },
-        dedupeKey: `team.dissolved:${tournamentId}:${id}`,
-      });
+      const tournamentName = String((tournament as { name?: unknown }).name ?? '').trim();
+      const teamName = String((team as { name?: unknown }).name ?? '').trim();
+      const tournamentLabel = tournamentName || 'Tournament';
+      const teamLabel = teamName || 'Your team';
+
+      // Players: empathetic + thanks; they return to the waitlist.
+      const playerUserIds = playerIds.filter((p) => !isGuestPlayerSlot(p));
+      if (playerUserIds.length > 0) {
+        await notifyMany(db, playerUserIds, {
+          type: 'team.dissolved',
+          params: { tournament: tournamentLabel, team: teamLabel },
+          data: { tournamentId, teamId: id },
+          dedupeKey: `team.dissolved:${tournamentId}:${id}`,
+        });
+      }
+
+      // Organizers: same moment, appreciative tone so they stay informed.
+      const organizerIdsRaw = (tournament as { organizerIds?: unknown }).organizerIds;
+      const organizerIds = Array.isArray(organizerIdsRaw)
+        ? [...new Set(organizerIdsRaw.map((x) => String(x)).filter((x) => ObjectId.isValid(x)))]
+        : [];
+      for (const orgId of organizerIds) {
+        await notifyOne(db, {
+          userId: orgId,
+          type: 'team.removed.organizer',
+          params: { tournament: tournamentLabel, team: teamLabel },
+          data: { tournamentId, teamId: id },
+          dedupeKey: `team.removed.organizer:${tournamentId}:${id}:${orgId}`,
+        });
+      }
 
       return corsRes.status(204).end();
     }

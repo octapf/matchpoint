@@ -1,5 +1,7 @@
 import { ObjectId, type Db } from 'mongodb';
 import type { TournamentDivision } from '../../types';
+import { normalizeMongoIdString } from '../../lib/mongoId';
+import { isTournamentPaused } from '../../lib/tournamentPlayAllowed';
 import { normalizeDbTournamentId, tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const COL = 'tournamentBets';
@@ -120,8 +122,9 @@ function computePointsForUserBets(args: {
   if (scoreExact) {
     return { winnerPts: 0, scorePts: 7 };
   }
-  const wPick = String(args.winnerBet?.pickWinnerTeamId ?? '');
-  const winnerPts = wPick && wPick === winnerId ? 2 : 0;
+  const wPick = normalizeMongoIdString(args.winnerBet?.pickWinnerTeamId);
+  const wid = normalizeMongoIdString(args.winnerId);
+  const winnerPts = wPick && wid && wPick === wid ? 2 : 0;
   return { winnerPts, scorePts: 0 };
 }
 
@@ -220,6 +223,20 @@ export async function placeTournamentBet(
   if (kind === 'winner' && !allowWinner) return { ok: false, error: 'Winner bets are disabled' };
   if (kind === 'score' && !allowScore) return { ok: false, error: 'Score bets are disabled' };
 
+  const startedAtTour = (tdoc as { startedAt?: unknown }).startedAt;
+  const phaseTour = String((tdoc as { phase?: unknown }).phase ?? '');
+  const tournamentDayStarted =
+    !!startedAtTour ||
+    phaseTour === 'classification' ||
+    phaseTour === 'categories' ||
+    phaseTour === 'completed';
+  if (!tournamentDayStarted) {
+    return { ok: false, error: 'Tournament has not started' };
+  }
+  if (isTournamentPaused(tdoc as { paused?: unknown })) {
+    return { ok: false, error: 'Tournament is paused' };
+  }
+
   const match = await db.collection('matches').findOne({ _id: new ObjectId(matchId) });
   const matchTid = normalizeDbTournamentId((match as { tournamentId?: unknown } | null)?.tournamentId);
   if (!match || matchTid !== tournamentId) {
@@ -233,8 +250,8 @@ export async function placeTournamentBet(
   const division = String((match as { division?: unknown }).division ?? '');
   if (!isDivision(division)) return { ok: false, error: 'Match division is missing' };
 
-  const teamAId = String((match as { teamAId?: unknown }).teamAId ?? '');
-  const teamBId = String((match as { teamBId?: unknown }).teamBId ?? '');
+  const teamAId = normalizeMongoIdString((match as { teamAId?: unknown }).teamAId);
+  const teamBId = normalizeMongoIdString((match as { teamBId?: unknown }).teamBId);
   if (!ObjectId.isValid(teamAId) || !ObjectId.isValid(teamBId)) {
     return { ok: false, error: 'Match teams are not ready yet' };
   }
@@ -260,16 +277,42 @@ export async function placeTournamentBet(
   };
 
   if (kind === 'winner') {
-    const pick = typeof args.pickWinnerTeamId === 'string' ? args.pickWinnerTeamId.trim() : '';
+    const pick = normalizeMongoIdString(args.pickWinnerTeamId);
     if (pick !== teamAId && pick !== teamBId) {
       return { ok: false, error: 'Pick a valid team' };
     }
     doc.pickWinnerTeamId = pick;
   } else {
+    let winnerPickId: string | undefined;
+    if (allowWinner) {
+      const priorWinner = await db.collection(COL).findOne({
+        ...tournamentIdMongoFilter(tournamentId),
+        matchId,
+        userId: actingUserId,
+        kind: 'winner',
+      });
+      if (!priorWinner) {
+        return { ok: false, error: 'Place a winner pick first' };
+      }
+      winnerPickId = normalizeMongoIdString(
+        String((priorWinner as { pickWinnerTeamId?: unknown }).pickWinnerTeamId ?? '')
+      );
+    }
     const pa = args.pickPointsA != null ? Math.floor(Number(args.pickPointsA)) : NaN;
     const pb = args.pickPointsB != null ? Math.floor(Number(args.pickPointsB)) : NaN;
-    if (!Number.isFinite(pa) || !Number.isFinite(pb) || pa < 0 || pb < 0) {
-      return { ok: false, error: 'Invalid score prediction' };
+    if (!Number.isFinite(pa) || !Number.isFinite(pb) || pa < 0 || pb < 0 || pa > 35 || pb > 35) {
+      return { ok: false, error: 'Score must be between 0 and 35' };
+    }
+    if (pa === pb) {
+      return { ok: false, error: 'Score picks cannot be a tie' };
+    }
+    if (allowWinner && winnerPickId) {
+      if (winnerPickId === teamAId && pa <= pb) {
+        return { ok: false, error: 'Score picks must match your winner pick' };
+      }
+      if (winnerPickId === teamBId && pb <= pa) {
+        return { ok: false, error: 'Score picks must match your winner pick' };
+      }
     }
     doc.pickPointsA = pa;
     doc.pickPointsB = pb;
@@ -348,10 +391,10 @@ export async function buildBettingSnapshot(
 
   const teamIds = new Set<string>();
   for (const m of matches) {
-    const a = String(m.teamAId ?? '');
-    const b = String(m.teamBId ?? '');
-    if (ObjectId.isValid(a)) teamIds.add(a);
-    if (ObjectId.isValid(b)) teamIds.add(b);
+    const a = normalizeMongoIdString(m.teamAId);
+    const b = normalizeMongoIdString(m.teamBId);
+    if (a && ObjectId.isValid(a)) teamIds.add(a);
+    if (b && ObjectId.isValid(b)) teamIds.add(b);
   }
   const teamOids: ObjectId[] = [];
   for (const tid of teamIds) {
@@ -371,7 +414,8 @@ export async function buildBettingSnapshot(
       : [];
   const teamName = new Map<string, string>();
   for (const tm of teams) {
-    teamName.set(String(tm._id), String((tm as { name?: unknown }).name ?? ''));
+    const kid = normalizeMongoIdString((tm as { _id?: unknown })._id);
+    if (kid) teamName.set(kid, String((tm as { name?: unknown }).name ?? ''));
   }
 
   const allBets = (await db
@@ -417,8 +461,8 @@ export async function buildBettingSnapshot(
 
   const matchRows = matches.map((m) => {
     const matchId = m._id.toString();
-    const teamAId = String(m.teamAId ?? '');
-    const teamBId = String(m.teamBId ?? '');
+    const teamAId = normalizeMongoIdString(m.teamAId);
+    const teamBId = normalizeMongoIdString(m.teamBId);
     const status = String(m.status ?? 'scheduled');
     const list = betsByMatch.get(matchId) ?? [];
 
@@ -426,7 +470,7 @@ export async function buildBettingSnapshot(
     let na = 0;
     let nb = 0;
     for (const w of winnerBets) {
-      const p = String(w.pickWinnerTeamId ?? '');
+      const p = normalizeMongoIdString(w.pickWinnerTeamId);
       if (p === teamAId) na += 1;
       else if (p === teamBId) nb += 1;
     }
