@@ -1,26 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
-import { getDb, getMongoClient } from '../server/lib/mongodb';
-import { parseLimitOffset } from '../server/lib/pagination';
-import { teamsPostSchema } from '../server/lib/schemas/teamsPost';
+import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
-import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { getSessionUserId, isUserAdmin, loadActorUserWithAdminRefresh } from '../server/lib/auth';
 import { isTournamentOrganizer } from '../server/lib/organizer';
-import { normalizeGroupCount, tournamentAllowsManualGroupAssignment, validateTournamentGroups } from '../lib/tournamentGroups';
-import { countTeamsInGroup } from '../server/lib/tournamentGroupDb';
-import { syncTournamentOpenFullStatus } from '../server/lib/tournamentStatusSync';
-import type { TournamentDivision } from '../types';
-import { notifyMany } from '../server/lib/notify';
+import { teamSlotWaitlistPostSchema } from '../server/lib/schemas/teamSlotWaitlistPost';
+import { normalizeGroupCount, validateTournamentGroups } from '../lib/tournamentGroups';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, parsePlayerSlot } from '../lib/playerSlots';
 import { assertGuestIdsBelongToTournament, resolveTwoSlotGenders } from '../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
-import { insertTeamWithEntriesTx } from '../server/lib/insertTeamWithEntriesTx';
-
-function hasExplicitGroupIndex(raw: unknown): boolean {
-  if (raw === undefined || raw === null) return false;
-  if (typeof raw === 'string' && raw.trim() === '') return false;
-  return true;
-}
+import type { TournamentDivision } from '../types';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -28,30 +17,45 @@ function serializeDoc(doc: Record<string, unknown> | null) {
   return { _id: _id instanceof ObjectId ? _id.toString() : _id, ...rest };
 }
 
+function firstQueryString(q: string | string[] | undefined): string | undefined {
+  if (q == null) return undefined;
+  return typeof q === 'string' ? q : q[0];
+}
+
+function pairKey(a: string, b: string): string {
+  return [a, b].sort().join('|');
+}
+
+function tournamentStartedDoc(t: Record<string, unknown>): boolean {
+  const phase = String((t as { phase?: unknown }).phase ?? '');
+  return (
+    !!(t as { startedAt?: unknown }).startedAt ||
+    phase === 'classification' ||
+    phase === 'categories' ||
+    phase === 'completed'
+  );
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return withCors(req, res).end();
-
   const corsRes = withCors(req, res);
   try {
     const db = await getDb();
-    const col = db.collection('teams');
+    const col = db.collection('team_slot_waitlist');
 
     if (req.method === 'GET') {
-      const filter: Record<string, unknown> = {};
-      const { tournamentId, createdBy } = req.query;
-      if (tournamentId && typeof tournamentId === 'string') {
-        Object.assign(filter, tournamentIdMongoFilter(tournamentId.trim()));
+      const tournamentId = firstQueryString(req.query.tournamentId as string | string[] | undefined)?.trim();
+      const divisionFilter = firstQueryString(req.query.division as string | string[] | undefined)?.trim();
+      if (!tournamentId || !ObjectId.isValid(tournamentId)) {
+        return corsRes.status(400).json({ error: 'Invalid tournamentId' });
       }
-      if (createdBy && typeof createdBy === 'string') filter.createdBy = createdBy;
-
-      let cursor = col.find(filter).sort({ createdAt: -1 });
-      const q = req.query;
-      if (q.limit != null || q.offset != null) {
-        const { limit, offset } = parseLimitOffset(q);
-        cursor = cursor.skip(offset).limit(limit);
+      const tidf = tournamentIdMongoFilter(tournamentId);
+      const filter: Record<string, unknown> = { ...tidf, status: 'active' };
+      if (divisionFilter === 'men' || divisionFilter === 'women' || divisionFilter === 'mixed') {
+        filter.division = divisionFilter;
       }
-      const docs = await cursor.toArray();
-      return corsRes.status(200).json(docs.map((d) => serializeDoc(d as Record<string, unknown>)));
+      const rows = await col.find(filter).sort({ createdAt: 1 }).toArray();
+      return corsRes.status(200).json(rows.map((d) => serializeDoc(d as Record<string, unknown>)));
     }
 
     if (req.method === 'POST') {
@@ -60,18 +64,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
       const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      const parsed = teamsPostSchema.safeParse(raw);
+      const parsed = teamSlotWaitlistPostSchema.safeParse(raw);
       if (!parsed.success) {
         return corsRes.status(400).json({ error: 'Invalid payload' });
       }
-      const { tournamentId, name, playerIds, createdBy, groupIndex: rawGi } = parsed.data;
+      const { tournamentId, name, playerIds, createdBy } = parsed.data;
+      if (!ObjectId.isValid(tournamentId)) {
+        return corsRes.status(400).json({ error: 'Invalid tournamentId' });
+      }
+
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) {
         return corsRes.status(404).json({ error: 'Tournament not found' });
       }
-      const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
-      const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+      if (tournamentStartedDoc(tournament as Record<string, unknown>)) {
+        return corsRes.status(400).json({ error: 'Tournament already started' });
+      }
+
+      const actorUser = await loadActorUserWithAdminRefresh(db, actorId);
+      if (!actorUser) {
+        return corsRes.status(401).json({ error: 'Invalid session' });
+      }
+      const admin = isUserAdmin(actorUser as { role?: string; email?: string });
       const isOrg = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actorId);
 
       const normalizedSlots = normalizeTeamPlayerSlots(playerIds);
@@ -80,10 +95,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const cleanPlayerIds: [string, string] = normalizedSlots;
 
-      const canCreateTeam =
+      const canEnqueue =
         isOrg || admin || (cleanPlayerIds.includes(actorId) && createdBy === actorId);
-      if (!canCreateTeam) {
-        return corsRes.status(403).json({ error: 'Not allowed to create this team' });
+      if (!canEnqueue) {
+        return corsRes.status(403).json({ error: 'Not allowed to enqueue this team' });
       }
       if (!admin && createdBy !== actorId) {
         return corsRes.status(403).json({ error: 'Invalid createdBy' });
@@ -120,31 +135,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!vg.ok) {
         return corsRes.status(400).json({ error: 'Tournament group configuration is invalid' });
       }
-      const allowManualGroups = tournamentAllowsManualGroupAssignment(
-        tournament as { groupsDistributedAt?: string | null }
-      );
-      let groupIndex: number | null;
-      if (!allowManualGroups) {
-        groupIndex = null;
-      } else if (!hasExplicitGroupIndex(rawGi)) {
-        groupIndex = null;
-      } else {
-        let parsed = typeof rawGi === 'number' ? rawGi : parseInt(String(rawGi), 10);
-        if (!Number.isFinite(parsed) || parsed < 0) parsed = 0;
-        groupIndex = Math.min(vg.groupCount - 1, Math.floor(parsed));
-        const inGroup = await countTeamsInGroup(db, tournamentId, groupIndex);
-        if (inGroup >= vg.teamsPerGroup) {
-          return corsRes.status(400).json({ error: 'This group is full' });
-        }
-      }
+
+      const teamsCol = db.collection('teams');
       const tidf = tournamentIdMongoFilter(tournamentId);
-      const totalTeams = await col.countDocuments(tidf);
-      if (totalTeams >= maxT) {
-        return corsRes.status(400).json({ error: 'Tournament is full — join the team slot waitlist' });
+      const totalTeams = await teamsCol.countDocuments(tidf);
+      if (totalTeams < maxT) {
+        return corsRes.status(400).json({ error: 'Tournament is not full yet — create a team normally' });
       }
 
+      const entriesCol = db.collection('entries');
+      const waitlistCol = db.collection('waitlist');
       const playerIdSet = new Set(cleanPlayerIds);
-      const existing = await col.findOne({
+      const existing = await teamsCol.findOne({
         ...tidf,
         playerIds: { $in: Array.from(playerIdSet) },
       });
@@ -152,17 +154,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'You can only be in one team per tournament' });
       }
 
-      const entriesCol = db.collection('entries');
-      const waitlistCol = db.collection('waitlist');
       const userIdsOnly = cleanPlayerIds.filter((p) => !isGuestPlayerSlot(p));
       const guestIdsOnly = cleanPlayerIds.map((p) => guestPlayerIdFromSlot(p)).filter(Boolean) as string[];
       const orClauses: Record<string, unknown>[] = [];
       if (userIdsOnly.length) orClauses.push({ userId: { $in: userIdsOnly }, teamId: { $ne: null } });
       if (guestIdsOnly.length) orClauses.push({ guestPlayerId: { $in: guestIdsOnly }, teamId: { $ne: null } });
       const inTeamCount =
-        orClauses.length === 0
-          ? 0
-          : await entriesCol.countDocuments({ ...tidf, $or: orClauses });
+        orClauses.length === 0 ? 0 : await entriesCol.countDocuments({ ...tidf, $or: orClauses });
       if (inTeamCount > 0) {
         return corsRes.status(400).json({ error: 'One or more players are already in a team' });
       }
@@ -206,45 +204,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      const pk = pairKey(cleanPlayerIds[0]!, cleanPlayerIds[1]!);
+      const dup = await col.findOne({
+        ...tidf,
+        status: 'active',
+        pairKey: pk,
+      });
+      if (dup) {
+        return corsRes.status(409).json({ error: 'This pair is already on the team waiting list' });
+      }
+
       const now = new Date().toISOString();
-
-      const client = await getMongoClient();
-      const session = client.startSession();
-      let inserted: Record<string, unknown> | null = null;
-      try {
-        await session.withTransaction(async () => {
-          const tdb = client.db('matchpoint');
-          inserted = await insertTeamWithEntriesTx({
-            tdb,
-            session,
-            tournamentId,
-            name,
-            cleanPlayerIds,
-            pairDivision,
-            groupIndex,
-            createdBy,
-            now,
-          });
-        });
-      } finally {
-        await session.endSession();
-      }
-
-      if (!inserted) {
-        return corsRes.status(500).json({ error: 'Internal server error' });
-      }
-      await syncTournamentOpenFullStatus(db, tournamentId);
-
-      // In-app notifications: team created.
-      const tournamentName = String((tournament as { name?: unknown }).name ?? '');
-      await notifyMany(db, userIdsOnly, {
-        type: 'team.created',
-        params: { tournament: tournamentName || 'Tournament', team: name },
-        data: { tournamentId, teamId: (inserted as any)?._id ?? '' },
-        dedupeKey: `team.created:${tournamentId}:${(inserted as any)?._id ?? ''}`,
+      const ins = await col.insertOne({
+        tournamentId,
+        division: pairDivision,
+        name: name.trim(),
+        playerIds: cleanPlayerIds,
+        pairKey: pk,
+        createdBy,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
       });
 
-      return corsRes.status(201).json(serializeDoc(inserted));
+      const doc = await col.findOne({ _id: ins.insertedId });
+      return corsRes.status(201).json(serializeDoc(doc as Record<string, unknown>));
+    }
+
+    if (req.method === 'DELETE') {
+      const actorId = getSessionUserId(req);
+      if (!actorId) {
+        return corsRes.status(401).json({ error: 'Authentication required' });
+      }
+      const id = firstQueryString(req.query.id as string | string[] | undefined)?.trim();
+      if (!id || !ObjectId.isValid(id)) {
+        return corsRes.status(400).json({ error: 'Invalid id' });
+      }
+      const row = await col.findOne({ _id: new ObjectId(id) });
+      if (!row) {
+        return corsRes.status(404).json({ error: 'Waitlist entry not found' });
+      }
+      if (String((row as { status?: unknown }).status ?? '') !== 'active') {
+        return corsRes.status(400).json({ error: 'Waitlist entry is not active' });
+      }
+      const tournamentId = String((row as { tournamentId?: unknown }).tournamentId ?? '');
+      if (!ObjectId.isValid(tournamentId)) {
+        return corsRes.status(400).json({ error: 'Invalid tournament on waitlist entry' });
+      }
+      const tournamentsCol = db.collection('tournaments');
+      const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
+      if (!tournament) {
+        return corsRes.status(404).json({ error: 'Tournament not found' });
+      }
+      const actorUser = await loadActorUserWithAdminRefresh(db, actorId);
+      if (!actorUser) {
+        return corsRes.status(401).json({ error: 'Invalid session' });
+      }
+      const admin = isUserAdmin(actorUser as { role?: string; email?: string });
+      const isOrg = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actorId);
+      const createdBy = String((row as { createdBy?: unknown }).createdBy ?? '');
+      const pids = ((row as { playerIds?: unknown }).playerIds ?? []) as string[];
+      const canRemove =
+        isOrg ||
+        admin ||
+        actorId === createdBy ||
+        pids.includes(actorId);
+      if (!canRemove) {
+        return corsRes.status(403).json({ error: 'Not allowed to remove this waitlist entry' });
+      }
+
+      await col.deleteOne({ _id: new ObjectId(id) });
+      return corsRes.status(204).end();
     }
 
     return corsRes.status(405).json({ error: 'Method not allowed' });

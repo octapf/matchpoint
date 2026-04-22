@@ -238,10 +238,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!actorId) {
         return corsRes.status(401).json({ error: 'Authentication required' });
       }
-      const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      let raw: unknown = req.body;
+      if (typeof req.body === 'string') {
+        try {
+          raw = JSON.parse(req.body);
+        } catch {
+          return corsRes.status(400).json({ error: 'Invalid JSON payload' });
+        }
+      }
       const parsed = tournamentCreateSchema.safeParse(raw);
       if (!parsed.success) {
-        return corsRes.status(400).json({ error: 'Invalid payload' });
+        const first = parsed.error.issues?.[0];
+        return corsRes.status(400).json({
+          error: first?.message ? String(first.message) : 'Invalid payload',
+          issues: parsed.error.issues?.slice(0, 8) ?? [],
+        });
       }
       const {
         name,

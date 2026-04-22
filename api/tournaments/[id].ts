@@ -33,6 +33,13 @@ import {
   placeTournamentBet,
   settleBetsForMatch,
 } from '../../server/lib/tournamentBets';
+
+/** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
+function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
+  const aa = [...tournamentDivisionsNormalized(a)].sort().join('\0');
+  const bb = [...tournamentDivisionsNormalized(b)].sort().join('\0');
+  return aa === bb;
+}
 import {
   createGuestPlayer,
   deleteGuestPlayer,
@@ -457,6 +464,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!uid || !ObjectId.isValid(uid)) {
           return corsRes.status(400).json({ error: 'Invalid userId' });
         }
+        const started =
+          !!(cur as { startedAt?: unknown }).startedAt ||
+          (cur as { phase?: unknown }).phase === 'classification' ||
+          (cur as { phase?: unknown }).phase === 'categories' ||
+          (cur as { phase?: unknown }).phase === 'completed';
+        if (started) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const mode = body?.mode === 'dissolveToWaitlist' || body?.mode === 'removeFromTournament' ? body.mode : 'removeFromTournament';
         // organizer/admin only (enforced by action guard above)
         await removePlayerFromTournament(db, id, uid, { leaveTournament: mode === 'removeFromTournament' });
@@ -655,9 +670,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           update.status = 'completed';
           update.completedAt = now;
           const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
+          const baseElapsed = Number((match as any).elapsedSeconds ?? 0);
+          const base = Number.isFinite(baseElapsed) && baseElapsed > 0 ? Math.floor(baseElapsed) : 0;
           if (startedAt) {
             const durSec = Math.max(0, Math.floor((Date.parse(now) - Date.parse(startedAt)) / 1000));
-            update.durationSeconds = durSec;
+            update.durationSeconds = base + durSec;
+          } else if (base > 0) {
+            update.durationSeconds = base;
           }
         }
         const result = await db
@@ -981,6 +1000,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
+
+        // A match cannot start unless the tournament has been started.
+        const tour = await db.collection('tournaments').findOne({ _id: oid }, { projection: { startedAt: 1, phase: 1 } });
+        const startedAt = (tour as { startedAt?: unknown })?.startedAt;
+        const phase = String((tour as { phase?: unknown })?.phase ?? '');
+        const tournamentStarted = !!startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed';
+        if (!tournamentStarted) {
+          return corsRes.status(400).json({ error: 'Tournament has not started' });
+        }
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         if (matchStatus === 'completed') return corsRes.status(400).json({ error: 'Match already completed' });
 
@@ -1012,12 +1040,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
+        const resume = matchStatus === 'paused';
         const result = await db.collection('matches').findOneAndUpdate(
           { _id: matchOid, status: { $ne: 'completed' } },
           {
             $set: {
               status: 'in_progress',
-              startedAt: (match as { startedAt?: unknown }).startedAt ?? now,
+              startedAt: resume ? now : ((match as { startedAt?: unknown }).startedAt ?? now),
+              ...(resume ? { pausedAt: null } : null),
               refereeUserId: actingUserId,
               refereeLockExpiresAt: lockExpiresAtIso(nowMs),
               serveOrder,
@@ -1059,6 +1089,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           dedupeKey: `match.refereeAssigned:${matchId}:${actingUserId}`,
         });
 
+        return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+      }
+
+      if (action === 'pauseMatch') {
+        if (!actorIsAdmin && !isOrg) return corsRes.status(403).json({ error: 'Only organizers can pause matches' });
+        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
+        if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
+        const matchOid = new ObjectId(matchId);
+        const match = await db.collection('matches').findOne({ _id: matchOid });
+        if (!match) return corsRes.status(404).json({ error: 'Match not found' });
+        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
+          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+        }
+        const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
+        if (matchStatus === 'completed') return corsRes.status(400).json({ error: 'Match is completed' });
+        if (matchStatus !== 'in_progress') return corsRes.status(400).json({ error: 'Match is not in progress' });
+
+        const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
+        const startedMs = startedAt ? Date.parse(startedAt) : NaN;
+        const baseElapsed = Number((match as any).elapsedSeconds ?? 0);
+        const base = Number.isFinite(baseElapsed) && baseElapsed > 0 ? Math.floor(baseElapsed) : 0;
+        const nowMs = Date.now();
+        const delta = Number.isFinite(startedMs) ? Math.max(0, Math.floor((nowMs - startedMs) / 1000)) : 0;
+        const nextElapsed = base + delta;
+
+        const now = new Date(nowMs).toISOString();
+        const result = await db.collection('matches').findOneAndUpdate(
+          { _id: matchOid, status: 'in_progress' },
+          {
+            $set: {
+              status: 'paused',
+              pausedAt: now,
+              elapsedSeconds: nextElapsed,
+              updatedAt: now,
+            },
+          },
+          { returnDocument: 'after' }
+        );
+        if (!result) return corsRes.status(404).json({ error: 'Match not found' });
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
@@ -1315,12 +1384,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             refereeLockExpiresAt: currentLockExp || null,
           });
         }
-        // Pre-start setup only: rotation / initial server are locked once play begins.
         if (matchStatus === 'completed') {
           return corsRes.status(400).json({ error: 'Match is completed' });
-        }
-        if (matchStatus === 'in_progress') {
-          return corsRes.status(400).json({ error: 'Serve order is locked during play' });
         }
 
         const order = Array.isArray(body?.order) ? (body.order as unknown[]).map(String).filter(Boolean) : [];
@@ -1695,11 +1760,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : [];
       const prevCoversRaw = (cur as { organizerOnlyCovers?: unknown }).organizerOnlyCovers;
 
+      // Re-send of the same divisions (common on “edit tournament” saves) must not re-run organizer
+      // coverage — that check depends on roster state and would block unrelated edits (e.g. location).
+      const divisionsActuallyChanged =
+        update.divisions !== undefined &&
+        !tournamentDivisionsSetEqual(update.divisions, (cur as { divisions?: unknown }).divisions);
+
       const coverageRelevant =
         update.organizerIds !== undefined ||
         body.organizerOnlyIds !== undefined ||
         body.organizerOnlyCovers !== undefined ||
-        update.divisions !== undefined;
+        divisionsActuallyChanged;
 
       let nextOnlyForRemoval: string[] = [];
 

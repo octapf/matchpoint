@@ -207,6 +207,26 @@ export const teamsApi = {
   deleteOne: (id: string) => apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE' }),
 };
 
+/** FIFO queue of pairs waiting for a team slot when the tournament is at `maxTeams`. */
+export const teamSlotWaitlistApi = {
+  get: (tournamentId: string, division?: 'men' | 'women' | 'mixed') =>
+    apiRequest<unknown[]>('/api/team-slot-waitlist', {
+      params: {
+        tournamentId,
+        ...(division ? { division } : {}),
+      } as Record<string, string>,
+    }),
+
+  join: (body: { tournamentId: string; name: string; playerIds: [string, string]; createdBy: string }) =>
+    apiRequest<unknown>('/api/team-slot-waitlist', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  leave: (id: string) =>
+    apiRequest<void>(`/api/team-slot-waitlist?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};
+
 // Auth
 export const authApi = {
   signInWithGoogle: (idToken: string) =>

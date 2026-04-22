@@ -5,6 +5,7 @@ import { withCors } from '../../server/lib/cors';
 import { entryPatchSchema } from '../../server/lib/schemas/entryPatch';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
+import { replaceLeavingUserWithGuest } from '../../server/lib/tournamentStartedPlayerReplacement';
 import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import {
@@ -157,6 +158,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const started =
+        !!(tournament as { startedAt?: unknown }).startedAt ||
+        (tournament as { phase?: unknown }).phase === 'classification' ||
+        (tournament as { phase?: unknown }).phase === 'categories' ||
+        (tournament as { phase?: unknown }).phase === 'completed';
 
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
@@ -165,6 +171,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const organizerKick = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
       if (!selfRemove && !organizerKick && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Not allowed to remove this entry' });
+      }
+
+      // Tournament started: do not allow deleting players. If the player leaves, replace them with a guest clone.
+      if (started) {
+        if (!selfRemove) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+        const orgsStarted = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
+        if (orgsStarted.includes(entryUserId)) {
+          return corsRes.status(400).json({ error: 'Promote another organizer before you leave the tournament' });
+        }
+        const repl = await replaceLeavingUserWithGuest(db, tournamentId, entryUserId);
+        if (!repl.ok) return corsRes.status(500).json({ error: repl.error });
+        return corsRes.status(200).json({ ok: true, replacedWithGuest: true, guestId: repl.guestId });
       }
 
       if (selfRemove) {

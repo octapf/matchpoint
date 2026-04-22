@@ -17,6 +17,7 @@ import { notifyMany } from '../../server/lib/notify';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots } from '../../lib/playerSlots';
 import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
+import { promoteNextTeamFromSlotWaitlist } from '../../server/lib/promoteTeamSlotWaitlist';
 import type { TournamentDivision } from '../../types';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
@@ -83,8 +84,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(401).json({ error: 'Invalid session' });
       }
       const actorIsAdminPatch = isUserAdmin(actorUserPatch as { role?: string; email?: string });
-      if (!isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId) && !actorIsAdminPatch) {
+      const isOrganizerOrAdmin =
+        isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId) || actorIsAdminPatch;
+      const teamPlayerIds = ((team as { playerIds?: string[] }).playerIds ?? []).filter(Boolean);
+      const isTeamMember = teamPlayerIds.includes(actingUserId);
+
+      if (!isOrganizerOrAdmin && !isTeamMember) {
         return corsRes.status(403).json({ error: 'Only organizers can update this team' });
+      }
+
+      const hasName = body.name !== undefined;
+      const hasPlayerIds = body.playerIds !== undefined;
+      const hasGroupIndex = body.groupIndex !== undefined;
+
+      if (!isOrganizerOrAdmin && isTeamMember) {
+        if (hasPlayerIds || hasGroupIndex) {
+          return corsRes.status(403).json({ error: 'Only organizers can change team roster or group' });
+        }
+        if (!hasName) {
+          return corsRes.status(400).json({ error: 'No valid fields to update' });
+        }
       }
 
       const allowed = ['name', 'playerIds', 'groupIndex'];
@@ -94,6 +113,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
+      }
+
+      const tournamentStartedPatch =
+        !!(tournament as { startedAt?: unknown }).startedAt ||
+        (tournament as { phase?: unknown }).phase === 'classification' ||
+        (tournament as { phase?: unknown }).phase === 'categories' ||
+        (tournament as { phase?: unknown }).phase === 'completed';
+      if (update.name !== undefined && tournamentStartedPatch) {
+        return corsRes.status(400).json({ error: 'Team name cannot be changed after the tournament has started' });
       }
 
       if (update.groupIndex !== undefined) {
@@ -284,6 +312,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const started =
+        !!(tournament as { startedAt?: unknown }).startedAt ||
+        (tournament as { phase?: unknown }).phase === 'classification' ||
+        (tournament as { phase?: unknown }).phase === 'categories' ||
+        (tournament as { phase?: unknown }).phase === 'completed';
+      if (started) {
+        return corsRes.status(400).json({ error: 'Tournament already started' });
+      }
       const tidfDelTeam = tournamentIdMongoFilter(tournamentId);
       if (!ObjectId.isValid(actingUserId)) {
         return corsRes.status(400).json({ error: 'Invalid acting user' });
@@ -330,6 +366,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await session.endSession();
       }
       await syncTournamentOpenFullStatus(db, tournamentId);
+      await promoteNextTeamFromSlotWaitlist(db, tournamentId);
 
       // In-app notifications: team dissolved (both players back to waitlist).
       const tournamentName = String((tournament as { name?: unknown }).name ?? '');

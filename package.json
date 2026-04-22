@@ -12,6 +12,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "api:dev": "npx vercel dev",
+    "api:dev:backend": "npx vercel dev --local-config vercel.api.json",
     "vercel:functions": "node scripts/check-vercel-function-limit.js",
     "typecheck": "tsc --noEmit",
     "verify": "npm run vercel:functions && npm run typecheck && npm run lint",

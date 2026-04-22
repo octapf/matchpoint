@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "framework": null,
+  "functions": {
+    "api/admin.ts": {
+      "maxDuration": 60
+    },
+    "api/**/*.ts": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/auth/:slug",
+      "destination": "/api/auth?slug=:slug"
+    }
+  ]
+}
+

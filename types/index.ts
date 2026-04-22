@@ -205,7 +205,7 @@ export interface Tournament {
 
 export type MatchStage = 'classification' | 'category';
 
-export type MatchStatus = 'scheduled' | 'in_progress' | 'completed';
+export type MatchStatus = 'scheduled' | 'in_progress' | 'paused' | 'completed';
 
 export interface Match {
   _id: string;
@@ -256,6 +256,10 @@ export interface Match {
   serveIndex?: number;
   /** Duration in seconds (set on completion). */
   durationSeconds?: number;
+  /** Accumulated duration in seconds while paused/resumed (non-final). */
+  elapsedSeconds?: number;
+  /** When present, match is paused (status = paused). */
+  pausedAt?: string;
   /** Deterministic ordering within a stage slice (group/category). */
   orderIndex?: number;
   /** Optional scheduled timestamp for UI/ordering. */
