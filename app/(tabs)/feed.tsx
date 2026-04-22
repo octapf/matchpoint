@@ -160,25 +160,11 @@ export default function FeedScreen() {
     }, [usedDeviceLocation, refreshLocation]),
   );
 
-  const dateLabel = useMemo(() => {
-    const locale = language === 'es' ? 'es' : language === 'it' ? 'it' : 'en';
-    try {
-      return new Intl.DateTimeFormat(locale, {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-      }).format(new Date());
-    } catch {
-      return new Date().toDateString();
-    }
-  }, [language]);
-
   const localeTag = language === 'es' ? 'es' : language === 'it' ? 'it' : 'en';
   const payload = data as WeatherPayload | undefined;
   const current = payload?.current;
   const hourly = payload?.hourly ?? [];
   const skyKey = current != null ? weatherCodeToSkyKey(current.weatherCode) : 'unknown';
-  const skyLabel = t(`feed.sky.${skyKey}`);
   const weatherReady = current != null;
   const panelIconColors =
     weatherReady && current && !isError ? getWeatherPanelIconColors(skyKey, current.isDay) : null;
@@ -242,12 +228,8 @@ export default function FeedScreen() {
                     <View />
                   )}
                 </View>
-                <Text style={styles.skyText}>{skyLabel}</Text>
 
                 <View style={styles.weatherMetaBlock}>
-                  <Text style={styles.weatherDateLine}>
-                    {t('feed.today')} · {dateLabel}
-                  </Text>
                   {usedDeviceLocation ? (
                     <Text style={styles.locationHint}>{locationAreaName ?? t('feed.locationNearby')}</Text>
                   ) : Platform.OS !== 'web' ? (
@@ -317,10 +299,8 @@ export default function FeedScreen() {
       error,
       refetch,
       skyKey,
-      skyLabel,
       current,
       hourly,
-      dateLabel,
       usedDeviceLocation,
       locationAreaName,
       isFetching,
@@ -370,13 +350,6 @@ const styles = StyleSheet.create({
   weatherMetaBlock: {
     marginBottom: 6,
   },
-  weatherDateLine: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.92)',
-    marginBottom: 4,
-    textTransform: 'capitalize',
-  },
   weatherCard: {
     position: 'relative',
     backgroundColor: Colors.surface,
@@ -419,12 +392,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     alignSelf: 'flex-start',
     letterSpacing: 0.2,
-  },
-  skyText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.94)',
-    marginBottom: 4,
   },
   hourlyScroll: {
     marginBottom: 0,
