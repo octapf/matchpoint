@@ -65,6 +65,7 @@ export async function actionStartTournament(
   if (!tournamentIsoDate || tournamentIsoDate !== todayIsoDate) {
     throw new Error('Tournament can only be started on its scheduled date');
   }
+
   const teamsColForCount = db.collection('teams');
   const maxT = Math.max(2, Math.floor(Number((cur as { maxTeams?: unknown }).maxTeams ?? 0) || 0));
   const teamsCount = await teamsColForCount.countDocuments({ tournamentId });

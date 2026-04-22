@@ -28,6 +28,17 @@ export async function randomizeTeamGroups(
   if (startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed') {
     throw new Error('Tournament has started');
   }
+
+  // Safety: if any match has already started/completed, do not allow group reorganization
+  // even if tournament phase is inconsistent.
+  const matchesCol = db.collection('matches');
+  const locked = await matchesCol.countDocuments({
+    tournamentId,
+    status: { $in: ['in_progress', 'completed'] },
+  });
+  if (locked > 0) {
+    throw new Error('Tournament has started');
+  }
   const maxT = Number((t as { maxTeams?: number }).maxTeams);
   const gc = normalizeGroupCount((t as { groupCount?: number }).groupCount);
   const vg = validateTournamentGroups(maxT, gc);
