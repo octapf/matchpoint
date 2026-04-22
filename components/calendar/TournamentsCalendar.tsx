@@ -6,25 +6,27 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 // and Metro fails to bundle it in this workspace. Import only the modules we need.
 import Calendar from 'react-native-calendars/src/calendar';
 import CalendarProvider from 'react-native-calendars/src/expandableCalendar/Context/Provider';
-// When `dayComponent` is set, the calendar skips built-in `PeriodDay`; import it to keep range marks visible.
-import PeriodDay from 'react-native-calendars/src/calendar/day/period';
-import type { DayProps } from 'react-native-calendars/src/calendar/day/index';
-import type { DateData } from 'react-native-calendars/src/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import XDate from 'xdate';
 import Colors from '@/constants/Colors';
+import { readableTextOnBackground } from '@/lib/theme/colors';
 import { useTheme } from '@/lib/theme/useTheme';
 import { useTranslation } from '@/lib/i18n';
 import type { Tournament } from '@/types';
 import { eachLocalDayInclusive, formatTournamentDateRange, toISODate } from '@/lib/utils/dateFormat';
 import { useLanguageStore } from '@/store/useLanguageStore';
 
+/** Behaviour, Metro imports, theme-merge pitfalls: see `docs/TOURNAMENTS_CALENDAR.md`. */
+
 type Props = {
   tournaments: Tournament[];
 };
 
 type MarkedDates = Record<string, unknown>;
+
+/** Override Provider `contextWrapper` flex:1 so width stays correct inside vertical ScrollViews. */
+const calendarProviderStyle = { width: '100%' as const, flex: 0 as const };
 
 let calendarLocalesConfigured = false;
 function ensureCalendarLocalesConfigured() {
@@ -137,67 +139,6 @@ function pickTournamentScheduleIso(t: Tournament): { rawStart?: string; rawEnd?:
   return { rawStart: start || undefined, rawEnd: end || undefined };
 }
 
-type LibraryCustomDayProps = Omit<DayProps, 'dayComponent'> & { date?: DateData };
-
-/**
- * With `dayComponent`, Calendar's `Day` wrapper passes `date` as `DateData` (see `xdateToData` in the library).
- * `PeriodDay` always calls `xdateToData(date)` internally, which does `new XDate(date)` — that breaks on a plain
- * `{ dateString, year, ... }` object and throws inside XDate. Normalize back to `YYYY-MM-DD` string.
- */
-function toPeriodDayDateString(date: unknown): string | undefined {
-  if (date == null) return undefined;
-  if (typeof date === 'string') {
-    const s = date.trim();
-    return s || undefined;
-  }
-  if (typeof date === 'object' && date !== null && 'dateString' in date) {
-    const ds = String((date as DateData).dateString ?? '').trim();
-    return ds || undefined;
-  }
-  return undefined;
-}
-
-/**
- * Custom day cell: render the library's period day (range bar) and optionally a one-line tournament caption
- * on the **first day** of each tournament's painted range (see `namesByStartDay`).
- */
-function CalendarDayWithPeriodAndName(
-  props: LibraryCustomDayProps & { namesByStartDay: Record<string, string[]> },
-) {
-  const { namesByStartDay, date: rawDate, ...rest } = props;
-  const dateStr = toPeriodDayDateString(rawDate);
-  const dayKey = dateStr ?? '';
-  const names = dayKey ? (namesByStartDay[dayKey] ?? []) : [];
-  const showLabel = names.length > 0;
-  const label =
-    names.length === 0 ? '' : names.length === 1 ? (names[0] ?? '') : `${names[0] ?? ''} (+${names.length - 1})`;
-
-  if (!dateStr) {
-    return <View style={styles.dayColumn} />;
-  }
-
-  return (
-    <View style={showLabel ? styles.dayColumnWithCaption : styles.dayColumn}>
-      {/* PeriodDay handles touches and period fill; children = day-of-month from Calendar's Day wrapper */}
-      <PeriodDay {...(rest as Record<string, unknown>)} date={dateStr}>
-        {rest.children}
-      </PeriodDay>
-      {showLabel ? (
-        <Text
-          pointerEvents="none"
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          style={styles.dayTournamentCaption}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {label}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 export function TournamentsCalendar({ tournaments }: Props) {
   const { tokens } = useTheme();
   const { t } = useTranslation();
@@ -223,9 +164,11 @@ export function TournamentsCalendar({ tournaments }: Props) {
     opacity: fadeMonth.value,
   }));
 
-  const { markedDates, namesByStartDay } = useMemo(() => {
+  const markedDates = useMemo(() => {
     const marks: MarkedDates = {};
-    const namesByDay: Record<string, string[]> = {};
+    const tournamentFill = tokens.accent;
+    const tournamentDayNumberColor =
+      readableTextOnBackground(tournamentFill, tokens) === 'light' ? tokens.lightText : tokens.darkText;
 
     for (const t of tournaments) {
       const { rawStart, rawEnd } = pickTournamentScheduleIso(t);
@@ -254,23 +197,14 @@ export function TournamentsCalendar({ tournaments }: Props) {
           ...(existing ?? {}),
           startingDay: existing.startingDay ?? isStart,
           endingDay: existing.endingDay ?? isEnd,
-          color: tokens.accentMuted,
-          textColor: Colors.text,
+          color: tournamentFill,
+          textColor: tournamentDayNumberColor,
         } as any;
-        if (isStart) {
-          const prev = namesByDay[dayKey] ?? [];
-          namesByDay[dayKey] = [...prev, t.name];
-        }
       }
     }
 
-    return { markedDates: marks, namesByStartDay: namesByDay };
-  }, [tournaments, tokens.accentMuted]);
-
-  const renderDay = useCallback(
-    (props: LibraryCustomDayProps) => <CalendarDayWithPeriodAndName {...props} namesByStartDay={namesByStartDay} />,
-    [namesByStartDay],
-  );
+    return marks;
+  }, [tournaments, tokens]);
 
   const monthTournaments = useMemo(() => {
     const [yStr, mStr] = activeMonthKey.split('-');
@@ -354,13 +288,17 @@ export function TournamentsCalendar({ tournaments }: Props) {
       textMonthFontWeight: '700',
       textDayFontWeight: '600',
       textDayHeaderFontWeight: '600',
+      /** Reinforce row layout for weekday names (library default; avoids rare flex glitches in scroll parents). */
+      ['stylesheet.calendar.header' as string]: {
+        week: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-around' },
+      },
     }),
     [tokens]
   );
 
   const Legend = (
     <View style={styles.legendRow}>
-      <View style={[styles.legendSwatch, { backgroundColor: tokens.accentMuted, borderColor: tokens.accentOutline }]} />
+      <View style={[styles.legendSwatch, { backgroundColor: tokens.accent, borderColor: tokens.accentOutline }]} />
       <Text style={[styles.legendText, { color: Colors.textSecondary }]}>{t('common.tournament')}</Text>
     </View>
   );
@@ -378,6 +316,7 @@ export function TournamentsCalendar({ tournaments }: Props) {
           date={selectedDayKey}
           onDateChanged={(d) => setSelectedDayKey(d)}
           showTodayButton={false}
+          style={calendarProviderStyle}
         >
           <Calendar
             firstDay={1}
@@ -400,7 +339,6 @@ export function TournamentsCalendar({ tournaments }: Props) {
                 color={tokens.accent}
               />
             )}
-            dayComponent={renderDay}
           />
         </CalendarProvider>
       </Animated.View>
@@ -442,12 +380,14 @@ export function TournamentsCalendar({ tournaments }: Props) {
 
 const styles = StyleSheet.create({
   card: {
+    alignSelf: 'stretch',
     borderWidth: 1,
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 12,
   },
   calendarAnimClip: {
+    width: '100%',
     overflow: 'hidden',
   },
   legendRow: {
@@ -494,24 +434,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     paddingVertical: 8,
     paddingHorizontal: 4,
-  },
-  dayColumn: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-  },
-  dayColumnWithCaption: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    paddingBottom: 2,
-  },
-  dayTournamentCaption: {
-    marginTop: 1,
-    maxWidth: 56,
-    fontSize: 9,
-    fontWeight: '700',
-    lineHeight: 11,
-    color: Colors.textSecondary,
-    textAlign: 'center',
   },
 });
 

@@ -8,6 +8,8 @@
 | [EXPO_AND_VERCEL.md](./EXPO_AND_VERCEL.md) | Expo Go vs dev build, API URL, deep links |
 | [MAINTENANCE.md](./MAINTENANCE.md) | When to refresh docs (e.g. quarterly) |
 | [TOURNAMENT_FLOW_AND_CATEGORIES.md](./TOURNAMENT_FLOW_AND_CATEGORIES.md) | Tournament lifecycle, categories, brackets, organizer rules |
+| [BUSINESS_RULES_FROM_CHAT_2026-04.md](./BUSINESS_RULES_FROM_CHAT_2026-04.md) | Consolidated business rules from April 2026 implementation chat (guests, teams, groups, start gating, team edit/rename, organizer multi-create, admin maps hint) |
+| [TOURNAMENTS_CALENDAR.md](./TOURNAMENTS_CALENDAR.md) | Feed tournament calendar: preset colors, layout pitfalls (`react-native-calendars` theme merges, `dayComponent`, ScrollView + Provider) |
 | [adr/001-stack-and-hosting.md](./adr/001-stack-and-hosting.md) | Why this stack (architecture decision) |
 
 **Existing project notes** (root): `VERCEL_DEPLOY.md`, `MONGODB_SETUP.md`, `DOMAIN_SETUP.md`, `CONNECT-DEVICE.md`, `PROJECT_PLAN.md`.
