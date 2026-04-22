@@ -28,6 +28,7 @@ import {
   useRefereePoint,
   useSetServeOrder,
   useStartMatch,
+  usePauseMatch,
 } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useUsers } from '@/lib/hooks/useUsers';
@@ -64,6 +65,7 @@ export default function EditMatchScreen() {
   const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined, id ? { enabled: !!id } : undefined);
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
+  const pauseMatch = usePauseMatch();
   const refereePoint = useRefereePoint();
   const setServeOrder = useSetServeOrder();
   const refereeHeartbeat = useRefereeHeartbeat();
@@ -600,11 +602,8 @@ export default function EditMatchScreen() {
 
   const renderServeLine = (teamAName: string, teamBName: string, order: string[]) => {
     const status = (match as { status?: string }).status;
-    /** Rotation + initial server are fixed once the match is in progress (only editable while scheduled / pre-start). */
-    const canEditServeSetup =
-      status !== 'completed' &&
-      status !== 'in_progress' &&
-      (canManageTournament || isReferee);
+    /** Serve order must be editable at any time (except after completion). */
+    const canEditServeSetup = status !== 'completed' && (canManageTournament || isReferee);
     const bumpOrderNumber = (pid: string) => {
       if (!canEditServeSetup || order.length !== 4) return;
       const idx = order.findIndex((p) => p === pid);
@@ -635,7 +634,13 @@ export default function EditMatchScreen() {
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
-                    <View style={styles.serveAvatarWrap}>
+                    <Pressable
+                      style={styles.serveAvatarWrap}
+                      onPress={() => bumpOrderNumber(pid)}
+                      disabled={!canEditServeSetup}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('tournamentDetail.rotateServeOrder')}
+                    >
                       <Avatar
                         firstName={isGuest ? label : (u as any)?.firstName ?? ''}
                         lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
@@ -651,7 +656,7 @@ export default function EditMatchScreen() {
                         size="xs"
                         photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
                       />
-                    </View>
+                    </Pressable>
                     <View style={styles.serveOrderRow}>
                       {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
@@ -666,7 +671,8 @@ export default function EditMatchScreen() {
                   </View>
                   <Pressable
                     style={styles.serveSlotNameWrap}
-                    onPress={() => {
+                    onPress={() => bumpOrderNumber(pid)}
+                    onLongPress={() => {
                       if (!canEditServeSetup) return;
                       setServeOrder.mutate(
                         { id: matchId, tournamentId: id, order, servingPlayerId: pid },
@@ -696,7 +702,13 @@ export default function EditMatchScreen() {
               return (
                 <View key={`${pid}-${idx}`} style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}>
                   <View style={styles.serveSlotTopRow}>
-                    <View style={styles.serveAvatarWrap}>
+                    <Pressable
+                      style={styles.serveAvatarWrap}
+                      onPress={() => bumpOrderNumber(pid)}
+                      disabled={!canEditServeSetup}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('tournamentDetail.rotateServeOrder')}
+                    >
                       <Avatar
                         firstName={isGuest ? label : (u as any)?.firstName ?? ''}
                         lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
@@ -712,7 +724,7 @@ export default function EditMatchScreen() {
                         size="xs"
                         photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
                       />
-                    </View>
+                    </Pressable>
                     <View style={styles.serveOrderRow}>
                       {isServer && (match as { status?: string }).status === 'in_progress' ? <RotatingVolleyBall color="#fff" /> : null}
                     <Pressable
@@ -727,7 +739,8 @@ export default function EditMatchScreen() {
                   </View>
                   <Pressable
                     style={styles.serveSlotNameWrap}
-                    onPress={() => {
+                    onPress={() => bumpOrderNumber(pid)}
+                    onLongPress={() => {
                       if (!canEditServeSetup) return;
                       setServeOrder.mutate(
                         { id: matchId, tournamentId: id, order, servingPlayerId: pid },
@@ -826,7 +839,7 @@ export default function EditMatchScreen() {
       {/* Logo only — live clock sits under the VS headline in the scroll body */}
       <View style={styles.topBar}>
         <View style={styles.topLeftLogo} pointerEvents="none">
-          <MPMark size={44} accessibilityLabel="Matchpoint" />
+          <MPMark size={44} accessibilityLabel={t('common.appName')} />
         </View>
       </View>
 
@@ -838,7 +851,7 @@ export default function EditMatchScreen() {
       ) : null}
       <Text style={styles.vsHeadline} accessibilityRole="header">
         <Text style={[styles.vsTeamA, { color: tokens.accent }]}>{teamAName}</Text>
-        <Text style={styles.vsSep}> VS </Text>
+        <Text style={styles.vsSep}>{t('tournamentDetail.matchVsSeparator')}</Text>
         <Text style={[styles.vsTeamB, { color: tokens.accentSecondary }]}>{teamBName}</Text>
       </Text>
       <View style={styles.matchMetaTimerBlock}>
@@ -852,7 +865,7 @@ export default function EditMatchScreen() {
       </View>
       <View style={styles.setAndPhaseRow}>
         <Text style={styles.setPhaseSetText} numberOfLines={1}>
-          SET {currentSet}/{totalSets}
+          {t('tournamentDetail.matchSetProgress', { current: currentSet, total: totalSets })}
         </Text>
         {matchPhaseSuffix.mode !== 'none' ? (
           <>
@@ -888,7 +901,7 @@ export default function EditMatchScreen() {
         <View style={styles.endedLegendWrap}>
           <View style={styles.endedLegendPill}>
             <Ionicons name="checkmark" size={14} color={styles.endedLegendIcon.color as string} />
-            <Text style={styles.endedLegendText}>Game ended</Text>
+            <Text style={styles.endedLegendText}>{t('tournamentDetail.matchGameEnded')}</Text>
           </View>
         </View>
       ) : null}
@@ -964,7 +977,7 @@ export default function EditMatchScreen() {
                   onPress={(e) => onScoreHalfPress('A', e)}
                   disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
-                  accessibilityLabel="Team A score"
+                  accessibilityLabel={t('tournamentDetail.matchScoreSideA')}
                 />
               </View>
             </View>
@@ -1042,7 +1055,7 @@ export default function EditMatchScreen() {
                   onPress={(e) => onScoreHalfPress('B', e)}
                   disabled={!canEditScore || (match as { status?: string }).status !== 'in_progress'}
                   accessibilityRole="button"
-                  accessibilityLabel="Team B score"
+                  accessibilityLabel={t('tournamentDetail.matchScoreSideB')}
                 />
               </View>
             </View>
@@ -1079,6 +1092,38 @@ export default function EditMatchScreen() {
               fullWidth
             />
           ) : null}
+        </View>
+      ) : null}
+
+      {(match as { status?: string }).status === 'in_progress' && canManageTournament ? (
+        <View style={{ marginTop: 8 }}>
+          <Button
+            title={pauseMatch.isPending ? t('common.loading') : String(t('common.pause') ?? 'Pause').toUpperCase()}
+            onPress={() => {
+              if (!id || !matchId) return;
+              pauseMatch.mutate(
+                { id: matchId, tournamentId: id },
+                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+              );
+            }}
+            disabled={pauseMatch.isPending || isOffline}
+            variant="outline"
+            size="sm"
+            fullWidth
+          />
+        </View>
+      ) : null}
+
+      {(match as { status?: string }).status === 'paused' && canManageTournament ? (
+        <View style={{ marginTop: 8 }}>
+          <Button
+            title={startMatch.isPending ? t('common.loading') : String(t('common.resume') ?? 'Resume').toUpperCase()}
+            onPress={() => setStartCountdown({ seconds: 3, action: 'startMatch' })}
+            disabled={startMatch.isPending || !!startCountdown || isOffline}
+            variant="secondary"
+            size="sm"
+            fullWidth
+          />
         </View>
       ) : null}
 

@@ -254,7 +254,7 @@ function MatchBetCard({
               <TextInput
                 style={[styles.input, { borderColor: tokens.border, color: fg }]}
                 keyboardType="number-pad"
-                placeholder="A"
+                placeholder={t('tournamentDetail.bettingScorePlaceholderSideA')}
                 placeholderTextColor={fgMuted}
                 value={scoreDraft.a}
                 onChangeText={(a) => onScoreDraftChange(a, scoreDraft.b)}
@@ -263,7 +263,7 @@ function MatchBetCard({
               <TextInput
                 style={[styles.input, { borderColor: tokens.border, color: fg }]}
                 keyboardType="number-pad"
-                placeholder="B"
+                placeholder={t('tournamentDetail.bettingScorePlaceholderSideB')}
                 placeholderTextColor={fgMuted}
                 value={scoreDraft.b}
                 onChangeText={(b) => onScoreDraftChange(scoreDraft.a, b)}

@@ -11,7 +11,7 @@ export type FixtureCategoryMatchRow = {
   pointsA: number;
   pointsB: number;
   winnerId: string;
-  status?: 'scheduled' | 'in_progress' | 'completed';
+  status?: 'scheduled' | 'in_progress' | 'paused' | 'completed';
   bracketRound?: number;
   isBronzeMatch?: boolean;
   orderIndex?: number;

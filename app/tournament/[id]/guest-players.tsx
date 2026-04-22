@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,24 +8,28 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
+import { GuestPlayerCard } from '@/components/tournament/detail/GuestPlayerCard';
 import { useTournament } from '@/lib/hooks/useTournaments';
 import { tournamentsApi } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 import { useTranslation } from '@/lib/i18n';
 import { alertApiError } from '@/lib/utils/apiError';
 import { shouldUseDevMocks } from '@/lib/config';
-import type { Gender, TournamentGuestPlayer } from '@/types';
+import type { Gender, Tournament, TournamentGuestPlayer } from '@/types';
+
+type GuestActionBody = Record<string, unknown> & { action?: string };
+type GuestMutationContext = { previous?: Tournament; optimisticGuestId?: string };
 
 export default function TournamentGuestPlayersScreen() {
   const { t } = useTranslation();
   const { id, guestId } = useLocalSearchParams<{ id: string; guestId?: string }>();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const user = useUserStore((s) => s.user);
@@ -36,6 +40,18 @@ export default function TournamentGuestPlayersScreen() {
     !!tournament && !!userId && ((tournament.organizerIds ?? []).includes(userId) || user?.role === 'admin');
 
   const guests = tournament?.guestPlayers ?? [];
+  const sortedGuests = useMemo(
+    () =>
+      [...guests].sort((a, b) => {
+        const an = String(a?.displayName ?? '').trim().toLowerCase();
+        const bn = String(b?.displayName ?? '').trim().toLowerCase();
+        if (an !== bn) return an < bn ? -1 : 1;
+        const ai = String(a?._id ?? '');
+        const bi = String(b?._id ?? '');
+        return ai < bi ? -1 : ai > bi ? 1 : 0;
+      }),
+    [guests]
+  );
 
   const [displayName, setDisplayName] = useState('');
   const [gender, setGender] = useState<Gender>('male');
@@ -46,9 +62,57 @@ export default function TournamentGuestPlayersScreen() {
   const [editGender, setEditGender] = useState<Gender>('male');
   const [editNote, setEditNote] = useState('');
 
-  const guestMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) => tournamentsApi.action(id!, body) as Promise<unknown>,
-    onSuccess: () => {
+  const autoOpenedEditRef = useRef(false);
+
+  const guestMutation = useMutation<unknown, unknown, GuestActionBody, GuestMutationContext>({
+    mutationFn: (body) => tournamentsApi.action(id!, body) as Promise<unknown>,
+    onMutate: async (body) => {
+      if (!id || body.action !== 'createGuestPlayer') return {};
+      const displayName = String(body.displayName ?? '').trim();
+      const gender = body.gender === 'female' ? 'female' : 'male';
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      if (!displayName) return {};
+
+      await queryClient.cancelQueries({ queryKey: ['tournament', id] });
+      const previous = queryClient.getQueryData<Tournament>(['tournament', id]);
+      const optimisticGuestId = `optimistic-guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const now = new Date().toISOString();
+      const optimisticGuest: TournamentGuestPlayer = {
+        _id: optimisticGuestId,
+        tournamentId: id,
+        displayName,
+        gender,
+        ...(note ? { note } : {}),
+        createdBy: userId ?? '',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      queryClient.setQueryData<Tournament>(['tournament', id], (old) => {
+        if (!old) return old;
+        return { ...old, guestPlayers: [...(old.guestPlayers ?? []), optimisticGuest] };
+      });
+
+      return { previous, optimisticGuestId };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previous !== undefined && id) {
+        queryClient.setQueryData(['tournament', id], context.previous);
+      }
+      alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
+    },
+    onSuccess: (data, variables, context) => {
+      if (!id) return;
+      if (variables.action === 'createGuestPlayer' && context?.optimisticGuestId && data && typeof data === 'object') {
+        const real = data as TournamentGuestPlayer;
+        queryClient.setQueryData<Tournament>(['tournament', id], (old) => {
+          if (!old) return old;
+          const list = old.guestPlayers ?? [];
+          const next = list.map((g) => (g._id === context.optimisticGuestId ? real : g));
+          return { ...old, guestPlayers: next };
+        });
+        return;
+      }
       void queryClient.invalidateQueries({ queryKey: ['tournament', id] });
       void queryClient.invalidateQueries({ queryKey: ['teams'] });
       void queryClient.invalidateQueries({ queryKey: ['entries'] });
@@ -59,8 +123,12 @@ export default function TournamentGuestPlayersScreen() {
     if (!canManage) return;
     const gid = String(guestId ?? '').trim();
     if (!gid) return;
+    if (autoOpenedEditRef.current) return;
     const target = guests.find((g) => String(g?._id ?? '') === gid);
-    if (target) openEditGuest(target);
+    if (target) {
+      autoOpenedEditRef.current = true;
+      openEditGuest(target);
+    }
   }, [guestId, guests, canManage]);
 
   const handleCreate = () => {
@@ -73,7 +141,6 @@ export default function TournamentGuestPlayersScreen() {
           setDisplayName('');
           setNote('');
         },
-        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
       }
     );
   };
@@ -102,13 +169,27 @@ export default function TournamentGuestPlayersScreen() {
         note: editNote.trim(),
       },
       {
-        onSuccess: () => closeEditGuest(),
-        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+        onSuccess: () => {
+          closeEditGuest();
+          if (String(guestId ?? '').trim()) {
+            router.back();
+          }
+        },
       }
     );
   };
 
-  // Guest delete is available from the Players tab (only when not in a team).
+  const confirmDeleteGuest = (g: TournamentGuestPlayer) => {
+    Alert.alert(t('tournamentDetail.guestDeleteTitle'), t('tournamentDetail.guestDeleteConfirm', { name: g.displayName }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () =>
+          guestMutation.mutate({ action: 'deleteGuestPlayer', guestId: g._id }),
+      },
+    ]);
+  };
 
   if (!id) {
     return (
@@ -154,62 +235,19 @@ export default function TournamentGuestPlayersScreen() {
   return (
     <>
       <Stack.Screen options={{ title: t('tournamentDetail.guestPlayersTitle') }} />
-      <Modal visible={!!editingGuest} animationType="fade" transparent onRequestClose={closeEditGuest}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={closeEditGuest} accessibilityRole="button" />
-          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
-            <Text style={styles.modalTitle}>{t('tournamentDetail.guestEditTitle')}</Text>
-            <Text style={styles.label}>{t('tournamentDetail.guestDisplayName')}</Text>
-            <TextInput
-              style={styles.input}
-              value={editDisplayName}
-              onChangeText={setEditDisplayName}
-              placeholder={t('tournamentDetail.guestDisplayNamePlaceholder')}
-              placeholderTextColor={Colors.textMuted}
-            />
-            <Text style={styles.label}>{t('profile.gender')}</Text>
-            <View style={styles.genderRow}>
-              {(['male', 'female'] as const).map((g) => (
-                <Pressable
-                  key={g}
-                  onPress={() => setEditGender(g)}
-                  style={[styles.genderChip, editGender === g && styles.genderChipOn]}
-                >
-                  <Text style={[styles.genderChipText, editGender === g && styles.genderChipTextOn]}>
-                    {g === 'male' ? t('profile.genderMale') : t('profile.genderFemale')}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={styles.label}>{t('tournamentDetail.guestNoteOptional')}</Text>
-            <TextInput
-              style={[styles.input, styles.inputMultiline]}
-              value={editNote}
-              onChangeText={setEditNote}
-              placeholder={t('tournamentDetail.guestNotePlaceholder')}
-              placeholderTextColor={Colors.textMuted}
-              multiline
-            />
-            <View style={styles.modalActions}>
-              <Button title={t('common.cancel')} variant="secondary" onPress={closeEditGuest} disabled={guestMutation.isPending} />
-              <Button title={t('common.save')} onPress={handleSaveEdit} disabled={guestMutation.isPending} />
-            </View>
-          </View>
-        </View>
-      </Modal>
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 24 + insets.bottom, paddingHorizontal: 16 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.hint}>{t('tournamentDetail.guestPlayersHint')}</Text>
-
-        <Text style={styles.section}>{t('tournamentDetail.guestPlayersAdd')}</Text>
+        <Text style={styles.section}>
+          {editingGuest ? t('tournamentDetail.guestEditTitle') : t('tournamentDetail.guestPlayersAdd')}
+        </Text>
         <Text style={styles.label}>{t('tournamentDetail.guestDisplayName')}</Text>
         <TextInput
           style={styles.input}
-          value={displayName}
-          onChangeText={setDisplayName}
+          value={editingGuest ? editDisplayName : displayName}
+          onChangeText={editingGuest ? setEditDisplayName : setDisplayName}
           placeholder={t('tournamentDetail.guestDisplayNamePlaceholder')}
           placeholderTextColor={Colors.textMuted}
         />
@@ -218,10 +256,18 @@ export default function TournamentGuestPlayersScreen() {
           {(['male', 'female'] as const).map((g) => (
             <Pressable
               key={g}
-              onPress={() => setGender(g)}
-              style={[styles.genderChip, gender === g && styles.genderChipOn]}
+              onPress={() => (editingGuest ? setEditGender(g) : setGender(g))}
+              style={[
+                styles.genderChip,
+                (editingGuest ? editGender : gender) === g && styles.genderChipOn,
+              ]}
             >
-              <Text style={[styles.genderChipText, gender === g && styles.genderChipTextOn]}>
+              <Text
+                style={[
+                  styles.genderChipText,
+                  (editingGuest ? editGender : gender) === g && styles.genderChipTextOn,
+                ]}
+              >
                 {g === 'male' ? t('profile.genderMale') : t('profile.genderFemale')}
               </Text>
             </Pressable>
@@ -230,19 +276,80 @@ export default function TournamentGuestPlayersScreen() {
         <Text style={styles.label}>{t('tournamentDetail.guestNoteOptional')}</Text>
         <TextInput
           style={[styles.input, styles.inputMultiline]}
-          value={note}
-          onChangeText={setNote}
+          value={editingGuest ? editNote : note}
+          onChangeText={editingGuest ? setEditNote : setNote}
           placeholder={t('tournamentDetail.guestNotePlaceholder')}
           placeholderTextColor={Colors.textMuted}
           multiline
         />
         <View style={{ marginTop: 14 }}>
-          <Button
-            title={t('tournamentDetail.guestPlayersAddButton')}
-            onPress={handleCreate}
-            disabled={guestMutation.isPending}
-            fullWidth
-          />
+          {editingGuest ? (
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+              <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                <Button
+                  title={t('common.cancel')}
+                  variant="secondary"
+                  onPress={() => {
+                    closeEditGuest();
+                    if (String(guestId ?? '').trim()) router.back();
+                  }}
+                  disabled={guestMutation.isPending}
+                  fullWidth
+                />
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                <Button
+                  title={t('common.save')}
+                  onPress={handleSaveEdit}
+                  disabled={guestMutation.isPending}
+                  fullWidth
+                />
+              </View>
+            </View>
+          ) : (
+            <Button
+              title={t('tournamentDetail.guestPlayersAddButton')}
+              onPress={handleCreate}
+              disabled={guestMutation.isPending}
+              fullWidth
+            />
+          )}
+        </View>
+
+        <View style={styles.guestListBlock}>
+          <Text style={styles.guestListTitle}>
+            {t('tournamentDetail.tabPlayers')} ({sortedGuests.length})
+          </Text>
+          {sortedGuests.length === 0 ? (
+            <Text style={styles.muted}>{t('common.noResults')}</Text>
+          ) : (
+            <View style={styles.guestList}>
+              {sortedGuests.map((g) => {
+                const gid = String(g._id ?? '').trim();
+                const isEditing = !!(editingGuest && String(editingGuest._id ?? '') === gid);
+                return (
+                  <Pressable
+                    key={gid}
+                    onPress={() => {
+                      if (!gid) return;
+                      router.push(`/tournament/${id}/guest-players?guestId=${gid}` as never);
+                    }}
+                    style={isEditing ? styles.guestRowActive : null}
+                    accessibilityRole="button"
+                  >
+                    <GuestPlayerCard
+                      guest={g}
+                      t={t}
+                      onEdit={() => router.push(`/tournament/${id}/guest-players?guestId=${gid}` as never)}
+                      onDelete={() => confirmDeleteGuest(g)}
+                      disabled={guestMutation.isPending}
+                      compact
+                    />
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
     </>
@@ -252,7 +359,6 @@ export default function TournamentGuestPlayersScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background },
-  hint: { fontSize: 13, color: Colors.textMuted, marginTop: 12, marginBottom: 8 },
   section: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 8 },
   label: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, marginBottom: 6, marginTop: 8 },
   input: {
@@ -273,40 +379,9 @@ const styles = StyleSheet.create({
   genderChipOn: { backgroundColor: Colors.surfaceLight },
   genderChipText: { fontSize: 14, color: Colors.textMuted, fontWeight: '600' },
   genderChipTextOn: { color: Colors.text },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    marginBottom: 8,
-  },
-  rowTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  rowMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 20,
-    maxWidth: 440,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 12 },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 20,
-    flexWrap: 'wrap',
-  },
   muted: { color: Colors.textMuted, textAlign: 'center' },
+  guestListBlock: { marginTop: 16, gap: 8, paddingBottom: 8 },
+  guestListTitle: { fontSize: 13, fontWeight: '800', color: Colors.textSecondary },
+  guestList: { gap: 10 },
+  guestRowActive: { borderWidth: 1, borderColor: Colors.surfaceLight, borderRadius: 14 },
 });

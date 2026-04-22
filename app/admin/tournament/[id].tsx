@@ -62,6 +62,7 @@ function sameStringSet(a: string[], b: string[]): boolean {
 function formFieldsMatchServer(
   t: Tournament,
   name: string,
+  divisionDates: Partial<Record<TournamentDivision, { startDate: string; endDate: string }>>,
   location: string,
   maxTeamsStr: string,
   pointsToWinStr: string,
@@ -80,8 +81,23 @@ function formFieldsMatchServer(
   const serverCategories = (t.categories ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
   const localCategories = presetToCategories(categoryPreset);
   const serverPrivate = (t.visibility ?? 'public') === 'private';
+
+  // Dates are edited via divisionDates; startDate/endDate/date are derived server-side.
+  // Consider the form "matching" only when the per-division ranges match for enabled divisions.
+  const serverDivDates = ((t as unknown as { divisionDates?: unknown }).divisionDates ?? {}) as Partial<
+    Record<TournamentDivision, { startDate?: unknown; endDate?: unknown }>
+  >;
+  const divisionsEff = (serverDivisions.length ? serverDivisions : (['mixed'] as TournamentDivision[])).filter(Boolean);
+  const divisionDatesMatch = divisionsEff.every((div) => {
+    const s = String(serverDivDates?.[div]?.startDate ?? '').trim();
+    const e = String(serverDivDates?.[div]?.endDate ?? '').trim();
+    const ls = String(divisionDates?.[div]?.startDate ?? '').trim();
+    const le = String(divisionDates?.[div]?.endDate ?? '').trim();
+    return !!ls && !!le && ls === s && le === e;
+  });
   return (
     (t.name ?? '') === name.trim() &&
+    divisionDatesMatch &&
     (t.location ?? '') === location.trim() &&
     (t.maxTeams ?? 16) === max &&
     (t.pointsToWin ?? 21) === p2w &&
@@ -97,6 +113,7 @@ function formFieldsMatchServer(
 function serverMatchesForm(
   t: Tournament,
   name: string,
+  divisionDates: Partial<Record<TournamentDivision, { startDate: string; endDate: string }>>,
   location: string,
   maxTeamsStr: string,
   pointsToWinStr: string,
@@ -112,6 +129,7 @@ function serverMatchesForm(
     formFieldsMatchServer(
       t,
       name,
+      divisionDates,
       location,
       maxTeamsStr,
       pointsToWinStr,
@@ -225,11 +243,29 @@ export default function AdminEditTournamentScreen() {
       const categoryPresetEff = overrides?.categoryPreset ?? categoryPreset;
       const serverCancelled = tournament.status === 'cancelled';
 
+      /**
+       * Cancel must always work (even when other fields are dirty/invalid, or tournament already started).
+       * Reopen is allowed only if server is currently cancelled (enforced server-side too).
+       */
+      if (overrides?.cancelled !== undefined && cancelledEff !== serverCancelled) {
+        const payload: Record<string, unknown> = {
+          id,
+          status: cancelledEff ? 'cancelled' : 'open',
+        };
+        setSaving(true);
+        updateTournament.mutate(payload as { id: string } & Record<string, unknown>, {
+          onSettled: () => setSaving(false),
+          onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.failedToLoad'),
+        });
+        return;
+      }
+
       /** Cancel/reopen must work even when max/group fail client validation (legacy DB data). */
       const onlyStatusChange =
         formFieldsMatchServer(
           tournament,
           name,
+          divisionDates,
           location,
           maxTeams,
           pointsToWin,
@@ -271,6 +307,7 @@ export default function AdminEditTournamentScreen() {
         serverMatchesForm(
           tournament,
           name,
+          divisionDates,
           location,
           maxTeams,
           pointsToWin,
@@ -287,12 +324,14 @@ export default function AdminEditTournamentScreen() {
       }
 
       const categories = presetToCategories(categoryPresetEff);
+      const serverDivisions = ((tournament.divisions ?? ['mixed']) as TournamentDivision[]).filter(Boolean);
+      const divisionsPayloadChanged = !sameStringSet(serverDivisions, divisionsEff);
       const payload: Record<string, unknown> = {
         id,
         name: name.trim(),
         divisionDates,
         location: location.trim(),
-        divisions: divisionsEff,
+        ...(divisionsPayloadChanged ? { divisions: divisionsEff } : {}),
         categories,
         maxTeams: max,
         pointsToWin: p2w,
@@ -712,12 +751,14 @@ export default function AdminEditTournamentScreen() {
             onLocationCommitted={scheduleSave}
             placeholder={t('tournaments.locationPlaceholder')}
             inputStyle={styles.input}
+            showDevMapsKeyHint={false}
           />
         </View>
 
         <MaxTeamsSelect
           label={`${t('tournaments.maxTeams')}${t('common.requiredSuffix')}`}
           value={maxTeams}
+          disabled={tournamentStarted}
           onChange={(v) => {
             setMaxTeams(v);
             scheduleSave();
@@ -729,6 +770,7 @@ export default function AdminEditTournamentScreen() {
             label={`${t('tournaments.groupCount')}${t('common.requiredSuffix')}`}
             maxTeams={maxTeamsForSelect}
             value={groupCount}
+            disabled={tournamentStarted}
             onChange={(v) => {
               setGroupCount(v);
               scheduleSave();
@@ -753,6 +795,7 @@ export default function AdminEditTournamentScreen() {
               onBlur={flushSave}
               placeholder={t('tournaments.pointsToWinPlaceholder')}
               placeholderTextColor={Colors.textMuted}
+              editable={!tournamentStarted}
             />
           </View>
           <View style={styles.dateFieldHalf}>
@@ -771,6 +814,7 @@ export default function AdminEditTournamentScreen() {
               onBlur={flushSave}
               placeholder={t('tournaments.setsPerMatchPlaceholder')}
               placeholderTextColor={Colors.textMuted}
+              editable={!tournamentStarted}
             />
           </View>
         </View>

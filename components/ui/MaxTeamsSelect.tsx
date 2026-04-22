@@ -29,9 +29,10 @@ type MaxTeamsSelectProps = {
   label?: string;
   value: string;
   onChange: (maxTeams: string) => void;
+  disabled?: boolean;
 };
 
-export function MaxTeamsSelect({ label, value, onChange }: MaxTeamsSelectProps) {
+export function MaxTeamsSelect({ label, value, onChange, disabled }: MaxTeamsSelectProps) {
   const { t } = useTranslation();
   const { tokens } = useTheme();
   const [open, setOpen] = useState(false);
@@ -107,8 +108,9 @@ export function MaxTeamsSelect({ label, value, onChange }: MaxTeamsSelectProps) 
     <View style={styles.field}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <Pressable
-        style={styles.input}
-        onPress={() => setOpen(true)}
+        style={[styles.input, disabled ? styles.inputDisabled : null]}
+        onPress={() => !disabled && setOpen(true)}
+        disabled={!!disabled}
         accessibilityRole="button"
         accessibilityLabel={label}
       >
@@ -158,6 +160,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
   },
+  inputDisabled: { opacity: 0.65 },
   inputText: { flex: 1, fontSize: 16, color: Colors.text },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: {

@@ -60,10 +60,10 @@ export default function SplashScreen() {
     <View style={styles.container}>
       <Animated.View style={{ opacity, transform: [{ translateY }] }}>
         <View style={styles.wordmarkRow}>
-          <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>MATCH</Text>
-          <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>POINT</Text>
+          <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>{t('auth.brandWordMatch')}</Text>
+          <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>{t('auth.brandWordPoint')}</Text>
         </View>
-        <Text style={styles.slogan}>Play it as it is.</Text>
+        <Text style={styles.slogan}>{t('auth.brandTagline')}</Text>
       </Animated.View>
       <Text style={styles.copyright}>{t('footer.copyright')}</Text>
     </View>

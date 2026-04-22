@@ -17,6 +17,8 @@ export type TournamentLocationFieldProps = {
   onLocationCommitted?: () => void;
   placeholder: string;
   inputStyle?: TextStyle;
+  /** Dev-only hint about `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` (default true). */
+  showDevMapsKeyHint?: boolean;
 };
 
 export function TournamentLocationField({
@@ -26,6 +28,7 @@ export function TournamentLocationField({
   onLocationCommitted,
   placeholder,
   inputStyle,
+  showDevMapsKeyHint = true,
 }: TournamentLocationFieldProps) {
   const { t } = useTranslation();
   const [geoLoading, setGeoLoading] = useState(false);
@@ -104,7 +107,10 @@ export function TournamentLocationField({
         </View>
       ) : null}
 
-      {typeof __DEV__ !== 'undefined' && __DEV__ && !config.google.mapsConfigured ? (
+      {showDevMapsKeyHint &&
+      typeof __DEV__ !== 'undefined' &&
+      __DEV__ &&
+      !config.google.mapsConfigured ? (
         <Text style={styles.hint}>{t('tournaments.mapsApiKeyHint')}</Text>
       ) : null}
     </View>

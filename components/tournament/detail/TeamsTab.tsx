@@ -19,6 +19,7 @@ export function TeamsTab({
   emptyTextStyle,
   teamsTabCreateRowStyle,
   teamCardStyle,
+  footerContent,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   canCreateTeam: boolean;
@@ -31,6 +32,8 @@ export function TeamsTab({
   emptyTextStyle: unknown;
   teamsTabCreateRowStyle: unknown;
   teamCardStyle: unknown;
+  /** Rendered below the team list (e.g. team-slot waitlist when tournament is full). */
+  footerContent?: React.ReactNode;
 }) {
   const { tokens } = useTheme();
   return (
@@ -128,6 +131,7 @@ export function TeamsTab({
           renderItem={({ item }) => renderTeam(item) as never}
         />
       )}
+      {footerContent}
     </>
   );
 }

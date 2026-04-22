@@ -221,6 +221,35 @@ export function useStartMatch() {
   });
 }
 
+export function usePauseMatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
+      tournamentsApi.action(tournamentId, { action: 'pauseMatch', matchId: id }) as Promise<Match>,
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['matches'] });
+      const snapshots = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
+      const nowIso = new Date().toISOString();
+      for (const [key, prev] of snapshots) {
+        if (!prev) continue;
+        queryClient.setQueryData<Match[]>(
+          key,
+          prev.map((m) => (m._id === vars.id ? ({ ...m, status: 'paused', pausedAt: nowIso, updatedAt: nowIso } as Match) : m))
+        );
+      }
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      for (const [key, data] of (ctx as any)?.snapshots ?? []) {
+        queryClient.setQueryData(key, data);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+}
+
 export function useRefereePoint() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -10,6 +10,7 @@ import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { MaxTeamsSelect } from '@/components/ui/MaxTeamsSelect';
 import { useTheme } from '@/lib/theme/useTheme';
 import { useCreateTournament } from '@/lib/hooks/useTournaments';
+import { useJoinWaitlist } from '@/lib/hooks/useWaitlist';
 import { useUserStore } from '@/store/useUserStore';
 import type { TournamentCategory, TournamentDivision } from '@/types';
 import {
@@ -46,6 +47,7 @@ export default function CreateTournamentScreen() {
   const router = useRouter();
   const userId = useUserStore((s) => s.user?._id ?? null);
   const createTournament = useCreateTournament();
+  const joinWaitlist = useJoinWaitlist();
 
   const [name, setName] = useState('');
   const [divisionDates, setDivisionDates] = useState<
@@ -192,7 +194,8 @@ export default function CreateTournamentScreen() {
         }
         raw[k] = n;
       }
-      clsPayload.categoryFractions = Object.keys(raw).length ? raw : null;
+      // API schema expects the field to be omitted when empty (null is rejected).
+      if (Object.keys(raw).length) clsPayload.categoryFractions = raw;
       clsPayload.categoryPhaseFormat = 'single_elim';
     } else {
       const f = Number(clsAdvance);
@@ -201,7 +204,7 @@ export default function CreateTournamentScreen() {
         return;
       }
       clsPayload.singleCategoryAdvanceFraction = Math.round(f * 1000) / 1000;
-      clsPayload.categoryFractions = null;
+      // Keep categoryFractions undefined for single-category tournaments.
     }
 
     const inviteToken = generateInviteToken();
@@ -224,6 +227,32 @@ export default function CreateTournamentScreen() {
       },
       {
         onSuccess: (data) => {
+          // Creator should be a player by default (join waiting list immediately).
+          // This does not form a team; it just makes the creator appear as a player in the tournament.
+          const tid = String((data as { _id?: unknown })._id ?? '').trim();
+          if (tid && userId) {
+            const divs = (divisions.length ? divisions : (['mixed'] as TournamentDivision[])) as TournamentDivision[];
+            const runNext = (idx: number) => {
+              if (idx >= divs.length) {
+                router.replace(`/tournament/${data._id}`);
+                return;
+              }
+              const div = divs[idx]!;
+              joinWaitlist.mutate(
+                { tournamentId: tid, division: div, userId },
+                {
+                  onSuccess: () => runNext(idx + 1),
+                  onError: (err: unknown) => {
+                    alertApiError(t, err, 'tournamentDetail.joinFailed');
+                    // Still navigate: tournament exists; user can fix profile/join manually.
+                    router.replace(`/tournament/${data._id}`);
+                  },
+                }
+              );
+            };
+            runNext(0);
+            return;
+          }
           router.replace(`/tournament/${data._id}`);
         },
         onError: (err: unknown) => alertApiError(t, err, 'tournaments.failedToCreate'),

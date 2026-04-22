@@ -11,7 +11,7 @@ import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
 
 type PlayerRow =
-  | { kind: 'section'; sectionId: 'withTeam' | 'noTeamYet' | 'waitlist' }
+  | { kind: 'section'; sectionId: 'withTeam' | 'noTeamYet' }
   | { kind: 'roster'; entry: Entry }
   | { kind: 'waitlist'; userId: string }
   | { kind: 'guest'; guest: TournamentGuestPlayer };
@@ -102,7 +102,7 @@ export function PlayersTab({
   orgBadgeStyle,
   playerRowRightStyle,
   waitlistBadgeStyle: _waitlistBadgeStyle,
-  waitlistRankTextStyle,
+  waitlistRankTextStyle: _waitlistRankTextStyle,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   sortedEntries: Entry[];
@@ -196,28 +196,44 @@ export function PlayersTab({
     [guestPlayers, guestIdsInRoster]
   );
 
+  /** Waitlist users who are not already represented by a roster row (no-team entry) or on a team. */
+  const waitlistOnlyUserIds = useMemo(() => {
+    const wl = waitlistUserIds ?? [];
+    const entriesNoTeam = sortedEntries.filter((e) => !e.teamId);
+    const userIdsWithNoTeamEntry = new Set(
+      entriesNoTeam
+        .map((e) => e.userId)
+        .filter((uid): uid is string => typeof uid === 'string' && uid.length > 0)
+    );
+    return wl.filter((id) => !userIdsWithNoTeamEntry.has(id) && !userIdsInTeam.has(id));
+  }, [sortedEntries, waitlistUserIds, userIdsInTeam]);
+
   const listData = useMemo<PlayerRow[]>(() => {
-    const wlIds = waitlistUserIds ?? [];
     const withTeam = [...sortedEntries.filter((e) => !!e.teamId)].sort((a, b) =>
       compareEntry(a, b, userMap, guestMap)
     );
     const entriesNoTeam = [...sortedEntries.filter((e) => !e.teamId)];
     const guestsNoTeam = [...guestsNotInRoster];
+    const waitSorted = [...waitlistOnlyUserIds].sort((a, b) => comparePlayerName(userMap, a, b));
     const noTeamYet: PlayerRow[] = [
       ...entriesNoTeam.map((entry) => ({ kind: 'roster' as const, entry })),
       ...guestsNoTeam.map((guest) => ({ kind: 'guest' as const, guest })),
+      ...waitSorted.map((userId) => ({ kind: 'waitlist' as const, userId })),
     ].sort((a, b) => {
-      const na =
+      const nameA =
         a.kind === 'roster'
           ? entryDisplayName(a.entry, userMap, guestMap)
-          : (a.guest.displayName ?? '').trim() || tournamentGuestDisplayName(a.guest) || '';
-      const nb =
+          : a.kind === 'guest'
+            ? (a.guest.displayName ?? '').trim() || tournamentGuestDisplayName(a.guest) || ''
+            : getTournamentPlayerDisplayName(userMap[a.userId]) || '';
+      const nameB =
         b.kind === 'roster'
           ? entryDisplayName(b.entry, userMap, guestMap)
-          : (b.guest.displayName ?? '').trim() || tournamentGuestDisplayName(b.guest) || '';
-      return na.toLowerCase().localeCompare(nb.toLowerCase(), undefined, { sensitivity: 'base' });
+          : b.kind === 'guest'
+            ? (b.guest.displayName ?? '').trim() || tournamentGuestDisplayName(b.guest) || ''
+            : getTournamentPlayerDisplayName(userMap[b.userId]) || '';
+      return nameA.toLowerCase().localeCompare(nameB.toLowerCase(), undefined, { sensitivity: 'base' });
     });
-    const waitSorted = [...wlIds].sort((a, b) => comparePlayerName(userMap, a, b));
 
     const out: PlayerRow[] = [];
     if (withTeam.length) {
@@ -228,12 +244,8 @@ export function PlayersTab({
       out.push({ kind: 'section', sectionId: 'noTeamYet' });
       for (const row of noTeamYet) out.push(row);
     }
-    if (waitSorted.length) {
-      out.push({ kind: 'section', sectionId: 'waitlist' });
-      for (const userId of waitSorted) out.push({ kind: 'waitlist', userId });
-    }
     return out;
-  }, [sortedEntries, waitlistUserIds, userMap, guestMap, guestsNotInRoster]);
+  }, [sortedEntries, userMap, guestMap, guestsNotInRoster, waitlistOnlyUserIds]);
 
   const rightClusterStyle = [playerRowRightStyle as never, { gap: 8, alignItems: 'center' } as never];
   const rightSlotStyle = { width: 34, alignItems: 'center', justifyContent: 'center' } as const;
@@ -307,20 +319,16 @@ export function PlayersTab({
     );
   }
 
-  const sectionTitle = (sectionId: 'withTeam' | 'noTeamYet' | 'waitlist'): string => {
+  const sectionTitle = (sectionId: 'withTeam' | 'noTeamYet'): string => {
     if (sectionId === 'withTeam') {
       const withTeamCount = sortedEntries.filter((e) => !!e.teamId).length;
       const cap = Number.isFinite(Number(playersPerDivisionCap)) ? Math.max(0, Number(playersPerDivisionCap)) : null;
       return cap != null ? `${t('tournamentDetail.playersGroupWithTeam')} ${withTeamCount}/${cap}` : t('tournamentDetail.playersGroupWithTeam');
     }
-    if (sectionId === 'noTeamYet') {
-      const entriesNoTeamCount = sortedEntries.filter((e) => !e.teamId).length;
-      const guestsNoTeamCount = guestsNotInRoster.length;
-      const total = entriesNoTeamCount + guestsNoTeamCount;
-      return `${t('tournamentDetail.playersGroupNoTeamYet')} (${total})`;
-    }
-    const wlTotal = (waitlistUserIds ?? []).length;
-    return `${t('tournamentDetail.tabWaitingList')} (${wlTotal})`;
+    const entriesNoTeamCount = sortedEntries.filter((e) => !e.teamId).length;
+    const guestsNoTeamCount = guestsNotInRoster.length;
+    const total = entriesNoTeamCount + guestsNoTeamCount + waitlistOnlyUserIds.length;
+    return `${t('tournamentDetail.playersGroupNoTeamYet')} (${total})`;
   };
 
   return (
@@ -358,71 +366,64 @@ export function PlayersTab({
             !!onInviteWaitlistUser && viewerOnWaitlist && !!currentUserId && row.userId !== currentUserId;
           const canCreateTeamWith =
             showInvite &&
-            canPairInDivision(currentDivision, viewerGender, (u as any)?.gender) &&
+            canPairInDivision(currentDivision, viewerGender, (u as { gender?: unknown })?.gender) &&
             !userIdsInTeam.has(row.userId) &&
             !userIdsInTeam.has(currentUserId!);
           return (
-            <View
-              style={[
-                playerRowStyle as never,
-                isOrg ? (playerRowOrganizerStyle as never) : null,
-                { flexDirection: 'row', alignItems: 'center' } as never,
-              ]}
-            >
-              <Pressable
-                style={[playerRowMainStyle as never, { flex: 1 } as never]}
-                onPress={() => onOpenProfile(row.userId)}
-                accessibilityRole="button"
-                accessibilityLabel={t('profile.viewProfile')}
-              >
-                <Avatar
-                  firstName={u?.firstName ?? ''}
-                  lastName={u?.lastName ?? ''}
-                  gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
-                  size="sm"
-                  photoUrl={u?.photoUrl}
-                />
-                <View style={playerRowTextStyle as never}>
-                  <Text style={playerRowNameStyle as never}>{playerName}</Text>
-                  {isOrg ? <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text> : null}
-                  {isOrganizeOnly ? (
-                    <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerOrganizeOnlyBadge')}</Text>
+            <View style={[playerRowStyle as never, isOrg ? (playerRowOrganizerStyle as never) : null]}>
+              <View style={playerRowTopStyle as never}>
+                <Pressable
+                  style={playerRowMainStyle as never}
+                  onPress={() => onOpenProfile(row.userId)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.viewProfile')}
+                >
+                  <Avatar
+                    firstName={u?.firstName ?? ''}
+                    lastName={u?.lastName ?? ''}
+                    gender={u?.gender === 'male' || u?.gender === 'female' ? u.gender : undefined}
+                    size="sm"
+                    photoUrl={u?.photoUrl}
+                  />
+                  <View style={playerRowTextStyle as never}>
+                    <Text style={playerRowNameStyle as never}>{playerName}</Text>
+                    {isOrg ? <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text> : null}
+                    {isOrganizeOnly ? (
+                      <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerOrganizeOnlyBadge')}</Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+                <View style={rightClusterStyle}>
+                  <View style={rightSlotStyle}>
+                    <MatchStyleStatusPill>
+                      <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+                    </MatchStyleStatusPill>
+                  </View>
+                  {showInvite && canCreateTeamWith ? (
+                    <View style={rightSlotStyle}>
+                      <IconButton
+                        icon="add"
+                        onPress={() => onInviteWaitlistUser!(row.userId)}
+                        disabled={!!invitePartnerPending}
+                        accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}
+                        color={tokens.accentHover}
+                        compact
+                      />
+                    </View>
+                  ) : null}
+                  {canManageTournament && onRemoveWaitlistPlayer ? (
+                    <View style={rightSlotStyle}>
+                      <IconButton
+                        icon="trash-outline"
+                        onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
+                        disabled={mutationBusy}
+                        accessibilityLabel={t('tournamentDetail.removeFromWaitlist')}
+                        color="#f87171"
+                        compact
+                      />
+                    </View>
                   ) : null}
                 </View>
-              </Pressable>
-              <View style={rightClusterStyle}>
-                <Text
-                  style={[
-                    waitlistRankTextStyle as never,
-                    { marginTop: 0, fontWeight: '800', letterSpacing: 0.5 } as never,
-                  ]}
-                >
-                  WL
-                </Text>
-                {showInvite && canCreateTeamWith ? (
-                  <View style={rightSlotStyle}>
-                    <IconButton
-                      icon="add"
-                      onPress={() => onInviteWaitlistUser!(row.userId)}
-                      disabled={!!invitePartnerPending}
-                      accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}
-                      color={tokens.accentHover}
-                      compact
-                    />
-                  </View>
-                ) : null}
-                {canManageTournament && onRemoveWaitlistPlayer ? (
-                  <View style={rightSlotStyle}>
-                    <IconButton
-                      icon="trash-outline"
-                      onPress={() => onRemoveWaitlistPlayer(row.userId, playerName)}
-                      disabled={mutationBusy}
-                      accessibilityLabel={t('tournamentDetail.removeFromWaitlist')}
-                      color="#f87171"
-                      compact
-                    />
-                  </View>
-                ) : null}
               </View>
             </View>
           );
@@ -430,8 +431,10 @@ export function PlayersTab({
 
         if (row.kind === 'guest') {
           const g = row.guest;
-          const playerName = tournamentGuestDisplayName(g) || t('common.player');
+          const playerName = String(g?.displayName ?? '').trim() || tournamentGuestDisplayName(g) || t('common.player');
           const guestGender = g.gender === 'male' || g.gender === 'female' ? g.gender : undefined;
+          const showGuestTrash = canManageTournament && !!onDeleteGuestPlayer;
+          const showGuestEdit = canManageTournament && !!onEditGuestPlayer;
           return (
             <View style={playerRowStyle as never}>
               <View style={playerRowTopStyle as never}>
@@ -439,6 +442,11 @@ export function PlayersTab({
                   <Avatar firstName={playerName} lastName="" gender={guestGender} size="sm" />
                   <View style={playerRowTextStyle as never}>
                     <Text style={playerRowNameStyle as never}>{playerName}</Text>
+                    {typeof g.note === 'string' && g.note.trim() ? (
+                      <Text style={{ fontSize: 12, color: Colors.textMuted }} numberOfLines={1}>
+                        {g.note.trim()}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
                 <View style={rightClusterStyle}>
@@ -447,22 +455,22 @@ export function PlayersTab({
                       <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
                     </MatchStyleStatusPill>
                   </View>
-                  {canManageTournament && onEditGuestPlayer ? (
+                  {showGuestEdit ? (
                     <View style={rightSlotStyle}>
                       <IconButton
                         icon="create-outline"
-                        onPress={() => onEditGuestPlayer(g)}
+                        onPress={() => onEditGuestPlayer!(g)}
                         disabled={mutationBusy}
                         accessibilityLabel={t('tournamentDetail.guestEditAccessibility')}
                         compact
                       />
                     </View>
                   ) : null}
-                  {canManageTournament && onDeleteGuestPlayer ? (
+                  {showGuestTrash ? (
                     <View style={rightSlotStyle}>
                       <IconButton
                         icon="trash-outline"
-                        onPress={() => onDeleteGuestPlayer(g)}
+                        onPress={() => onDeleteGuestPlayer!(g)}
                         disabled={mutationBusy}
                         accessibilityLabel={t('tournamentDetail.guestDeleteTitle')}
                         color="#f87171"
@@ -537,7 +545,7 @@ export function PlayersTab({
               )}
 
               <View style={rightClusterStyle}>
-                {isGuestEntry ? (
+                {isGuestEntry || (!isGuestEntry && !hasTeam) ? (
                   <View style={rightSlotStyle}>
                     <MatchStyleStatusPill>
                       <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />

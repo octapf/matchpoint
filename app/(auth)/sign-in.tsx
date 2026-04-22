@@ -89,7 +89,7 @@ export default function SignInScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        <Text style={styles.logoText}>Matchpoint</Text>
+        <Text style={styles.logoText}>{t('common.appName')}</Text>
         <Text style={styles.subtitle}>{t('auth.webSignInOnly')}</Text>
         <Pressable style={styles.primaryButton} onPress={() => Linking.openURL(PLAY_STORE_URL)}>
           <Text style={styles.primaryButtonText}>{t('auth.getOnPlayStore')}</Text>
@@ -107,10 +107,10 @@ export default function SignInScreen() {
         <View style={styles.logoSection}>
           <View>
             <View style={styles.wordmarkRow}>
-              <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>MATCH</Text>
-              <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>POINT</Text>
+              <Text style={[styles.wordmarkMatch, { color: tokens.accent }]}>{t('auth.brandWordMatch')}</Text>
+              <Text style={[styles.wordmarkPoint, { color: tokens.accentHover }]}>{t('auth.brandWordPoint')}</Text>
             </View>
-            <Text style={styles.slogan}>Play it as it is.</Text>
+            <Text style={styles.slogan}>{t('auth.brandTagline')}</Text>
           </View>
         </View>
 
@@ -203,7 +203,7 @@ export default function SignInScreen() {
           <Text style={styles.termsText}>{t('auth.termsAndConditions')}</Text>
         </Pressable>
 
-        <Text style={styles.copyright}>© 2026 Miralab</Text>
+        <Text style={styles.copyright}>{t('footer.copyright')}</Text>
 
       </ScrollView>
     </KeyboardAvoidingView>

@@ -86,11 +86,11 @@ export default function ProfileScreen() {
       const updated = (await usersApi.updateOne(user._id, { themePresetId: presetId })) as typeof user;
       setUser({ ...user, ...updated });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to save theme';
+      const msg = e instanceof Error ? e.message : '';
       // If the client is ahead of the deployed backend schema, the server may reject the payload
       // with "No valid fields to update". Keep the local preset and avoid noisy alerts.
       if (msg === 'No valid fields to update') return;
-      Alert.alert(t('common.error'), msg);
+      Alert.alert(t('common.error'), msg || t('profile.themeSaveFailed'));
     } finally {
       setSavingTheme(false);
     }
@@ -191,7 +191,7 @@ export default function ProfileScreen() {
         </Pressable>
 
         <ThemePresetSelect
-          label="Theme"
+          label={t('profile.theme')}
           showFieldLabel={false}
           showLabelInInput={true}
           fieldStyle={{ marginBottom: 0 }}
@@ -200,7 +200,7 @@ export default function ProfileScreen() {
             void persistThemePreset(id);
           }}
         />
-        {savingTheme ? <Text style={styles.themeHint}>Saving…</Text> : null}
+        {savingTheme ? <Text style={styles.themeHint}>{t('editProfile.saving')}</Text> : null}
 
         {isAdminUser(user.role) ? (
           <Pressable

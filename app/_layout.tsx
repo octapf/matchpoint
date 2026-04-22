@@ -132,6 +132,8 @@ function RootLayoutNav() {
         />
         <Stack.Screen name="tournament/create" />
         <Stack.Screen name="tournament/[id]/team/create" />
+        <Stack.Screen name="tournament/[id]/team/create-organizer" />
+        <Stack.Screen name="tournament/[id]/team/[teamId]" />
         <Stack.Screen name="tournament/[id]/guest-players" />
         <Stack.Screen name="t/[token]" />
         <Stack.Screen name="profile/edit" options={{ headerShown: false }} />

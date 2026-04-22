@@ -20,9 +20,10 @@ type GroupCountSelectProps = {
   /** Group count as string (digits), same as TextInput before. */
   value: string;
   onChange: (groupCount: string) => void;
+  disabled?: boolean;
 };
 
-export function GroupCountSelect({ label, maxTeams, value, onChange }: GroupCountSelectProps) {
+export function GroupCountSelect({ label, maxTeams, value, onChange, disabled }: GroupCountSelectProps) {
   const { t } = useTranslation();
   const { tokens } = useTheme();
   const [open, setOpen] = useState(false);
@@ -44,9 +45,9 @@ export function GroupCountSelect({ label, maxTeams, value, onChange }: GroupCoun
     <View style={styles.field}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <Pressable
-        style={[styles.input, options.length === 0 && styles.inputDisabled]}
-        onPress={() => options.length > 0 && setOpen(true)}
-        disabled={options.length === 0}
+        style={[styles.input, (options.length === 0 || disabled) && styles.inputDisabled]}
+        onPress={() => options.length > 0 && !disabled && setOpen(true)}
+        disabled={options.length === 0 || !!disabled}
         accessibilityRole="button"
         accessibilityLabel={label}
       >

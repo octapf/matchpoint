@@ -148,7 +148,7 @@ type MatchRow = {
   pointsA: number;
   pointsB: number;
   winnerId: string;
-  status?: 'scheduled' | 'in_progress' | 'completed';
+  status?: 'scheduled' | 'in_progress' | 'paused' | 'completed';
   orderIndex?: number;
   scheduledAt?: string;
   createdAt?: string;
