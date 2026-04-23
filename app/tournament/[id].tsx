@@ -204,6 +204,33 @@ export default function TournamentDetailScreen() {
 
   const guestMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => tournamentsApi.action(id!, body) as Promise<unknown>,
+    onMutate: async (variables) => {
+      if (!id) return undefined;
+      const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
+      if (act !== 'deleteGuestPlayer') return undefined;
+      const guestId =
+        typeof variables === 'object' && variables && 'guestId' in variables ? String((variables as { guestId?: unknown }).guestId ?? '') : '';
+      if (!guestId) return undefined;
+
+      // Optimistic update: remove guest from tournament guestPlayers immediately.
+      await queryClient.cancelQueries({ queryKey: ['tournament', id] });
+      const prev = queryClient.getQueryData(['tournament', id]) as any;
+      queryClient.setQueryData(['tournament', id], (cur: any) => {
+        if (!cur) return cur;
+        const list = Array.isArray(cur.guestPlayers) ? cur.guestPlayers : [];
+        return { ...cur, guestPlayers: list.filter((g: any) => String(g?._id ?? '') !== guestId) };
+      });
+
+      return { prevTournament: prev };
+    },
+    onError: (_err, variables, context) => {
+      const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
+      if (act !== 'deleteGuestPlayer') return;
+      const prev = (context as any)?.prevTournament;
+      if (id && prev) {
+        queryClient.setQueryData(['tournament', id], prev);
+      }
+    },
     onSuccess: (_data, variables) => {
       if (!id) return;
       void queryClient.invalidateQueries({ queryKey: ['tournament', id] });
