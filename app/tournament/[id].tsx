@@ -179,7 +179,8 @@ export default function TournamentDetailScreen() {
   const queryClient = useQueryClient();
   const { data: tournament, isLoading: loadingTournament, isError: errorTournament, error: tournamentError } = useTournament(id);
   const { data: teams = [], isLoading: loadingTeams } = useTeams(id ? { tournamentId: id } : undefined);
-  const { data: entries = [] } = useEntries(id ? { tournamentId: id, inTeamOnly: true } : undefined);
+  /** Tournament roster rows (joined + in_team). */
+  const { data: entries = [] } = useEntries(id ? { tournamentId: id } : undefined);
   /** Current user's entry for this tournament (any teamId); used to leave — not the inTeamOnly roster list. */
   const { data: myTournamentEntries = [] } = useEntries(
     id && userId ? { tournamentId: id, userId } : undefined,
@@ -802,8 +803,17 @@ export default function TournamentDetailScreen() {
     [waitlistInfo?.users, userId]
   );
 
-  /** Registered in this division: waiting list for division, or already on a team in this division. */
-  const isRegistered = onWaitlistInDivision || userHasTeamInDivision;
+  /** Registered in this division: waiting list, roster entry (no team yet), or already on a team. */
+  const userHasRosterEntryInDivision = useMemo(() => {
+    if (!userId) return false;
+    return entries.some((e) => {
+      if (e.userId !== userId) return false;
+      const d = divisionForEntry(e, userMap, teamDivisionById, guestMap);
+      return d === currentDivision;
+    });
+  }, [entries, userId, userMap, teamDivisionById, guestMap, currentDivision]);
+
+  const isRegistered = onWaitlistInDivision || userHasTeamInDivision || userHasRosterEntryInDivision;
 
   const filteredTeams = useMemo(
     () => teams.filter((team) => teamDivisionById[team._id] === currentDivision),
