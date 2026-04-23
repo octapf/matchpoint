@@ -23,6 +23,7 @@ export const tournamentPostActionSchema = z
       'createGuestPlayer',
       'updateGuestPlayer',
       'deleteGuestPlayer',
+      'deleteAllGuestPlayers',
     ]),
   })
   .passthrough();

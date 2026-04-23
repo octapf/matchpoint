@@ -208,10 +208,12 @@ export default function TournamentDetailScreen() {
     onMutate: async (variables) => {
       if (!id) return undefined;
       const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
-      if (act !== 'deleteGuestPlayer') return undefined;
+      const isDeleteOne = act === 'deleteGuestPlayer';
+      const isDeleteAll = act === 'deleteAllGuestPlayers';
+      if (!isDeleteOne && !isDeleteAll) return undefined;
       const guestId =
         typeof variables === 'object' && variables && 'guestId' in variables ? String((variables as { guestId?: unknown }).guestId ?? '') : '';
-      if (!guestId) return undefined;
+      if (isDeleteOne && !guestId) return undefined;
 
       // Optimistic update: remove guest row + guest map immediately (avoid temporary "Guest" fallback UI).
       await queryClient.cancelQueries({ queryKey: ['tournament', id] });
@@ -223,7 +225,10 @@ export default function TournamentDetailScreen() {
       queryClient.setQueryData(['tournament', id], (cur: any) => {
         if (!cur) return cur;
         const list = Array.isArray(cur.guestPlayers) ? cur.guestPlayers : [];
-        return { ...cur, guestPlayers: list.filter((g: any) => String(g?._id ?? '') !== guestId) };
+        return {
+          ...cur,
+          guestPlayers: isDeleteAll ? [] : list.filter((g: any) => String(g?._id ?? '') !== guestId),
+        };
       });
 
       // 2) Remove any roster entry for this guest across cached entries queries for this tournament.
@@ -237,6 +242,7 @@ export default function TournamentDetailScreen() {
             const tid = String((e as any).tournamentId ?? '');
             if (tid !== String(id)) return true;
             const gid = String((e as any).guestPlayerId ?? '');
+            if (isDeleteAll) return !gid;
             return gid !== guestId;
           });
           return filtered as any;
@@ -247,7 +253,7 @@ export default function TournamentDetailScreen() {
     },
     onError: (_err, variables, context) => {
       const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
-      if (act !== 'deleteGuestPlayer') return;
+      if (act !== 'deleteGuestPlayer' && act !== 'deleteAllGuestPlayers') return;
       const prev = (context as any)?.prevTournament;
       if (id && prev) {
         queryClient.setQueryData(['tournament', id], prev);
@@ -495,13 +501,30 @@ export default function TournamentDetailScreen() {
       );
     }
 
-    if (id && !shouldUseDevMocks()) {
+    if (!started && id && !shouldUseDevMocks()) {
       list.push({
-        key: 'guestPlayers',
-        label: t('tournamentDetail.menuGuestPlayers'),
-        icon: 'person-add-outline',
-        color: tokens.accentHover,
-        onPress: () => router.push(`/tournament/${id}/guest-players` as never),
+        key: 'deleteAllGuestPlayers',
+        label: t('tournamentDetail.menuDeleteAllGuestPlayers'),
+        icon: 'trash-outline',
+        color: Colors.danger,
+        disabled: guestMutation.isPending,
+        onPress: () =>
+          Alert.alert(
+            t('tournamentDetail.menuDeleteAllGuestPlayers'),
+            t('tournamentDetail.deleteAllGuestPlayersConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.delete'),
+                style: 'destructive',
+                onPress: () =>
+                  guestMutation.mutate(
+                    { action: 'deleteAllGuestPlayers' },
+                    { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                  ),
+              },
+            ]
+          ),
       });
     }
 

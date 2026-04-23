@@ -134,3 +134,56 @@ export async function deleteGuestPlayer(
     await session.endSession();
   }
 }
+
+/**
+ * Delete all guest players for a tournament (pre-start only).
+ *
+ * Notes:
+ * - Guests may have been used in teams: those teams are deleted, any real users on those teams are moved back
+ *   to a "joined" roster entry without a team, and guest roster entries are removed.
+ */
+export async function deleteAllGuestPlayers(
+  db: Db,
+  tournamentId: string,
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
+  const tidf = tournamentIdMongoFilter(tournamentId);
+  const guestCol = db.collection(COL);
+  const guests = await guestCol.find(tidf).project({ _id: 1 }).toArray();
+  if (guests.length === 0) return { ok: true, deleted: 0 };
+
+  const guestIds = guests.map((g) => String((g as { _id?: unknown })._id ?? '')).filter(Boolean);
+  const guestSlots = guestIds.map((gid) => `guest:${gid}`);
+  const now = new Date().toISOString();
+
+  const client = await getMongoClient();
+  const session = client.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const teamsCol = db.collection('teams');
+      const entriesCol = db.collection('entries');
+
+      const teamsWithGuests = await teamsCol
+        .find({ ...tidf, playerIds: { $in: guestSlots } }, { session })
+        .project({ _id: 1 })
+        .toArray();
+      const teamIds = teamsWithGuests.map((t) => String((t as { _id?: unknown })._id ?? '')).filter(Boolean);
+
+      if (teamIds.length > 0) {
+        await teamsCol.deleteMany({ ...tidf, _id: { $in: teamIds.map((x) => new ObjectId(x)) } }, { session });
+        await entriesCol.updateMany(
+          { ...tidf, teamId: { $in: teamIds } },
+          { $set: { teamId: null, status: 'joined', updatedAt: now } },
+          { session }
+        );
+      }
+
+      await entriesCol.deleteMany({ ...tidf, guestPlayerId: { $in: guestIds } }, { session });
+      await guestCol.deleteMany({ ...tidf, _id: { $in: guestIds.map((x) => new ObjectId(x)) } }, { session });
+    });
+    return { ok: true, deleted: guests.length };
+  } catch (e) {
+    throw e;
+  } finally {
+    await session.endSession();
+  }
+}

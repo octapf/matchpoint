@@ -40,6 +40,7 @@ import {
   createGuestPlayer,
   deleteGuestPlayer,
   updateGuestPlayer,
+  deleteAllGuestPlayers,
 } from '../../server/lib/tournamentGuestPlayerActions';
 import { isGuestPlayerSlot } from '../../lib/playerSlots';
 import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/apiErrorResponse';
@@ -548,6 +549,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const r = await deleteGuestPlayer(db, id, gid);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(200).json({ ok: true });
+      }
+
+      if (action === 'deleteAllGuestPlayers') {
+        const started =
+          !!(cur as { startedAt?: unknown }).startedAt ||
+          (cur as { phase?: unknown }).phase === 'classification' ||
+          (cur as { phase?: unknown }).phase === 'categories' ||
+          (cur as { phase?: unknown }).phase === 'completed';
+        if (started) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+        const r = await deleteAllGuestPlayers(db, id);
+        if (!r.ok) return corsRes.status(400).json({ error: r.error });
+        return corsRes.status(200).json({ ok: true, deleted: r.deleted });
       }
 
       if (action === 'placeTournamentBet') {
