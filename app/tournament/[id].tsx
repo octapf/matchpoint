@@ -858,12 +858,15 @@ export default function TournamentDetailScreen() {
   /** Registered in this division: waiting list, roster entry (no team yet), or already on a team. */
   const userHasRosterEntryInDivision = useMemo(() => {
     if (!userId) return false;
+    const onlyMixed = availableDivisions.length === 1 && availableDivisions[0] === 'mixed';
     return entries.some((e) => {
       if (e.userId !== userId) return false;
       const d = divisionForEntry(e, userMap, teamDivisionById, guestMap);
-      return d === currentDivision;
+      if (d === currentDivision) return true;
+      // Mixed-only tournaments: entries without teamId may not have a determinable division (divisionForEntry => null).
+      return onlyMixed && currentDivision === 'mixed' && d == null;
     });
-  }, [entries, userId, userMap, teamDivisionById, guestMap, currentDivision]);
+  }, [entries, userId, userMap, teamDivisionById, guestMap, currentDivision, availableDivisions]);
 
   const isRegistered = onWaitlistInDivision || userHasTeamInDivision || userHasRosterEntryInDivision;
 
@@ -873,11 +876,14 @@ export default function TournamentDetailScreen() {
   );
 
   const filteredEntries = useMemo(() => {
+    const onlyMixed = availableDivisions.length === 1 && availableDivisions[0] === 'mixed';
     return entries.filter((entry) => {
       const d = divisionForEntry(entry, userMap, teamDivisionById, guestMap);
-      return d === currentDivision;
+      if (d === currentDivision) return true;
+      // Mixed-only tournaments: include no-team entries that can't be assigned to men/women.
+      return onlyMixed && currentDivision === 'mixed' && d == null;
     });
-  }, [entries, userMap, teamDivisionById, guestMap, currentDivision]);
+  }, [entries, userMap, teamDivisionById, guestMap, currentDivision, availableDivisions]);
 
   /** Players tab: A–Z by visible name (same as labels), not raw username. */
   const sortedEntries = useMemo(() => {
