@@ -213,16 +213,37 @@ export default function TournamentDetailScreen() {
         typeof variables === 'object' && variables && 'guestId' in variables ? String((variables as { guestId?: unknown }).guestId ?? '') : '';
       if (!guestId) return undefined;
 
-      // Optimistic update: remove guest from tournament guestPlayers immediately.
+      // Optimistic update: remove guest row + guest map immediately (avoid temporary "Guest" fallback UI).
       await queryClient.cancelQueries({ queryKey: ['tournament', id] });
+      await queryClient.cancelQueries({ queryKey: ['entries'] });
       const prev = queryClient.getQueryData(['tournament', id]) as any;
+      const prevEntries = queryClient.getQueriesData({ queryKey: ['entries'] });
+
+      // 1) Remove guest from tournament guestPlayers (guestMap source).
       queryClient.setQueryData(['tournament', id], (cur: any) => {
         if (!cur) return cur;
         const list = Array.isArray(cur.guestPlayers) ? cur.guestPlayers : [];
         return { ...cur, guestPlayers: list.filter((g: any) => String(g?._id ?? '') !== guestId) };
       });
 
-      return { prevTournament: prev };
+      // 2) Remove any roster entry for this guest across cached entries queries for this tournament.
+      queryClient.setQueriesData(
+        { queryKey: ['entries'] },
+        (cur: unknown) => {
+          if (!Array.isArray(cur)) return cur as any;
+          const anyRows = cur as Array<any>;
+          const filtered = anyRows.filter((e) => {
+            if (!e || typeof e !== 'object') return true;
+            const tid = String((e as any).tournamentId ?? '');
+            if (tid !== String(id)) return true;
+            const gid = String((e as any).guestPlayerId ?? '');
+            return gid !== guestId;
+          });
+          return filtered as any;
+        }
+      );
+
+      return { prevTournament: prev, prevEntries };
     },
     onError: (_err, variables, context) => {
       const act = typeof variables === 'object' && variables && 'action' in variables ? String((variables as { action?: unknown }).action) : '';
@@ -230,6 +251,14 @@ export default function TournamentDetailScreen() {
       const prev = (context as any)?.prevTournament;
       if (id && prev) {
         queryClient.setQueryData(['tournament', id], prev);
+      }
+      const prevEntries = (context as any)?.prevEntries as Array<[unknown, unknown]> | undefined;
+      if (Array.isArray(prevEntries)) {
+        for (const [key, data] of prevEntries) {
+          if (Array.isArray(key)) {
+            queryClient.setQueryData(key as any, data as any);
+          }
+        }
       }
     },
     onSuccess: (_data, variables) => {
