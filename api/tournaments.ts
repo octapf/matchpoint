@@ -293,7 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const setsPerMatch = Number(rawSetsPerMatch ?? 1);
       const gc = normalizeGroupCount(rawGroups);
       const vg = validateTournamentGroups(mt, gc);
-      if (!vg.ok) {
+      if (vg.ok === false) {
         const err =
           vg.reason === 'divisible'
             ? 'Max teams must be divisible by the number of groups'

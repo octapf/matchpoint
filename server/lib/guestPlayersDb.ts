@@ -32,16 +32,16 @@ export async function assertGuestIdsBelongToTournament(
 ): Promise<{ ok: true; docs: GuestPlayerDoc[] } | { ok: false; error: string }> {
   const oids = guestIds.filter((g) => ObjectId.isValid(g)).map((g) => new ObjectId(g));
   if (oids.length !== guestIds.length) {
-    return { ok: false, error: 'Invalid guest player id' };
+    return { ok: false as const, error: 'Invalid guest player id' };
   }
   const docs = (await db
     .collection(COL)
     .find({ ...tournamentIdMongoFilter(tournamentId), _id: { $in: oids } })
     .toArray()) as unknown as GuestPlayerDoc[];
   if (docs.length !== guestIds.length) {
-    return { ok: false, error: 'Guest player not found for this tournament' };
+    return { ok: false as const, error: 'Guest player not found for this tournament' };
   }
-  return { ok: true, docs };
+  return { ok: true as const, docs };
 }
 
 /** Resolve genders for two roster slots (user or guest) and compute pair division. */
