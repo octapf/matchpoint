@@ -423,6 +423,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { returnDocument: 'after' }
         );
         if (!r) return corsRes.status(404).json({ error: 'Tournament not found' });
+
+        // Notify all registered app users in this tournament (best-effort, de-duped).
+        try {
+          const tname = String((r as any)?.name ?? (tdoc as any)?.name ?? '') || 'Tournament';
+          const tidf = tournamentIdMongoFilter(id);
+          const [entryDocs, teamsDocs] = await Promise.all([
+            db.collection('entries').find(tidf).project({ userId: 1 }).toArray(),
+            db.collection('teams').find(tidf).project({ playerIds: 1 }).toArray(),
+          ]);
+          const usersFromEntries = entryDocs
+            .map((e: any) => String(e.userId ?? ''))
+            .filter((x) => ObjectId.isValid(x));
+          const usersFromTeams = teamsDocs
+            .flatMap((tm: any) => (Array.isArray(tm.playerIds) ? tm.playerIds : []))
+            .map((pid: any) => String(pid ?? ''))
+            .filter((pid) => !isGuestPlayerSlot(pid))
+            .filter((x) => ObjectId.isValid(x));
+          const organizers = Array.isArray((r as any)?.organizerIds) ? (r as any).organizerIds.map(String) : [];
+          const all = [...new Set([...usersFromEntries, ...usersFromTeams, ...organizers].filter(Boolean))];
+          await notifyMany(db, all, {
+            type: 'tournament.paused',
+            params: { tournament: tname },
+            data: { tournamentId: id },
+            dedupeKey: `tournament.paused:${id}:${nowIso.slice(0, 16)}`,
+          });
+        } catch {
+          // best-effort
+        }
         return corsRes.status(200).json(serializeDoc(r as Record<string, unknown>));
       }
 
@@ -434,6 +462,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { returnDocument: 'after' }
         );
         if (!r) return corsRes.status(404).json({ error: 'Tournament not found' });
+
+        // Notify all registered app users in this tournament (best-effort, de-duped).
+        try {
+          const tname = String((r as any)?.name ?? '') || 'Tournament';
+          const tidf = tournamentIdMongoFilter(id);
+          const [entryDocs, teamsDocs] = await Promise.all([
+            db.collection('entries').find(tidf).project({ userId: 1 }).toArray(),
+            db.collection('teams').find(tidf).project({ playerIds: 1 }).toArray(),
+          ]);
+          const usersFromEntries = entryDocs
+            .map((e: any) => String(e.userId ?? ''))
+            .filter((x) => ObjectId.isValid(x));
+          const usersFromTeams = teamsDocs
+            .flatMap((tm: any) => (Array.isArray(tm.playerIds) ? tm.playerIds : []))
+            .map((pid: any) => String(pid ?? ''))
+            .filter((pid) => !isGuestPlayerSlot(pid))
+            .filter((x) => ObjectId.isValid(x));
+          const organizers = Array.isArray((r as any)?.organizerIds) ? (r as any).organizerIds.map(String) : [];
+          const all = [...new Set([...usersFromEntries, ...usersFromTeams, ...organizers].filter(Boolean))];
+          await notifyMany(db, all, {
+            type: 'tournament.resumed',
+            params: { tournament: tname },
+            data: { tournamentId: id },
+            dedupeKey: `tournament.resumed:${id}:${nowIso.slice(0, 16)}`,
+          });
+        } catch {
+          // best-effort
+        }
         return corsRes.status(200).json(serializeDoc(r as Record<string, unknown>));
       }
 

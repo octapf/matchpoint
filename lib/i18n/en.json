@@ -111,6 +111,14 @@
       "classified": {
         "title": "Classified",
         "body": "You qualified for %{category} in %{tournament}."
+      },
+      "paused": {
+        "title": "Tournament paused",
+        "body": "%{tournament} has been paused. Matches and betting are temporarily disabled."
+      },
+      "resumed": {
+        "title": "Tournament resumed",
+        "body": "%{tournament} is active again. Matches and betting are re-enabled."
       }
     },
     "team": {

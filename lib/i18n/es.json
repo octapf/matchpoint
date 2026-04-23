@@ -110,6 +110,14 @@
       "classified": {
         "title": "Clasificado",
         "body": "Clasificaste a %{category} en %{tournament}."
+      },
+      "paused": {
+        "title": "Torneo en pausa",
+        "body": "%{tournament} está en pausa. Partidos y apuestas quedan desactivados temporalmente."
+      },
+      "resumed": {
+        "title": "Torneo reanudado",
+        "body": "%{tournament} volvió a estar activo. Partidos y apuestas están habilitados de nuevo."
       }
     },
     "team": {
