@@ -9,6 +9,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useCreateTeam, useTeams, useUpdateTeam } from '@/lib/hooks/useTeams';
 import { useJoinTeamSlotWaitlist, useTeamSlotWaitlist } from '@/lib/hooks/useTeamSlotWaitlist';
 import { useTournament } from '@/lib/hooks/useTournaments';
+import { useEntries } from '@/lib/hooks/useEntries';
 import { useWaitlist } from '@/lib/hooks/useWaitlist';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
@@ -57,6 +58,7 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
   const joinTeamSlotWaitlist = useJoinTeamSlotWaitlist();
   const { data: tournament } = useTournament(tournamentId);
   const { data: teams = [] } = useTeams({ tournamentId });
+  const { data: myEntries = [] } = useEntries(userId ? { tournamentId, userId } : undefined, { enabled: !!userId });
   const { data: waitlistInfo } = useWaitlist(tournamentId, division);
   const { data: teamSlotWaitlistRows = [] } = useTeamSlotWaitlist(tournamentId);
   const userHasTeam = teams.some((tm) => tm.playerIds?.includes(userId ?? ''));
@@ -99,6 +101,8 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
     () => !!(userId && (waitlistInfo?.users ?? []).some((w) => w.userId === userId)),
     [waitlistInfo?.users, userId]
   );
+  const hasRosterEntry = useMemo(() => !!(userId && myEntries.some((e) => e.userId === userId)), [myEntries, userId]);
+  const canCreateAsPlayer = !!userId && (onWaitlist || hasRosterEntry);
 
   const [teamName, setTeamName] = useState('');
   const [secondPick, setSecondPick] = useState<SecondPick>(null);
@@ -208,7 +212,7 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
       Alert.alert(t('common.error'), t('team.alreadyInTeam'));
       return;
     }
-    if (!onWaitlist) {
+    if (!canCreateAsPlayer) {
       Alert.alert(t('common.error'), t('team.joinWaitlistFirst'));
       return;
     }
@@ -278,6 +282,8 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
 
   const rosterLocked = !!editTeam;
   const nameEditable = !editTeam || !tournamentStarted;
+  const pickerBusy = createTeam.isPending || updateTeam.isPending || joinTeamSlotWaitlist.isPending;
+  const hasTwoPlayersSelected = !!userId && !!secondPick;
 
   return (
     <ScrollView
@@ -339,16 +345,20 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
             return (
               <Pressable
                 key={pid}
-                style={[styles.partnerRow, selected && styles.partnerRowSelected]}
+                style={[
+                  styles.partnerRow,
+                  selected && styles.partnerRowSelected,
+                  (rosterLocked || pickerBusy) && styles.partnerRowDisabled,
+                ]}
                 onPress={
-                  rosterLocked
+                  rosterLocked || pickerBusy
                     ? undefined
                     : () =>
                         setSecondPick((prev) =>
                           prev?.kind === 'waitlist' && prev.userId === pid ? null : { kind: 'waitlist', userId: pid }
                         )
                 }
-                disabled={rosterLocked}
+                disabled={rosterLocked || pickerBusy}
               >
                 <Avatar
                   firstName={u?.firstName ?? ''}
@@ -372,16 +382,20 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
             return (
               <Pressable
                 key={g._id}
-                style={[styles.partnerRow, selected && styles.partnerRowSelected]}
+                style={[
+                  styles.partnerRow,
+                  selected && styles.partnerRowSelected,
+                  (rosterLocked || pickerBusy) && styles.partnerRowDisabled,
+                ]}
                 onPress={
-                  rosterLocked
+                  rosterLocked || pickerBusy
                     ? undefined
                     : () =>
                         setSecondPick((prev) =>
                           prev?.kind === 'guest' && prev.guest._id === g._id ? null : { kind: 'guest', guest: g }
                         )
                 }
-                disabled={rosterLocked}
+                disabled={rosterLocked || pickerBusy}
               >
                 <Avatar
                   firstName={(g.displayName ?? '').trim()}
@@ -420,9 +434,11 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
           createTeam.isPending ||
           updateTeam.isPending ||
           joinTeamSlotWaitlist.isPending ||
-          (!editTeam && (userHasTeam || groupsConfigInvalid || !onWaitlist)) ||
+          (!editTeam && atTeamCapacity && !hasTwoPlayersSelected) ||
+          (!editTeam && (userHasTeam || groupsConfigInvalid || !canCreateAsPlayer)) ||
           (!!editTeam && tournamentStarted)
         }
+        size="sm"
         fullWidth
       />
     </ScrollView>
@@ -459,6 +475,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   partnerRowSelected: { borderWidth: 1, borderColor: Colors.surfaceLight },
+  partnerRowDisabled: { opacity: 0.55 },
   partnerName: { fontSize: 16, color: Colors.text, fontWeight: '600' },
   emptyPartners: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', padding: 12 },
 });

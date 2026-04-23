@@ -489,16 +489,54 @@ export default function TournamentDetailScreen() {
     const cannotStartForGroups = rosterFull && !groupsDistributedMenu && !allTeamsPlacedInGroups;
     const cannotStartForRoster = !rosterFull;
 
+    // Burger menu is intentionally kept short and ordered at the call site
+    // (share, open location, edit, start, leave, delete guests, delete tournament).
     if (id) {
-      list.push(
-        {
-          key: 'edit',
-          label: t('tournamentDetail.menuEdit'),
-          icon: 'create-outline',
-          color: tokens.accent,
-          onPress: () => router.push(`/admin/tournament/${id}` as never),
-        }
-      );
+      list.push({
+        key: 'edit',
+        label: t('tournamentDetail.menuEdit'),
+        icon: 'create-outline',
+        color: tokens.accent,
+        onPress: () => router.push(`/admin/tournament/${id}` as never),
+      });
+    }
+
+    if (!started && id && !shouldUseDevMocks()) {
+      list.push({
+        key: 'start',
+        label: t('tournamentDetail.menuStartTournament'),
+        icon: 'play-outline',
+        color: Colors.success,
+        disabled: startTournamentMutation.isPending || cannotStartForRoster || cannotStartForGroups,
+        onPress: () =>
+          !isTournamentDayToday
+            ? Alert.alert(
+                t('tournamentDetail.startTournamentWrongDateTitle'),
+                t('tournamentDetail.startTournamentWrongDateBody'),
+                [
+                  { text: t('common.cancel'), style: 'cancel' },
+                  {
+                    text: t('tournamentDetail.startTournamentAdjustDateCta'),
+                    onPress: () => router.push(`/admin/tournament/${id}` as never),
+                  },
+                ]
+              )
+            : Alert.alert(
+                t('tournamentDetail.menuStartTournament'),
+                t('tournamentDetail.startTournamentConfirm'),
+                [
+                  { text: t('common.cancel'), style: 'cancel' },
+                  {
+                    text: t('common.ok'),
+                    onPress: () =>
+                      startTournamentMutation.mutate(
+                        { id },
+                        { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+                      ),
+                  },
+                ]
+              ),
+      });
     }
 
     if (!started && id && !shouldUseDevMocks()) {
@@ -521,153 +559,6 @@ export default function TournamentDetailScreen() {
                   guestMutation.mutate(
                     { action: 'deleteAllGuestPlayers' },
                     { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                  ),
-              },
-            ]
-          ),
-      });
-    }
-
-    if (!started && id && !shouldUseDevMocks()) {
-      list.push(
-        {
-          key: 'start',
-          label: t('tournamentDetail.menuStartTournament'),
-          icon: 'play-outline',
-          color: Colors.success,
-          disabled: startTournamentMutation.isPending || cannotStartForRoster || cannotStartForGroups,
-          onPress: () =>
-            !isTournamentDayToday
-              ? Alert.alert(
-                  t('tournamentDetail.startTournamentWrongDateTitle'),
-                  t('tournamentDetail.startTournamentWrongDateBody'),
-                  [
-                    { text: t('common.cancel'), style: 'cancel' },
-                    {
-                      text: t('tournamentDetail.startTournamentAdjustDateCta'),
-                      onPress: () => router.push(`/admin/tournament/${id}` as never),
-                    },
-                  ]
-                )
-              : Alert.alert(
-                  t('tournamentDetail.menuStartTournament'),
-                  t('tournamentDetail.startTournamentConfirm'),
-                  [
-                    { text: t('common.cancel'), style: 'cancel' },
-                    {
-                      text: t('common.ok'),
-                      onPress: () =>
-                        startTournamentMutation.mutate(
-                          { id },
-                          { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                        ),
-                    },
-                  ]
-                ),
-        }
-      );
-    }
-
-    if (!started && id && !shouldUseDevMocks() && rosterFull) {
-      if (groupsDistributionPendingMenu) {
-        list.push({
-          key: 'distributeGroups',
-          label: t('tournamentDetail.menuCreateGroups'),
-          icon: 'grid-outline',
-          color: tokens.accentHover,
-          disabled: randomizeGroupsMutation.isPending,
-          onPress: () =>
-            Alert.alert(
-              t('tournamentDetail.menuCreateGroups'),
-              t('tournamentDetail.createGroupsConfirm'),
-              [
-                { text: t('common.cancel'), style: 'cancel' },
-                {
-                  text: t('common.ok'),
-                  onPress: () =>
-                    randomizeGroupsMutation.mutate(
-                      { id },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                    ),
-                },
-              ]
-            ),
-        });
-      } else {
-        list.push({
-          key: 'randomizeGroups',
-          label: t('tournamentDetail.menuReorganizeGroups'),
-          icon: 'shuffle-outline',
-          color: tokens.accentHover,
-          disabled: randomizeGroupsMutation.isPending,
-          onPress: () =>
-            Alert.alert(
-              t('tournamentDetail.menuReorganizeGroups'),
-              t('tournamentDetail.reorganizeGroupsConfirm'),
-              [
-                { text: t('common.cancel'), style: 'cancel' },
-                {
-                  text: t('common.ok'),
-                  onPress: () =>
-                    randomizeGroupsMutation.mutate(
-                      { id },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                    ),
-                },
-              ]
-            ),
-        });
-      }
-    }
-
-    // Share is available to all users, but it stays in the menu list for organizers too.
-    if (tournament.inviteLink) {
-      list.push({
-        key: 'share',
-        label: t('tournamentDetail.menuShare'),
-        icon: 'share-outline',
-        color: tokens.accent,
-        onPress: handleShareInvite,
-      });
-    }
-
-    const phase = String((tournament as { phase?: unknown }).phase ?? '');
-    const classificationComplete =
-      classificationMatches.length > 0 && classificationMatches.every((m) => m.status === 'completed');
-    if (id && !shouldUseDevMocks() && phase === 'classification' && classificationComplete) {
-      list.push({
-        key: 'finalizeClassification',
-        label: t('tournamentDetail.menuGenerateCategoryMatches'),
-        icon: 'trophy-outline',
-        color: tokens.accentHover,
-        disabled: finalizeClassificationMutation.isPending,
-        onPress: () =>
-          Alert.alert(
-            t('tournamentDetail.menuGenerateCategoryMatches'),
-            t('tournamentDetail.generateCategoryMatchesConfirm'),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              {
-                text: t('common.ok'),
-                onPress: () =>
-                  finalizeClassificationMutation.mutate(
-                    { id },
-                    {
-                      onError: (err: unknown) => {
-                        const remaining =
-                          err instanceof Error && typeof (err as Error & { remaining?: unknown }).remaining === 'number'
-                            ? (err as Error & { remaining: number }).remaining
-                            : null;
-                        if (remaining != null) {
-                          Alert.alert(
-                            t('tournamentDetail.menuGenerateCategoryMatches'),
-                            t('tournamentDetail.classificationRemaining', { n: remaining })
-                          );
-                          return;
-                        }
-                        alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
-                      },
-                    }
                   ),
               },
             ]
@@ -727,9 +618,7 @@ export default function TournamentDetailScreen() {
     handleShareInvite,
     handleDelete,
     deleteTournament.isPending,
-    randomizeGroupsMutation,
     startTournamentMutation,
-    finalizeClassificationMutation,
     classificationMatches,
     userId,
     user?.role,
@@ -1416,20 +1305,29 @@ export default function TournamentDetailScreen() {
   const infoMenuItems = useMemo((): OrganizerMenuItem[] => {
     if (!tournament) return [];
 
-    return [
-      {
-        key: 'info_location',
-        label: t('tournamentDetail.menuOpenLocation'),
-        icon: 'navigate-outline',
-        color: tokens.accentHover,
-        disabled: !tournament.location?.trim(),
-        onPress: () => {
-          if (!tournament.location?.trim()) return;
-          openVenueInMaps(tournament.location.trim());
-        },
+    const out: OrganizerMenuItem[] = [];
+    if (tournament.inviteLink) {
+      out.push({
+        key: 'share',
+        label: t('tournamentDetail.menuShare'),
+        icon: 'share-outline',
+        color: tokens.accent,
+        onPress: handleShareInvite,
+      });
+    }
+    out.push({
+      key: 'info_location',
+      label: t('tournamentDetail.menuOpenLocation'),
+      icon: 'navigate-outline',
+      color: tokens.accentHover,
+      disabled: !tournament.location?.trim(),
+      onPress: () => {
+        if (!tournament.location?.trim()) return;
+        openVenueInMaps(tournament.location.trim());
       },
-    ];
-  }, [t, tokens.accent, tokens.accentHover, tournament]);
+    });
+    return out;
+  }, [t, tokens.accent, tokens.accentHover, tournament, handleShareInvite]);
 
   const [reorderPendingTeamId, setReorderPendingTeamId] = useState<string | null>(null);
   const [swapSourceTeamId, setSwapSourceTeamId] = useState<string | null>(null);
@@ -1867,54 +1765,38 @@ export default function TournamentDetailScreen() {
     }
   };
 
-  const showJoinAsPlayerInMenu =
-    !!userId &&
-    !!id &&
-    canEnroll &&
-    !isCancelled &&
-    !isOrganizeOnlyOrganizer &&
-    !isRegistered &&
-    !tournamentStarted;
+  // Burger menu no longer includes "join as player" (see `tournamentCardMenuItems` order).
 
-  const tournamentCardMenuItems: OrganizerMenuItem[] = [
-    ...infoMenuItems,
-    ...(canManageTournament ? organizerMenuItems : []),
-    ...(showJoinAsPlayerInMenu
-      ? ([
-          {
-            key: 'joinAsPlayerWaitlist',
-            label: t('tournamentDetail.menuPlayAsPlayer'),
-            icon: 'person-outline' as const,
-            color: Colors.success,
-            disabled: joinWaitlist.isPending,
-            onPress: () => {
-              if (!userId || !id) return;
-              if (!requireOnline()) return;
-              if (!canJoinDivisionByGender(currentDivision, user?.gender)) {
-                Alert.alert(t('common.error'), t('tournamentDetail.joinDivisionBlockedHint'));
-                return;
-              }
-              joinWaitlist.mutate(
-                { tournamentId: id, division: currentDivision, userId },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.joinFailed') }
-              );
-            },
-          },
-        ] satisfies OrganizerMenuItem[])
-      : []),
-    ...(canEnroll && !isCancelled && !isOrganizeOnlyOrganizer && isRegistered
-      ? ([
-          {
-            key: 'leaveTournament',
-            label: t('tournamentDetail.leaveTournament'),
-            icon: 'log-out-outline' as const,
-            color: Colors.danger,
-            onPress: () => confirmLeave(),
-            disabled: leaveWaitlist.isPending || deleteEntry.isPending,
-          },
-        ] satisfies OrganizerMenuItem[])
-      : []),
-  ];
+  const tournamentCardMenuItems = (() => {
+    const out: OrganizerMenuItem[] = [];
+
+    // Required order:
+    // share, open location, edit, start tournament, leave tournament, delete all guests, delete tournament
+    out.push(...infoMenuItems);
+
+    if (canManageTournament) {
+      // edit + start
+      out.push(...organizerMenuBaseItems.filter((x) => x.key === 'edit' || x.key === 'start'));
+    }
+
+    if (canEnroll && !isCancelled && !isOrganizeOnlyOrganizer && isRegistered) {
+      out.push({
+        key: 'leaveTournament',
+        label: t('tournamentDetail.leaveTournament'),
+        icon: 'log-out-outline' as const,
+        color: Colors.danger,
+        onPress: () => confirmLeave(),
+        disabled: leaveWaitlist.isPending || deleteEntry.isPending,
+      });
+    }
+
+    if (canManageTournament) {
+      out.push(...organizerMenuBaseItems.filter((x) => x.key === 'deleteAllGuestPlayers'));
+      out.push(...organizerMenuBaseItems.filter((x) => x.key === 'delete'));
+    }
+
+    return out;
+  })();
 
   const confirmRemoveTeam = (team: Team) => {
     if (!userId || !id) return;
@@ -2225,7 +2107,7 @@ export default function TournamentDetailScreen() {
         {activeTab === 'teams' ? (
           <TeamsTab
             t={t}
-            canCreateTeam={!canManageTournament && !userHasTeam && onWaitlistInDivision && canEnroll && !!id}
+            canCreateTeam={!canManageTournament && !userHasTeam && canEnroll && !!id && isRegistered && !tournamentStarted}
                       onCreateTeam={() => router.push(`/tournament/${id}/team/create?division=${currentDivision}`)}
             organizerActions={
               canManageTournament && id ? (

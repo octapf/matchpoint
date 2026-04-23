@@ -1,6 +1,6 @@
 import { ObjectId, type Db } from 'mongodb';
 import { getMongoClient } from './mongodb';
-import { normalizeGroupCount, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { normalizeGroupCount, tournamentAllowsManualGroupAssignment, validateTournamentGroups } from '../../lib/tournamentGroups';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, parsePlayerSlot } from '../../lib/playerSlots';
 import { assertGuestIdsBelongToTournament, resolveTwoSlotGenders } from './guestPlayersDb';
 import { insertTeamWithEntriesTx } from './insertTeamWithEntriesTx';
@@ -35,9 +35,6 @@ export async function promoteNextTeamFromSlotWaitlist(db: Db, tournamentId: stri
   const vg = validateTournamentGroups(maxT, gc);
   if (!vg.ok) return;
 
-  /** Promoted teams follow default placement (same as manual-less team create). */
-  const groupIndex: number | null = null;
-
   const tidf = tournamentIdMongoFilter(tournamentId);
   const teamsCol = db.collection('teams');
   const wlCol = db.collection('team_slot_waitlist');
@@ -45,6 +42,31 @@ export async function promoteNextTeamFromSlotWaitlist(db: Db, tournamentId: stri
   const waitlistCol = db.collection('waitlist');
 
   const tDivs = (tournament as { divisions?: TournamentDivision[] }).divisions;
+  const allowGroups = tournamentAllowsManualGroupAssignment(tournament as { groupsDistributedAt?: string | null });
+
+  const countTeamsInGroupForDivision = async (division: TournamentDivision, gi: number): Promise<number> => {
+    if (gi === 0) {
+      return teamsCol.countDocuments({
+        ...tidf,
+        division,
+        $or: [{ groupIndex: 0 }, { groupIndex: { $exists: false } }, { groupIndex: null }],
+      });
+    }
+    return teamsCol.countDocuments({ ...tidf, division, groupIndex: gi });
+  };
+
+  const pickLeastLoadedGroupForDivision = async (division: TournamentDivision): Promise<number> => {
+    let best = 0;
+    let bestCount = Infinity;
+    for (let i = 0; i < vg.groupCount; i++) {
+      const c = await countTeamsInGroupForDivision(division, i);
+      if (c < bestCount) {
+        bestCount = c;
+        best = i;
+      }
+    }
+    return best;
+  };
 
   const MAX_ATTEMPTS = 20;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -128,6 +150,16 @@ export async function promoteNextTeamFromSlotWaitlist(db: Db, tournamentId: stri
           continue;
         }
       }
+    }
+
+    // If groups already exist, assign to the least-loaded group for this division.
+    // Otherwise keep `null` so team stays "unassigned" until organizer creates/distributes groups.
+    let groupIndex: number | null = null;
+    if (allowGroups) {
+      const least = await pickLeastLoadedGroupForDivision(pairDivision);
+      const inTarget = await countTeamsInGroupForDivision(pairDivision, least);
+      // If somehow full (shouldn't happen), fall back to null; organizer can rebalance.
+      groupIndex = inTarget < vg.teamsPerGroup ? least : null;
     }
 
     const now = new Date().toISOString();

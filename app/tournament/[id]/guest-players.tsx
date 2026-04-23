@@ -131,18 +131,46 @@ export default function TournamentGuestPlayersScreen() {
     }
   }, [guestId, guests, canManage]);
 
-  const handleCreate = () => {
-    const n = displayName.trim();
-    if (!n) return Alert.alert(t('common.error'), t('tournamentDetail.guestDisplayNameRequired'));
-    guestMutation.mutate(
-      { action: 'createGuestPlayer', displayName: n, gender, ...(note.trim() ? { note: note.trim() } : {}) },
-      {
-        onSuccess: () => {
-          setDisplayName('');
-          setNote('');
-        },
+  const handleCreate = async () => {
+    const raw = displayName.trim();
+    if (!raw) return Alert.alert(t('common.error'), t('tournamentDetail.guestDisplayNameRequired'));
+
+    const noteTrim = note.trim();
+    const names = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (names.length === 0) return Alert.alert(t('common.error'), t('tournamentDetail.guestDisplayNameRequired'));
+
+    // Clear immediately so UI doesn't wait for backend confirmation.
+    setDisplayName('');
+    setNote('');
+
+    // Create one guest per comma-separated name. Same gender + note for all.
+    const failed: string[] = [];
+    for (const n of names) {
+      try {
+        await guestMutation.mutateAsync({
+          action: 'createGuestPlayer',
+          displayName: n,
+          gender,
+          ...(noteTrim ? { note: noteTrim } : {}),
+        });
+      } catch {
+        failed.push(n);
       }
-    );
+    }
+
+    // For single create, restore input on failure (best UX).
+    if (names.length === 1 && failed.length === 1) {
+      setDisplayName(raw);
+      setNote(note);
+      return;
+    }
+    // For bulk, don't auto-restore (would risk duplicates). Show a simple summary.
+    if (failed.length > 0) {
+      Alert.alert(t('common.error'), `No se pudieron crear: ${failed.join(', ')}`);
+    }
   };
 
   const openEditGuest = (g: TournamentGuestPlayer) => {
@@ -294,6 +322,7 @@ export default function TournamentGuestPlayersScreen() {
                     if (String(guestId ?? '').trim()) router.back();
                   }}
                   disabled={guestMutation.isPending}
+                  size="sm"
                   fullWidth
                 />
               </View>
@@ -302,6 +331,7 @@ export default function TournamentGuestPlayersScreen() {
                   title={t('common.save')}
                   onPress={handleSaveEdit}
                   disabled={guestMutation.isPending}
+                  size="sm"
                   fullWidth
                 />
               </View>
@@ -311,6 +341,7 @@ export default function TournamentGuestPlayersScreen() {
               title={t('tournamentDetail.guestPlayersAddButton')}
               onPress={handleCreate}
               disabled={guestMutation.isPending}
+              size="sm"
               fullWidth
             />
           )}

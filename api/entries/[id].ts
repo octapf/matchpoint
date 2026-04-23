@@ -217,6 +217,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             } as never
           );
         }
+
+        // Safety: do not allow leaving if you'd orphan the tournament with only guest players.
+        // This can happen if organizerIds is empty/out-of-sync; regardless, a tournament needs at least
+        // one registered (non-guest) user to manage it (or the user should delete the tournament instead).
+        const otherRegisteredCount = await col.countDocuments({
+          tournamentId,
+          userId: { $ne: actingUserId },
+          $or: [{ guestPlayerId: { $exists: false } }, { guestPlayerId: null }, { guestPlayerId: '' }],
+        });
+        if (otherRegisteredCount === 0) {
+          return corsRes.status(400).json({
+            error: 'Cannot leave the tournament as the last registered user',
+          });
+        }
       } else {
         const orgsKick = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
         if (orgsKick.includes(entryUserId)) {

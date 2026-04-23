@@ -2065,21 +2065,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId) && !actorIsAdmin) {
         return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
       }
-      const entriesCol = db.collection('entries');
-      const entryCount = await entriesCol.countDocuments(tournamentIdMongoFilter(id));
-      if (entryCount > 0) {
-        return corsRes.status(400).json({
-          error:
-            'Cannot delete tournament while players are registered. Remove all players from the roster first.',
-        });
-      }
-      const teamsColDel = db.collection('teams');
-      const teamsCount = await teamsColDel.countDocuments(tournamentIdMongoFilter(id));
-      if (teamsCount > 0) {
-        return corsRes.status(400).json({
-          error: 'Cannot delete tournament while teams exist. Remove all teams first.',
-        });
-      }
+      // Allow organizers/admins to delete tournaments regardless of roster/team state.
+      // This is needed to recover from inconsistent data states (e.g. orphan entries).
       await purgeTournamentRelatedData(db, id);
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();

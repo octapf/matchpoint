@@ -112,6 +112,54 @@ export function useDeleteTeam() {
   return useMutation({
     mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
       teamsApi.deleteOne(id),
+    onMutate: async ({ id, tournamentId }) => {
+      if (!id || !tournamentId) return {};
+      await queryClient.cancelQueries({ queryKey: ['teams'] });
+      await queryClient.cancelQueries({ queryKey: ['tournament', tournamentId] });
+      await queryClient.cancelQueries({ queryKey: ['tournaments'] });
+
+      const prevTeamsQueries = queryClient.getQueriesData<Team[]>({ queryKey: ['teams'] });
+      const prevTournament = queryClient.getQueryData<Tournament>(['tournament', tournamentId]);
+      const prevTournaments = queryClient.getQueryData<Tournament[]>(['tournaments']);
+      const prevTeam = queryClient.getQueryData<Team>(['team', id]);
+
+      // Remove the team from any cached teams lists that contain it.
+      for (const [key, data] of prevTeamsQueries) {
+        const qk = (key ?? []) as unknown[];
+        if (qk.length === 0 || qk[0] !== 'teams') continue;
+        const params =
+          qk.length >= 2 && typeof qk[1] === 'object' && qk[1] != null ? (qk[1] as { tournamentId?: string }) : null;
+        if (params?.tournamentId && String(params.tournamentId) !== String(tournamentId)) continue;
+        const cur = Array.isArray(data) ? data : [];
+        queryClient.setQueryData<Team[]>(
+          key as never,
+          cur.filter((t) => t && String(t._id) !== String(id))
+        );
+      }
+      queryClient.removeQueries({ queryKey: ['team', id] });
+
+      // Best-effort: update counts so UI doesn't briefly show stale numbers.
+      queryClient.setQueryData<Tournament>(['tournament', tournamentId], (old) =>
+        old ? { ...old, teamsCount: Math.max(0, Number(old.teamsCount ?? 0) - 1) } : old
+      );
+      queryClient.setQueryData<Tournament[]>(['tournaments'], (old) =>
+        old?.map((t) =>
+          t._id === tournamentId ? { ...t, teamsCount: Math.max(0, Number(t.teamsCount ?? 0) - 1) } : t
+        )
+      );
+
+      return { prevTeamsQueries, prevTournament, prevTournaments, prevTeam, tournamentId, id } as const;
+    },
+    onError: (_err, vars, ctx) => {
+      if (!ctx?.tournamentId) return;
+      // Restore all teams queries snapshots.
+      for (const [key, data] of ctx.prevTeamsQueries ?? []) {
+        queryClient.setQueryData(key as never, data as never);
+      }
+      if (ctx.prevTournament !== undefined) queryClient.setQueryData(['tournament', ctx.tournamentId], ctx.prevTournament);
+      if (ctx.prevTournaments !== undefined) queryClient.setQueryData(['tournaments'], ctx.prevTournaments);
+      if (ctx.prevTeam !== undefined) queryClient.setQueryData(['team', ctx.id], ctx.prevTeam);
+    },
     onSuccess: (_, { tournamentId }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });

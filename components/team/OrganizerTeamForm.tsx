@@ -208,6 +208,10 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
   const maxT = Number(tournament.maxTeams ?? 0);
   const atTeamCapacity =
     !editTeam && Number.isFinite(maxT) && maxT > 0 && teams.length >= maxT && !tournamentStarted;
+  const hasTwoPlayersSelected = !!p1 && !!p2 && p1 !== p2;
+
+  const pickerBusy =
+    createTeam.isPending || updateTeam.isPending || deleteTeam.isPending || joinTeamSlotWaitlist.isPending;
 
   const pick = (slotId: string) => {
     if (!p1) return setP1(slotId);
@@ -315,7 +319,12 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           const u = userMap[uid];
           const selected = uid === p1 || uid === p2;
           return (
-            <Pressable key={uid} style={[styles.row, selected && styles.rowSelected]} onPress={() => pick(uid)}>
+            <Pressable
+              key={uid}
+              style={[styles.row, selected && styles.rowSelected, pickerBusy && styles.rowDisabled]}
+              onPress={pickerBusy ? undefined : () => pick(uid)}
+              disabled={pickerBusy}
+            >
               <Avatar
                 firstName={u?.firstName ?? ''}
                 lastName={u?.lastName ?? ''}
@@ -334,7 +343,12 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           const slot = toGuestPlayerSlot(g._id);
           const selected = slot === p1 || slot === p2;
           return (
-            <Pressable key={g._id} style={[styles.row, selected && styles.rowSelected]} onPress={() => pick(slot)}>
+            <Pressable
+              key={g._id}
+              style={[styles.row, selected && styles.rowSelected, pickerBusy && styles.rowDisabled]}
+              onPress={pickerBusy ? undefined : () => pick(slot)}
+              disabled={pickerBusy}
+            >
               <Avatar
                 firstName={(g.displayName ?? '').trim()}
                 lastName=""
@@ -359,8 +373,10 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
             updateTeam.isPending ||
             deleteTeam.isPending ||
             joinTeamSlotWaitlist.isPending ||
+            (atTeamCapacity && !hasTwoPlayersSelected) ||
             (!editTeam && groupsConfigInvalid)
           }
+          size="sm"
           fullWidth
         />
       </View>
@@ -424,6 +440,7 @@ const styles = StyleSheet.create({
   listGuests: { marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12 },
   rowSelected: { backgroundColor: Colors.surfaceLight },
+  rowDisabled: { opacity: 0.55 },
   rowText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
   empty: { padding: 14, color: Colors.textMuted, textAlign: 'center' },
   submitBlock: { marginTop: 8, marginBottom: 8 },

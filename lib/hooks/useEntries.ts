@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { entriesApi } from '@/lib/api';
 import { shouldUseDevMocks } from '@/lib/config';
 import { hapticSuccess } from '@/lib/haptics';
@@ -24,6 +24,8 @@ export function useEntries(
             })
           )
         : (entriesApi.find(params) as Promise<Entry[]>),
+    // Avoid UI flicker when we invalidate/refetch entries (keep old list until new one arrives).
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 }
