@@ -37,6 +37,10 @@
       "destination": "/api/auth?slug=:slug"
     },
     {
+      "source": "/api/health",
+      "destination": "/api/admin?type=health"
+    },
+    {
       "source": "/((?!api/)(?!.*\\.[a-zA-Z0-9]{2,6}$).*)",
       "destination": "/"
     }

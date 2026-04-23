@@ -14,6 +14,7 @@ import { ensureDbIndexes } from '../server/lib/dbIndexes';
 import { adminPostSchema } from '../server/lib/schemas/adminPost';
 import { insertAuditLogSafe } from '../server/lib/auditLog';
 import { captureException } from '../server/lib/observability';
+import { getDeploymentRevision, isMongoConfigured } from '../server/lib/env';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -98,13 +99,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'GET') return withCors(req, res).status(405).json({ error: 'Method not allowed' });
 
-  const admin = await requireAdmin(req, corsRes);
-  if (!admin) return;
-
   const type = queryString(req.query.type);
 
   try {
     const db = await getDb();
+
+    // Liveness/readiness (no auth). Used via Vercel rewrite: GET /api/health -> /api/admin?type=health
+    if (type === 'health') {
+      const revision = getDeploymentRevision();
+      if (!isMongoConfigured()) {
+        return corsRes.status(503).json({
+          ok: false,
+          db: false,
+          error: 'Database not configured',
+          revision,
+        });
+      }
+      try {
+        await db.command({ ping: 1 });
+        return corsRes.status(200).json({ ok: true, db: true, revision });
+      } catch {
+        return corsRes.status(503).json({
+          ok: false,
+          db: false,
+          error: 'Database unreachable',
+          revision,
+        });
+      }
+    }
+
+    const admin = await requireAdmin(req, corsRes);
+    if (!admin) return;
 
     if (type === 'stats') {
       const [users, tournaments, entries, teams] = await Promise.all([
