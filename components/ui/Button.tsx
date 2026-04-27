@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { Pressable, Text, StyleSheet, View, type StyleProp, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -12,6 +12,8 @@ type ButtonProps = {
   fullWidth?: boolean;
   size?: 'md' | 'sm';
   iconLeft?: keyof typeof Ionicons.glyphMap;
+  /** When set, rendered instead of `iconLeft` (e.g. non-Ionicons medal). */
+  iconLeftSlot?: ReactNode;
   disabled?: boolean;
   /** Merged after variant text styles (e.g. `{ fontStyle: 'italic' }`). */
   titleStyle?: StyleProp<TextStyle>;
@@ -24,6 +26,7 @@ export function Button({
   fullWidth,
   size = 'md',
   iconLeft,
+  iconLeftSlot,
   disabled,
   titleStyle,
 }: ButtonProps) {
@@ -67,7 +70,9 @@ export function Button({
       ]}
     >
       <View style={styles.content}>
-        {iconLeft ? (
+        {iconLeftSlot ? (
+          <View style={{ marginRight: 8 }}>{iconLeftSlot}</View>
+        ) : iconLeft ? (
           <Ionicons
             name={iconLeft}
             size={isSmall ? 16 : 18}

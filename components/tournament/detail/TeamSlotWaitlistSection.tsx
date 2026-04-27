@@ -1,14 +1,14 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/Colors';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useTeamSlotWaitlist, useLeaveTeamSlotWaitlist, type TeamSlotWaitlistRow } from '@/lib/hooks/useTeamSlotWaitlist';
 import { isGuestPlayerSlot } from '@/lib/playerSlots';
 import type { Team, TournamentDivision, TournamentGuestPlayer, User } from '@/types';
 import { shouldUseDevMocks } from '@/lib/config';
-import { useTheme } from '@/lib/theme/useTheme';
 import { alertApiError } from '@/lib/utils/apiError';
 import { TournamentTeamCard } from '@/components/tournament/detail/TournamentTeamCard';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 function waitlistRowToTeam(r: TeamSlotWaitlistRow, tournamentId: string): Team {
   const ids = r.playerIds ?? [];
@@ -42,7 +42,6 @@ export function TeamSlotWaitlistSection({
   t,
   onOpenProfile,
 }: Props) {
-  const { tokens } = useTheme();
   const { data: rows = [], isLoading } = useTeamSlotWaitlist(tournamentId, division);
   const leave = useLeaveTeamSlotWaitlist();
 
@@ -74,7 +73,17 @@ export function TeamSlotWaitlistSection({
     <View style={styles.block}>
       <Text style={styles.title}>{t('team.teamSlotWaitlistTitle')}</Text>
       {isLoading ? (
-        <ActivityIndicator color={tokens.accent} style={{ marginVertical: 12 }} />
+        <View style={styles.skeletonBlock}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={styles.skeletonRow}>
+              <Skeleton height={48} width={48} borderRadius={12} />
+              <View style={styles.skeletonRowMain}>
+                <Skeleton height={16} width="68%" style={{ marginBottom: 8 }} />
+                <Skeleton height={14} width="42%" />
+              </View>
+            </View>
+          ))}
+        </View>
       ) : rows.length === 0 ? (
         <Text style={styles.empty}>{t('team.teamSlotWaitlistEmpty')}</Text>
       ) : (
@@ -116,6 +125,9 @@ export function TeamSlotWaitlistSection({
 }
 
 const styles = StyleSheet.create({
+  skeletonBlock: { gap: 12, marginVertical: 8 },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  skeletonRowMain: { flex: 1, minWidth: 0 },
   /** Same horizontal bounds as team rows in the tab (no extra inset — cards must match width). */
   block: { marginTop: 16, marginBottom: 8 },
   title: {

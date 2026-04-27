@@ -8,14 +8,14 @@
  *     wider than the screen.
  *  3. Text has a minimum readable size (10 px) so even at aggressive scales labels are legible.
  *  4. SVG connector lines are drawn BEHIND all match cards (rendered first, low zIndex).
- *  5. Finale badge sits above the “Final” column title; all round titles sit tight to match
- *     boxes (small gap only; no medal height in non-final columns).
+ *  5. Final column: round title (“FINAL”) on top, category medal directly below it; all round titles
+ *     align tight to match boxes (small gaps; non-final columns have no medal).
  *  6. Optional `userMap`: team A — avatars above the name; team B — avatars below (doubles: two photos).
  */
 import React, { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { G, Path } from 'react-native-svg';
 import type { Team, TournamentGuestPlayer, User } from '@/types';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
@@ -60,8 +60,13 @@ const B_MEDAL_CATEGORY = 56;
 const B_TRP_AFTER_LABEL = 2;
 /** Same as above — kept for readability; title→match gap is tight everywhere. */
 const B_TRP_UNDER_TROPHY = 2;
-/** Gap between finale medal bottom and “FINAL” text (Final column only). */
+/**
+ * Used only in `computeLayout` min-clearance for the final column (legacy name: space reserved
+ * before the label+match stack so geometry matches feeder columns).
+ */
 const B_GAP_MEDAL_TO_FINAL_TITLE = 4;
+/** Gap below “FINAL” / bronze title before the medal (final column only). */
+const B_GAP_LABEL_TO_MEDAL = 2;
 /** Floor for row gap when scale is tiny. */
 const MIN_ROW_GAP_PX = 56;
 /** `Avatar` size xs — must stay in sync with min height when `userMap` is passed. */
@@ -277,7 +282,10 @@ type Layout = {
   colLabelH: number;
   /** Gap title row → match cards (all columns). */
   trophyBand: number;
-  /** Medal + gap above “FINAL” title (Final column layout only). */
+  /**
+   * Used in `computeLayout` for final-column `ys` min term only (not label position).
+   * @deprecated name kept for minimal diff vs geometry comments.
+   */
   medalAboveTitleExtra: number;
 };
 
@@ -343,18 +351,20 @@ function computeLayout(
   const colLabelH = Math.max(B_COL_LABEL_H * s, 18);
   /** Same height as rendered finale icon (must match `finaleIconSize` in the component). */
   const finaleIconLayoutH = Math.max(24, bracketFinaleIconHeight(bracketCategory) * s);
+  /** Min vertical clearance term for final-column match `ys` (unchanged — keeps connector geometry). */
   const medalAboveTitleExtra = finaleIconLayoutH + B_GAP_MEDAL_TO_FINAL_TITLE * s;
   const trophyBandTight = B_TRP_AFTER_LABEL * s + B_TRP_UNDER_TROPHY * s;
+  /** Tighter band under the title row for the **final** column only — brings the final card closer to FINAL/medal. */
+  const trophyBandTightFinal = Math.max(1 * s, trophyBandTight - 3 * s);
   const finalColIdx = layers.length - 1;
   /**
-   * Final column: reserve space for the medal + “FINAL” band with at least `medalAboveTitleExtra`, but do **not**
-   * add that full band on top of `ysRaw` when geometry already places the match lower — otherwise the final card
-   * sits too low vs the merge point of the semifinals and vs the rest of the bracket. Bronze column reuses final Y.
+   * Final column: same `Math.max` rule as before so lines meet cards; slightly tighter `trophyBandTightFinal`
+   * so the final match sits closer to the header block (medal is drawn below the title in the view).
    */
   const ys = ysRaw.map((row, r) =>
     row.map((y) =>
       r === finalColIdx
-        ? Math.max(y, medalAboveTitleExtra) + colLabelH + trophyBandTight
+        ? Math.max(y, medalAboveTitleExtra) + colLabelH + trophyBandTightFinal
         : y + colLabelH + trophyBandTight
     )
   );
@@ -577,8 +587,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
     [matches, category, showAvatars]
   );
 
-  const { layers, ys, bronzeRows, bronzeY, width, height, paths, s, colW, colGap, matchH, colLabelH, medalAboveTitleExtra } =
-    layout;
+  const { layers, ys, bronzeRows, bronzeY, width, height, paths, s, colW, colGap, matchH, colLabelH } = layout;
 
   const columnHeadings = useMemo(() => mainBracketColumnHeadings(matches, t), [matches, t]);
 
@@ -593,10 +602,31 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
   const strokeW = Math.max(1,  B_STROKE * s);
   const finaleIconSize = Math.max(24, bracketFinaleIconHeight(category) * s);
 
-  // Finale badge: above the “FINAL” title row, centered in the final column.
   const finalIdx = layers.length - 1;
   const trophyLeft = cx(finalIdx, colW, colGap) + colW / 2 - finaleIconSize / 2;
-  const trophyTop = 0;
+
+  /** Tight gap between column title (and medal, on final) and the top of the match card — anchored from layout `ys`. */
+  const gapAboveCard = B_TRP_AFTER_LABEL * s;
+  const edgePadTop = B_EDGE_PAD * s;
+
+  const roundLabelTops = layers.map((_, r) => {
+    const minY = Math.min(...ys[r]!);
+    if (r === finalIdx) {
+      const medalTop = minY - gapAboveCard - finaleIconSize;
+      return medalTop - B_GAP_LABEL_TO_MEDAL * s - colLabelH;
+    }
+    return minY - gapAboveCard - colLabelH;
+  });
+
+  const finalMedalTop =
+    ys[finalIdx]?.length ? Math.min(...ys[finalIdx]!) - gapAboveCard - finaleIconSize : 0;
+
+  const bronzeLabelTop =
+    bronzeRows.length > 0 ? bronzeY - gapAboveCard - colLabelH : Number.POSITIVE_INFINITY;
+
+  const labelTopCandidates = [...roundLabelTops, ...(bronzeRows.length > 0 ? [bronzeLabelTop] : [])];
+  const minLabelTop = Math.min(...labelTopCandidates);
+  const padTop = minLabelTop < edgePadTop ? edgePadTop - minLabelTop : 0;
 
   const teamLabel = (team: Team) => team?.name?.trim() || t('tournamentDetail.matchOpponentTbd');
 
@@ -654,28 +684,30 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
         style={styles.hScroll}
         contentContainerStyle={styles.hScrollContent}
       >
-        <View style={[styles.canvas, { width, height }]}>
+        <View style={[styles.canvas, { width, height: height + padTop }]}>
         {/* 1. SVG connector lines — rendered first, behind everything */}
         <Svg
           width={width}
-          height={height}
+          height={height + padTop}
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, styles.svgLines]}
         >
-          {paths.map((d, i) => (
-            <Path
-              key={i}
-              d={d}
-              stroke={STROKE_COLOR}
-              strokeWidth={strokeW}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
+          <G transform={`translate(0, ${padTop})`}>
+            {paths.map((d, i) => (
+              <Path
+                key={i}
+                d={d}
+                stroke={STROKE_COLOR}
+                strokeWidth={strokeW}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+          </G>
         </Svg>
 
-        {/* 1b. Round name per column (aligned with list headings) */}
+        {/* 1b. Round name per column — top anchored just above that column’s match card(s) */}
         {layers.map((_, r) => (
           <View
             key={`col-h-${r}`}
@@ -684,7 +716,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               styles.colRoundLabelWrap,
               {
                 left: cx(r, colW, colGap),
-                top: r === finalIdx ? medalAboveTitleExtra : 0,
+                top: padTop + roundLabelTops[r]!,
                 width: colW,
                 height: colLabelH,
               },
@@ -707,7 +739,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               styles.colRoundLabelWrap,
               {
                 left: cx(layers.length, colW, colGap),
-                top: medalAboveTitleExtra,
+                top: padTop + bronzeLabelTop,
                 width: colW,
                 height: colLabelH,
               },
@@ -732,7 +764,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
               collapsable={false}
               style={[styles.matchCell, {
                 left: cx(r, colW, colGap),
-                top: ys[r]![i] ?? 0,
+                top: padTop + (ys[r]![i] ?? 0),
                 width: colW,
                 height: matchH,
               }]}
@@ -749,7 +781,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
             collapsable={false}
             style={[styles.matchCell, {
               left: cx(layers.length, colW, colGap),
-              top: bronzeY + bi * (matchH + Math.max(B_BRZ_GAP * s, 24)),
+              top: padTop + bronzeY + bi * (matchH + Math.max(B_BRZ_GAP * s, 24)),
               width: colW,
               height: matchH,
             }]}
@@ -767,7 +799,7 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
             styles.trophyBadge,
             {
               left: trophyLeft,
-              top: trophyTop,
+              top: padTop + finalMedalTop,
               width: finaleIconSize,
               height: finaleIconSize,
             },

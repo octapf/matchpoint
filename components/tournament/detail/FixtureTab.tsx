@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { View, Text, Pressable, Animated, Easing, StyleSheet, type ViewStyle } from 'react-native';
+import { View, Text, Pressable, Animated, Easing, StyleSheet, type ViewStyle, Alert } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
@@ -7,6 +7,7 @@ import type { Team, TournamentGuestPlayer, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
 import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
+import { Button } from '@/components/ui/Button';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
 import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
 import {
@@ -202,6 +203,13 @@ export function FixtureTab({
   /** True while organizer has not created groups (`groupsDistributedAt` + no `groupIndex`) — classification cannot start. */
   groupsDistributionPending,
   fixtureClassificationEmptyLegendStyle,
+  showStartCategoriesPhaseCta,
+  startCategoriesPhaseDisabled,
+  startCategoriesPhasePending,
+  onPressStartCategoriesPhase,
+  tournamentPhase,
+  classificationFullyComplete,
+  preCategoryPhaseTeamLists,
 }: {
   t: (key: string, options?: Record<string, string | number>) => string;
   matchCategoryTabs: MatchSubTab[];
@@ -247,6 +255,15 @@ export function FixtureTab({
   groupsDistributionPending: boolean;
   /** Centered legend (no teams yet vs groups not created). */
   fixtureClassificationEmptyLegendStyle: unknown;
+  /** Organizer CTA: finalize classification → category phase (same placement as Groups “reorganize”). */
+  showStartCategoriesPhaseCta?: boolean;
+  startCategoriesPhaseDisabled?: boolean;
+  startCategoriesPhasePending?: boolean;
+  onPressStartCategoriesPhase?: () => void;
+  tournamentPhase: string;
+  classificationFullyComplete: boolean;
+  /** Clasificación terminada, fase aún `classification`: equipos por categoría (orden global), sin agrupar por girón. */
+  preCategoryPhaseTeamLists: Partial<Record<MatchCategoryTab, { team: Team; wins: number; points: number }[]>>;
 }) {
   const { tokens } = useTheme();
   const safeOpenMatch =
@@ -563,6 +580,52 @@ export function FixtureTab({
         <View style={fixtureCategoryContentShell}>
           <CategoryTabContentGradient category={selectedMatchesSubtab as MatchCategoryTab} />
           <View style={fixtureCategoryContentInner}>
+          {showStartCategoriesPhaseCta && onPressStartCategoriesPhase ? (
+            <View style={{ flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+              <View style={{ gap: 6 }}>
+                <Button
+                  title={
+                    startCategoriesPhasePending
+                      ? t('common.loading')
+                      : t('tournamentDetail.menuStartCategoriesPhase')
+                  }
+                  variant="primary"
+                  size="sm"
+                  iconLeftSlot={
+                    <MaterialCommunityIcons
+                      name="medal-outline"
+                      size={16}
+                      color={
+                        startCategoriesPhasePending
+                          ? Colors.textMuted
+                          : (selectedMatchesSubtab as MatchCategoryTab) === 'Gold'
+                            ? Colors.yellow
+                            : (selectedMatchesSubtab as MatchCategoryTab) === 'Silver'
+                              ? Colors.textSecondary
+                              : BRONZE
+                      }
+                      accessibilityLabel={t(
+                        tournamentCategoryI18nKey(selectedMatchesSubtab as MatchCategoryTab)
+                      )}
+                    />
+                  }
+                  onPress={() => {
+                    if (startCategoriesPhasePending) return;
+                    if (startCategoriesPhaseDisabled) {
+                      Alert.alert(
+                        t('tournamentDetail.menuStartCategoriesPhase'),
+                        t('tournamentDetail.fixtureCategoryClassificationIncomplete')
+                      );
+                      return;
+                    }
+                    onPressStartCategoriesPhase();
+                  }}
+                  disabled={!!startCategoriesPhasePending}
+                  fullWidth
+                />
+              </View>
+            </View>
+          ) : null}
           {(categoryMatchesByCategory[selectedMatchesSubtab as MatchCategoryTab] ?? []).length > 0 ? (
             (() => {
               const tab = selectedMatchesSubtab as MatchCategoryTab;
@@ -580,7 +643,13 @@ export function FixtureTab({
               const teamCountForLabels =
                 idsLen >= 2 ? idsLen : estimateCategoryBracketTeamCount(mergedRows as MatchRow[]);
               const bracketGroups = groupCategoryByBracketRound(mergedRows as MatchRow[], teamCountForLabels);
-              if (bracketGroups && mergedRows.length > 0) {
+              /**
+               * Always show `CategoryBracketDiagram` when we have merged bracket rows (medal + connectors).
+               * Previously we gated on `groupCategoryByBracketRound` !== null; that returns null when API rows
+               * omit `bracketRound`, which hid the entire diagram + round list even though the diagram layout
+               * still works (rounds default to 0 in `buildMainLayers`).
+               */
+              if (mergedRows.length > 0) {
                 return (
                   <View style={groupBlockStyle as never}>
                     <CategoryBracketDiagram
@@ -600,14 +669,22 @@ export function FixtureTab({
                         marginBottom: 12,
                       }}
                     />
-                    {bracketGroups.map((g, gi) => (
-                      <View key={`br-${g.round}-${g.heading}-${gi}`} style={{ marginBottom: 14 }}>
-                        <Text style={bracketRoundHeadingStyle as never}>{bracketRoundTitleDisplay(g.heading)}</Text>
-                        {sortMatches(g.matches).map((m, mi) => (
-                          <View key={`${g.round}-${g.heading}-${m.id}-${mi}`}>{renderMatchRow(m)}</View>
+                    {bracketGroups && bracketGroups.length > 0 ? (
+                      bracketGroups.map((g, gi) => (
+                        <View key={`br-${g.round}-${g.heading}-${gi}`} style={{ marginBottom: 14 }}>
+                          <Text style={bracketRoundHeadingStyle as never}>{bracketRoundTitleDisplay(g.heading)}</Text>
+                          {sortMatches(g.matches).map((m, mi) => (
+                            <View key={`${g.round}-${g.heading}-${m.id}-${mi}`}>{renderMatchRow(m)}</View>
+                          ))}
+                        </View>
+                      ))
+                    ) : (
+                      <View style={{ marginBottom: 14 }}>
+                        {sortMatches(mergedRows as MatchRow[]).map((m, mi) => (
+                          <View key={`br-flat-${m.id}-${mi}`}>{renderMatchRow(m)}</View>
                         ))}
                       </View>
-                    ))}
+                    )}
                   </View>
                 );
               }
@@ -624,12 +701,56 @@ export function FixtureTab({
           ) : (
             (() => {
               const catTab = selectedMatchesSubtab as MatchCategoryTab;
+              if (!divisionHasTeams || groupsDistributionPending) {
+                return (
+                  <Text style={fixtureClassificationEmptyLegendStyle as never}>
+                    {t('tournamentDetail.fixtureCategoryEmptyShort', {
+                      category: t(tournamentCategoryI18nKey(catTab)),
+                    })}
+                  </Text>
+                );
+              }
+
+              if (tournamentPhase === 'classification') {
+                if (!classificationFullyComplete) {
+                  return (
+                    <Text style={fixtureClassificationEmptyLegendStyle as never}>
+                      {t('tournamentDetail.fixtureCategoryClassificationIncomplete')}
+                    </Text>
+                  );
+                }
+                const flat = preCategoryPhaseTeamLists[catTab] ?? [];
+                if (flat.length === 0) {
+                  return (
+                    <Text style={emptyTextStyle as never}>
+                      {t('tournamentDetail.fixtureCategoryPrePhaseEmpty', {
+                        category: t(tournamentCategoryI18nKey(catTab)),
+                      })}
+                    </Text>
+                  );
+                }
+                return (
+                  <View style={groupBlockStyle as never}>
+                    <FlashList
+                      data={flat}
+                      keyExtractor={(row) => row.team._id}
+                      renderItem={({ item: row, index: idx }) => (
+                        <View style={matchStandingRowStyle as never}>
+                          <Text style={matchStandingRankStyle as never}>#{idx + 1}</Text>
+                          <Text style={matchStandingTeamStyle as never}>{row.team.name}</Text>
+                          <Text style={matchStandingMetaStyle as never}>
+                            {row.wins}W · {row.points}pts
+                          </Text>
+                        </View>
+                      )}
+                    />
+                  </View>
+                );
+              }
+
               const categoryHasAssignedTeams =
                 (categoryTeamIdsByCategory[catTab]?.filter(Boolean).length ?? 0) > 0;
-              if (
-                !categoryHasAssignedTeams &&
-                (!divisionHasTeams || groupsDistributionPending)
-              ) {
+              if (!categoryHasAssignedTeams) {
                 return (
                   <Text style={fixtureClassificationEmptyLegendStyle as never}>
                     {t('tournamentDetail.fixtureCategoryEmptyShort', {

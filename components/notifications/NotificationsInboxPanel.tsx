@@ -7,6 +7,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useUserStore } from '@/store/useUserStore';
 import { useNotifications, useMarkNotificationsRead, useMarkAllNotificationsRead } from '@/lib/hooks/useNotifications';
 import { IconButton } from '@/components/ui/IconButton';
+import { Skeleton } from '@/components/ui/Skeleton';
 import type { Notification } from '@/types';
 import { useTheme } from '@/lib/theme/useTheme';
 
@@ -77,9 +78,20 @@ export function NotificationsInboxPanel({ onClose }: NotificationsInboxPanelProp
         </View>
       </View>
 
-      {isLoading ? <Text style={styles.muted}>{t('common.loading')}</Text> : null}
-
-      {notifications.length === 0 && !isLoading ? (
+      {isLoading ? (
+        <View style={styles.skeletonList}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={styles.skeletonRow}>
+              <Skeleton height={40} width={40} borderRadius={20} />
+              <View style={styles.skeletonRowText}>
+                <Skeleton height={16} width="78%" style={{ marginBottom: 8 }} />
+                <Skeleton height={14} width="95%" />
+              </View>
+              <Skeleton height={8} width={8} borderRadius={4} style={{ alignSelf: 'center', marginLeft: 8 }} />
+            </View>
+          ))}
+        </View>
+      ) : notifications.length === 0 ? (
         <Text style={styles.muted}>{t('notifications.empty')}</Text>
       ) : (
         <FlashList
@@ -115,6 +127,17 @@ export function NotificationsInboxPanel({ onClose }: NotificationsInboxPanelProp
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: 16, paddingBottom: 16 },
+  skeletonList: { flex: 1, paddingTop: 4 },
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    gap: 10,
+  },
+  skeletonRowText: { flex: 1, minWidth: 0 },
   list: { flex: 1 },
   headerRow: {
     flexDirection: 'row',

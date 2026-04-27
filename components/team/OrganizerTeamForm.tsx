@@ -21,6 +21,7 @@ import { divisionForTeam } from '@/lib/tournamentDivision';
 import type { Team, TournamentDivision, TournamentGuestPlayer } from '@/types';
 import { TeamSlotWaitlistSection } from '@/components/tournament/detail/TeamSlotWaitlistSection';
 import { TournamentTeamCard } from '@/components/tournament/detail/TournamentTeamCard';
+import { OrganizerTeamFormSkeleton } from '@/components/team/OrganizerTeamFormSkeleton';
 import { useUserStore } from '@/store/useUserStore';
 
 export type OrganizerTeamFormProps = {
@@ -35,7 +36,7 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: tournament } = useTournament(tournamentId);
+  const { data: tournament, isLoading: tournamentLoading, isError: tournamentIsError } = useTournament(tournamentId);
   const { data: waitlistInfo } = useWaitlist(tournamentId, division);
   const { data: teams = [] } = useTeams({ tournamentId });
   const { data: teamSlotWaitlistRows = [] } = useTeamSlotWaitlist(tournamentId);
@@ -50,7 +51,7 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
       ((tournament.organizerIds ?? []).includes(userId) || viewerRole === 'admin')
   );
 
-  const guestPlayers = tournament?.guestPlayers ?? [];
+  const guestPlayers = useMemo(() => tournament?.guestPlayers ?? [], [tournament]);
   const guestMap = useMemo(
     () => Object.fromEntries(guestPlayers.map((g) => [g._id, g])) as Record<string, TournamentGuestPlayer>,
     [guestPlayers]
@@ -130,14 +131,18 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
   const [p2, setP2] = useState<string | null>(null);
   const lastSuggestedTeamName = useRef('');
 
-  useEffect(() => {
-    if (!editTeam) return;
-    const ids = editTeam.playerIds ?? [];
-    setP1(ids[0] ?? null);
-    setP2(ids[1] ?? null);
-    setTeamName(editTeam.name ?? '');
-    lastSuggestedTeamName.current = '';
-  }, [editTeam?._id, editTeam?.name, editTeam?.playerIds]);
+  useEffect(
+    () => {
+      if (!editTeam) return;
+      const ids = editTeam.playerIds ?? [];
+      setP1(ids[0] ?? null);
+      setP2(ids[1] ?? null);
+      setTeamName(editTeam.name ?? '');
+      lastSuggestedTeamName.current = '';
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when id/roster/name change; avoid `editTeam` reference churn from parent.
+    [editTeam?._id, editTeam?.name, editTeam?.playerIds]
+  );
 
   const suggestedTeamName = useMemo(() => {
     if (!p1 || !p2 || p1 === p2) return '';
@@ -194,10 +199,18 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
     [userId, tournamentId, t, userMap, guestMap, deleteTeam],
   );
 
-  if (!tournament) {
+  if (tournamentLoading || (!tournament && !tournamentIsError)) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>{t('common.loading')}</Text>
+        <OrganizerTeamFormSkeleton bottomInset={insets.bottom} />
+      </View>
+    );
+  }
+
+  if (tournamentIsError || !tournament) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{t('tournamentDetail.failedToLoad')}</Text>
       </View>
     );
   }

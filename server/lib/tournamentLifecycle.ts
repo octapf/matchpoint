@@ -118,6 +118,15 @@ export async function actionStartTournament(
   );
   if (!transitioned) throw new Error('Tournament already started');
 
+  // Defensive cleanup: category brackets/assignments must exist only after classification completes.
+  // If stale category matches or team.category exist from a previous run, wipe them on start.
+  await db.collection('matches').deleteMany({ tournamentId, stage: 'category' });
+  await db.collection('teams').updateMany({ tournamentId }, { $unset: { category: '' } });
+  await db.collection('tournaments').updateOne(
+    { _id: oid },
+    { $unset: { categoriesSnapshot: '', classificationSnapshot: '' } }
+  );
+
   // Matches are normally created when the organizer creates groups. Keep a safe fallback for older tournaments.
   const matchesCol = db.collection('matches');
   const existing = await matchesCol.countDocuments({ tournamentId, stage: 'classification' });

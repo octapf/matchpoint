@@ -111,15 +111,25 @@ export default function TournamentsScreen() {
       <View style={styles.emptyState}>
         <Ionicons name="trophy-outline" size={34} color={Colors.textMuted} style={{ marginBottom: 10 }} />
         <Text style={styles.emptyTitle}>{t('admin.noTournaments')}</Text>
-        <Text style={styles.emptySubtitle}>{t('feed.noTournamentsYet')}</Text>
         <View style={{ marginTop: 14 }}>
-          <Pressable style={styles.emptyCta} onPress={() => router.push('/tournament/create')}>
-            <Text style={styles.emptyCtaText}>{t('tournaments.create')}</Text>
+          <Pressable
+            style={[
+              styles.emptyFab,
+              {
+                backgroundColor: bumpRgbaAlpha(tokens.accentSecondaryOutline, 0.08),
+                borderColor: tokens.accentSecondaryOutline,
+              },
+            ]}
+            onPress={() => router.push('/tournament/create')}
+            accessibilityRole="button"
+            accessibilityLabel={t('tournaments.create')}
+          >
+            <Text style={[styles.fabText, { color: tokens.accent }]}>{t('tournaments.create')}</Text>
           </Pressable>
         </View>
       </View>
     ),
-    [t, router],
+    [t, router, tokens.accent, tokens.accentSecondaryOutline],
   );
 
   const topPad = Math.max(insets.top, 12) + 8;
@@ -303,12 +313,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 6 },
-  emptySubtitle: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
-  emptyCta: {
-    backgroundColor: Colors.surfaceLight,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
+  emptyFab: {
+    borderWidth: 2,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     borderRadius: 12,
+    overflow: 'hidden',
+    alignSelf: 'center',
   },
-  emptyCtaText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', textTransform: 'uppercase', fontStyle: 'italic' },
 });

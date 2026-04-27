@@ -5,7 +5,6 @@ import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { getSessionUserId, isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
 import { normalizeGroupCount, validateTournamentGroups, teamGroupIndex } from '../../lib/tournamentGroups';
-import { isRallySetComplete, RALLY_POINTS_ABS_CAP } from '../../lib/matchRallyScoring';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import { deriveTournamentGroupConfig } from '../../server/lib/tournamentConfig';
 import { computeStandingsForGroup } from '../../server/lib/tournamentStandings';
@@ -47,6 +46,7 @@ import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/api
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
 import { normalizeMongoIdString } from '../../lib/mongoId';
+import { applyOneRefereePoint } from '../../server/lib/applyOneRefereePoint';
 
 /** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
 function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
@@ -663,7 +663,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Permission:
         // - organizers/admins can always edit
         // - otherwise, only the claimed referee can edit while match is in progress
-        // - completed matches are admin/organizer only
+        // - completed matches are organizer/admin only
         if (matchStatus === 'completed' && !actorIsAdmin && !isOrg) {
           return corsRes.status(403).json({ error: 'Only organizers can edit completed matches' });
         }
@@ -761,8 +761,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        const now = new Date().toISOString();
+        const nowMs = Date.now();
+        const now = new Date(nowMs).toISOString();
         const update: Record<string, unknown> = { updatedAt: now };
+
+        // NOTE: match pause/resume functionality removed.
         if (setsWonA != null) update.setsWonA = Math.floor(setsWonA);
         if (setsWonB != null) update.setsWonB = Math.floor(setsWonB);
         if (pointsA != null) update.pointsA = Math.floor(pointsA);
@@ -778,15 +781,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!hasTeamA || !hasTeamB) {
             return corsRes.status(400).json({ error: 'Both teams must be assigned before completing this match' });
           }
-          if (!Number.isFinite(setsWonA) || !Number.isFinite(setsWonB) || setsWonA! < 0 || setsWonB! < 0) {
-            return corsRes.status(400).json({ error: 'Invalid setsWonA/setsWonB' });
-          }
           if (!Number.isFinite(pointsA) || !Number.isFinite(pointsB) || (pointsA as number) < 0 || (pointsB as number) < 0) {
             return corsRes.status(400).json({ error: 'Points are required to complete a match' });
           }
-          const winnerId = setsWonA === setsWonB ? '' : setsWonA! > setsWonB! ? teamAId : teamBId;
-          if (!winnerId) return corsRes.status(400).json({ error: 'Matches cannot end in a tie' });
-          update.winnerId = winnerId;
+          const pa = Math.floor(pointsA as number);
+          const pb = Math.floor(pointsB as number);
+          const winnerId = pa === pb ? '' : pa > pb ? teamAId : teamBId;
+          // Winner is the team with more points; tie is allowed (winnerId empty).
+          if (winnerId) update.winnerId = winnerId;
+          else update.winnerId = null;
+          update.setsWonA = winnerId === teamAId ? 1 : 0;
+          update.setsWonB = winnerId === teamBId ? 1 : 0;
           update.status = 'completed';
           update.completedAt = now;
           const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
@@ -1120,7 +1125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'startMatch') {
-        if (!actorIsAdmin && !isOrg) return corsRes.status(403).json({ error: 'Only organizers can start matches' });
+        console.log('[tournaments.action] startMatch', { tournamentId: id, actingUserId });
         const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
         if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
         const matchOid = new ObjectId(matchId);
@@ -1134,6 +1139,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (liveGateStart) return corsRes.status(liveGateStart.status).json({ error: liveGateStart.error });
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         if (matchStatus === 'completed') return corsRes.status(400).json({ error: 'Match already completed' });
+        // Idempotency: avoid spurious client errors if the user double-taps or the UI is briefly out of sync.
+        if (matchStatus === 'in_progress') return corsRes.status(200).json(serializeDoc(match as Record<string, unknown>));
+        if (matchStatus !== 'scheduled') return corsRes.status(400).json({ error: 'Match is not scheduled' });
+        const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
+        const canStart =
+          actorIsAdmin ||
+          isOrg ||
+          // allow the currently assigned referee to resume a paused match (so they can stop/start the clock)
+          false;
+        if (!canStart) {
+          console.warn('[tournaments.action] startMatch forbidden', { tournamentId: id, actingUserId, matchId, matchStatus, refereeUserId, actorIsAdmin, isOrg });
+          return corsRes.status(403).json({ error: 'Only organizers can start matches' });
+        }
 
         const teamIds = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
         if (!teamIds) {
@@ -1165,14 +1183,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
-        const resume = matchStatus === 'paused';
         const result = await db.collection('matches').findOneAndUpdate(
           { _id: matchOid, status: { $ne: 'completed' } },
           {
             $set: {
               status: 'in_progress',
-              startedAt: resume ? now : ((match as { startedAt?: unknown }).startedAt ?? now),
-              ...(resume ? { pausedAt: null } : null),
+              startedAt: (match as { startedAt?: unknown }).startedAt ?? now,
               refereeUserId: actingUserId,
               refereeLockExpiresAt: lockExpiresAtIso(nowMs),
               serveOrder,
@@ -1217,44 +1233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
       }
 
-      if (action === 'pauseMatch') {
-        if (!actorIsAdmin && !isOrg) return corsRes.status(403).json({ error: 'Only organizers can pause matches' });
-        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
-        if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
-        const matchOid = new ObjectId(matchId);
-        const match = await db.collection('matches').findOne({ _id: matchOid });
-        if (!match) return corsRes.status(404).json({ error: 'Match not found' });
-        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
-          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
-        }
-        const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
-        if (matchStatus === 'completed') return corsRes.status(400).json({ error: 'Match is completed' });
-        if (matchStatus !== 'in_progress') return corsRes.status(400).json({ error: 'Match is not in progress' });
-
-        const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
-        const startedMs = startedAt ? Date.parse(startedAt) : NaN;
-        const baseElapsed = Number((match as any).elapsedSeconds ?? 0);
-        const base = Number.isFinite(baseElapsed) && baseElapsed > 0 ? Math.floor(baseElapsed) : 0;
-        const nowMs = Date.now();
-        const delta = Number.isFinite(startedMs) ? Math.max(0, Math.floor((nowMs - startedMs) / 1000)) : 0;
-        const nextElapsed = base + delta;
-
-        const now = new Date(nowMs).toISOString();
-        const result = await db.collection('matches').findOneAndUpdate(
-          { _id: matchOid, status: 'in_progress' },
-          {
-            $set: {
-              status: 'paused',
-              pausedAt: now,
-              elapsedSeconds: nextElapsed,
-              updatedAt: now,
-            },
-          },
-          { returnDocument: 'after' }
-        );
-        if (!result) return corsRes.status(404).json({ error: 'Match not found' });
-        return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
-      }
+      // NOTE: match pause/resume functionality removed.
 
       if (action === 'refereePoint') {
         console.log('[tournaments.action] refereePoint', { tournamentId: id, actingUserId });
@@ -1265,233 +1244,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if ((side !== 'A' && side !== 'B') || (delta !== 1 && delta !== -1)) {
           return corsRes.status(400).json({ error: 'Invalid side/delta' });
         }
-
-        const matchOid = new ObjectId(matchId);
-        const match = await db.collection('matches').findOne({ _id: matchOid });
-        if (!match) return corsRes.status(404).json({ error: 'Match not found' });
-        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
-          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
-        }
-
-        const stage = String((match as { stage?: unknown }).stage ?? '');
-        if (stage !== 'classification' && stage !== 'category') return corsRes.status(400).json({ error: 'Invalid match stage' });
-
-        const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
-        if (matchStatus !== 'in_progress') {
-          return corsRes.status(400).json({ error: 'Match is not in progress' });
-        }
-
-        const liveGatePoint = await assertTournamentAllowsLiveMatchActions(db, id);
-        if (liveGatePoint) return corsRes.status(liveGatePoint.status).json({ error: liveGatePoint.error });
-
-        const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
-        const nowMs = Date.now();
-        const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
-        // Assigned referee may continue scoring after the lock TTL; each point refreshes the lock.
-        if (!actorIsAdmin && !isOrg && (!refereeUserId || refereeUserId !== actingUserId)) {
-          return corsRes.status(409).json({
-            error: 'Referee changed',
-            refereeUserId: refereeUserId || null,
-            refereeLockExpiresAt: currentLockExp || null,
-          });
-        }
-
-        // Basic rate limit (tap spam protection).
-        const lastPointAt = String((match as { lastPointAt?: unknown }).lastPointAt ?? '');
-        if (lastPointAt) {
-          const dt = Date.now() - Date.parse(lastPointAt);
-          if (Number.isFinite(dt) && dt >= 0 && dt < 300) {
-            console.log('[tournaments.action] refereePoint rate_limited', { tournamentId: id, actingUserId, dtMs: dt });
-            return corsRes.status(429).json({ error: 'Too many score updates, slow down' });
-          }
-        }
-
-        const idsRefPoint = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
-        if (!idsRefPoint) {
-          return corsRes.status(400).json({ error: 'Match teams are not ready' });
-        }
-        const { teamAId, teamBId } = idsRefPoint;
-
-        const [teamA, teamB] = await db
-          .collection('teams')
-          .find({ tournamentId: id, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
-          .project({ _id: 1, playerIds: 1 })
-          .toArray()
-          .then((rows) => {
-            const map = new Map<string, any>();
-            for (const r of rows as any[]) map.set(String(r._id), r);
-            return [map.get(teamAId), map.get(teamBId)];
-          });
-        const playersA: string[] = Array.isArray(teamA?.playerIds) ? teamA.playerIds.map(String).filter(Boolean) : [];
-        const playersB: string[] = Array.isArray(teamB?.playerIds) ? teamB.playerIds.map(String).filter(Boolean) : [];
-        if (playersA.length < 1 || playersB.length < 1) return corsRes.status(400).json({ error: 'Teams missing players' });
-
-        const tournamentDoc = await db.collection('tournaments').findOne({ _id: new ObjectId(id) }, { projection: { pointsToWin: 1 } });
-        const fallbackPts = Math.max(1, Math.min(99, Math.floor(Number((tournamentDoc as { pointsToWin?: unknown })?.pointsToWin ?? 21) || 21)));
-        const rawMatchPts = Number((match as { pointsToWin?: unknown }).pointsToWin ?? NaN);
-        const pointsToWin =
-          Number.isFinite(rawMatchPts) && rawMatchPts >= 1 && rawMatchPts <= 99 ? Math.floor(rawMatchPts) : fallbackPts;
-        const curA = Math.max(0, Number((match as { pointsA?: unknown }).pointsA ?? 0) || 0);
-        const curB = Math.max(0, Number((match as { pointsB?: unknown }).pointsB ?? 0) || 0);
-        const nextA = side === 'A' ? Math.max(0, curA + delta) : curA;
-        const nextB = side === 'B' ? Math.max(0, curB + delta) : curB;
-
-        if (delta === 1 && (nextA > RALLY_POINTS_ABS_CAP || nextB > RALLY_POINTS_ABS_CAP)) {
-          return corsRes.status(400).json({ error: 'Score exceeds points limit' });
-        }
-
-        const now = new Date().toISOString();
-        const update: Record<string, unknown> = { updatedAt: now, lastPointAt: now, pointsA: nextA, pointsB: nextB };
-        // Keep the lock alive for the actor making the update.
-        update.refereeLockExpiresAt = lockExpiresAtIso(nowMs);
-        if (actorIsAdmin || isOrg) {
-          // Admin/org can update score even if they weren't the current referee.
-          update.refereeUserId = actingUserId;
-        }
-
-        // Initialize global serve state if missing: A1, B1, A2, B2.
-        const existingOrder = Array.isArray((match as { serveOrder?: unknown }).serveOrder) ? ((match as any).serveOrder as unknown[]) : [];
-        const order =
-          existingOrder.length === 4
-            ? existingOrder.map(String).filter(Boolean)
-            : [playersA[0], playersB[0], playersA[1] ?? playersA[0], playersB[1] ?? playersB[0]].map(String).filter(Boolean);
-        if (order.length !== 4) return corsRes.status(400).json({ error: 'Invalid serve order state' });
-        // Ensure serveOrder only references players in the two teams.
-        const allowedPlayers = new Set([...playersA, ...playersB].map(String).filter(Boolean));
-        for (const pid of order) {
-          if (!allowedPlayers.has(String(pid))) return corsRes.status(400).json({ error: 'Serve order contains invalid player' });
-        }
-        update.serveOrder = order;
-
-        let serveIndex = Number((match as { serveIndex?: unknown }).serveIndex ?? 0);
-        if (!Number.isFinite(serveIndex) || serveIndex < 0) serveIndex = 0;
-        serveIndex = Math.floor(serveIndex) % 4;
-
-        /** Captured on +1 for scoreEvents; on -1 we restore serve from the matching +1 event (see below). */
-        let serveIndexBeforeForEvent: number | undefined;
-
-        if (delta === -1) {
-          const events = Array.isArray((match as { scoreEvents?: unknown[] }).scoreEvents)
-            ? ((match as { scoreEvents?: unknown[] }).scoreEvents as Record<string, unknown>[])
-            : [];
-          let restored: number | null = null;
-          for (let i = events.length - 1; i >= 0; i--) {
-            const e = events[i]!;
-            if (e?.delta !== 1) continue;
-            if (e.side !== side) continue;
-            if (Number(e.pointsA) !== curA || Number(e.pointsB) !== curB) continue;
-            const sib = e.serveIndexBefore;
-            if (typeof sib === 'number' && Number.isFinite(sib)) {
-              restored = Math.floor(sib) % 4;
-              break;
-            }
-          }
-          if (restored !== null) {
-            serveIndex = restored;
-          }
-        } else if (delta === 1) {
-          // Advance server ONLY when the receiving team wins the rally (side-out).
-          // With our 1→4 global order: indices 0,2 belong to team A; 1,3 belong to team B.
-          serveIndexBeforeForEvent = serveIndex;
-          const servingSide: 'A' | 'B' = serveIndex % 2 === 0 ? 'A' : 'B';
-          const scoringSide: 'A' | 'B' = side === 'A' ? 'A' : 'B';
-          if (scoringSide !== servingSide) {
-            serveIndex = (serveIndex + 1) % 4;
-          }
-        }
-
-        const servingPlayerId = String(order[serveIndex] ?? order[0] ?? '');
-        update.serveIndex = serveIndex;
-        update.servingPlayerId = servingPlayerId;
-        if (!(match as { startedAt?: unknown }).startedAt) update.startedAt = now;
-
-        // Auto-complete when regulation set is won: reached pointsToWin and lead ≥ 2 (deuce). Non–win-by-2 finals use "End match".
-        if (isRallySetComplete(nextA, nextB, pointsToWin)) {
-          const winnerId = nextA === nextB ? '' : nextA > nextB ? teamAId : teamBId;
-          if (winnerId) {
-            update.status = 'completed';
-            update.completedAt = now;
-            update.winnerId = winnerId;
-            update.setsWonA = winnerId === teamAId ? 1 : 0;
-            update.setsWonB = winnerId === teamBId ? 1 : 0;
-            const startedAt = String((match as { startedAt?: unknown }).startedAt ?? now);
-            const durSec = Math.max(0, Math.floor((Date.parse(now) - Date.parse(startedAt)) / 1000));
-            update.durationSeconds = durSec;
-          }
-        }
-
-        const event = {
-          ts: now,
-          userId: actingUserId,
-          refereeTeamId: String((match as { refereeTeamId?: unknown }).refereeTeamId ?? '') || undefined,
+        const r = await applyOneRefereePoint({
+          db,
+          tournamentId: id,
+          tournamentOid: oid,
+          matchId,
+          actingUserId,
+          actorIsAdmin,
+          isOrg,
           side,
           delta: delta as 1 | -1,
-          pointsA: nextA,
-          pointsB: nextB,
-          ...(delta === 1 && typeof serveIndexBeforeForEvent === 'number'
-            ? { serveIndexBefore: serveIndexBeforeForEvent }
-            : {}),
-        };
-        // Validate event shape before writing.
-        if (!event.userId || (event.side !== 'A' && event.side !== 'B') || (event.delta !== 1 && event.delta !== -1)) {
-          return corsRes.status(400).json({ error: 'Invalid score event' });
-        }
-
-        // Optimistic concurrency: only apply if doc hasn't changed since we read it.
-        const prevUpdatedAt = String((match as { updatedAt?: unknown }).updatedAt ?? '');
-        const filter: Record<string, unknown> = prevUpdatedAt
-          ? { _id: matchOid, updatedAt: prevUpdatedAt }
-          : { _id: matchOid, $or: [{ updatedAt: { $exists: false } }, { updatedAt: '' }, { updatedAt: null }] };
-
-        const result = await db.collection('matches').findOneAndUpdate(
-          filter,
-          {
-            $set: update,
-            $push: {
-              scoreEvents: {
-                $each: [event] as any[],
-                $slice: -200,
-              },
-            },
-          } as any,
-          { returnDocument: 'after' }
-        );
-        if (!result) {
-          console.log('[tournaments.action] refereePoint concurrent_or_missing', { tournamentId: id, actingUserId, matchId });
-          return corsRes.status(409).json({ error: 'Concurrent score update, retry' });
-        }
-        // Notification: match ended if auto-completed.
-        if (update.status === 'completed') {
-          const tdoc = await db.collection('tournaments').findOne({ _id: oid }, { projection: { name: 1 } });
-          const ta = await db.collection('teams').findOne({ _id: new ObjectId(teamAId) }, { projection: { name: 1, playerIds: 1 } });
-          const tb = await db.collection('teams').findOne({ _id: new ObjectId(teamBId) }, { projection: { name: 1, playerIds: 1 } });
-          const aPlayers: string[] = Array.isArray((ta as any)?.playerIds) ? (ta as any).playerIds.map(String).filter(Boolean) : [];
-          const bPlayers: string[] = Array.isArray((tb as any)?.playerIds) ? (tb as any).playerIds.map(String).filter(Boolean) : [];
-          const aName = String((ta as any)?.name ?? 'Team A');
-          const bName = String((tb as any)?.name ?? 'Team B');
-          const winnerId = String((result as any).winnerId ?? '');
-          const aResult = winnerId === teamAId ? 'W' : winnerId === teamBId ? 'L' : '';
-          const bResult = winnerId === teamBId ? 'W' : winnerId === teamAId ? 'L' : '';
-          await notifyMany(db, aPlayers, {
-            type: 'match.ended',
-            params: { opponent: bName, result: aResult || '-' },
-            data: { tournamentId: id, matchId },
-            dedupeKey: `match.ended:${matchId}`,
-          });
-          await notifyMany(db, bPlayers, {
-            type: 'match.ended',
-            params: { opponent: aName, result: bResult || '-' },
-            data: { tournamentId: id, matchId },
-            dedupeKey: `match.ended:${matchId}:b`,
-          });
-          void tdoc;
-        }
-        try {
-          await settleBetsForMatch(db, id, matchId);
-        } catch (betErr) {
-          console.error('[tournaments] settleBetsForMatch refereePoint', betErr);
-        }
-        return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
+          enforceRateLimit: true,
+        });
+        if (!r.ok) return corsRes.status(r.status).json(r.body);
+        return corsRes.status(200).json(r.match);
       }
 
       if (action === 'setServeOrder') {
@@ -2062,11 +1828,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
       const actorUser = await loadActorUserWithAdminRefresh(db, actingUserId);
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
-      if (!isTournamentOrganizer(doc as { organizerIds?: string[] }, actingUserId) && !actorIsAdmin) {
-        return corsRes.status(403).json({ error: 'Only organizers can delete this tournament' });
+      if (!actorIsAdmin) {
+        return corsRes.status(403).json({ error: 'Only admins can delete tournaments' });
       }
-      // Allow organizers/admins to delete tournaments regardless of roster/team state.
-      // This is needed to recover from inconsistent data states (e.g. orphan entries).
+      // Admins only; cascade purge regardless of roster/teams.
       await purgeTournamentRelatedData(db, id);
       await col.deleteOne({ _id: oid });
       return corsRes.status(204).end();

@@ -170,8 +170,13 @@ export async function deleteAllGuestPlayers(
 
       if (teamIds.length > 0) {
         await teamsCol.deleteMany({ ...tidf, _id: { $in: teamIds.map((x) => new ObjectId(x)) } }, { session });
+        // Some legacy docs may store `teamId` as an ObjectId; match both string and ObjectId forms.
+        const teamOids = teamIds.filter((x) => ObjectId.isValid(x)).map((x) => new ObjectId(x));
         await entriesCol.updateMany(
-          { ...tidf, teamId: { $in: teamIds } },
+          {
+            ...tidf,
+            $or: [{ teamId: { $in: teamIds } }, ...(teamOids.length ? [{ teamId: { $in: teamOids } }] : [])],
+          },
           { $set: { teamId: null, status: 'joined', updatedAt: now } },
           { session }
         );

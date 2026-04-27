@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run vercel:functions && npm run typecheck && npm run lint",
     "lint": "eslint .",
+    "db:delete-tournaments": "tsx scripts/delete-tournament-by-name.ts",
     "seed:dev": "tsx scripts/seed-dev-tournament.ts",
     "seed:dev:generate": "tsx scripts/seed-dev-tournament.ts",
     "seed:dev:force": "tsx scripts/seed-dev-tournament.ts --force",

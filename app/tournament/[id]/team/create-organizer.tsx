@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { OrganizerTeamForm } from '@/components/team/OrganizerTeamForm';
+import { OrganizerTeamFormSkeleton } from '@/components/team/OrganizerTeamFormSkeleton';
 import { useTournament } from '@/lib/hooks/useTournaments';
 import { useUserStore } from '@/store/useUserStore';
 import { useTranslation } from '@/lib/i18n';
@@ -10,18 +12,37 @@ import type { TournamentDivision } from '@/types';
 
 export default function CreateTeamOrganizerScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { id, division } = useLocalSearchParams<{ id: string; division?: string }>();
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
-  const { data: tournament } = useTournament(id);
+  const { data: tournament, isLoading: tournamentLoading, isError: tournamentIsError } = useTournament(id);
   const canManageTournament = !!tournament && ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin');
   const div: TournamentDivision =
     division === 'men' || division === 'women' || division === 'mixed' ? division : 'mixed';
 
-  if (!id || !tournament) {
+  if (!id) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>{t('common.loading')}</Text>
+        <Text style={styles.title}>{t('tournamentDetail.failedToLoad')}</Text>
+      </View>
+    );
+  }
+
+  if (tournamentLoading || (!tournament && !tournamentIsError)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+          <OrganizerTeamFormSkeleton bottomInset={insets.bottom} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (tournamentIsError || !tournament) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{t('tournamentDetail.failedToLoad')}</Text>
       </View>
     );
   }

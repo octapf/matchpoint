@@ -32,6 +32,7 @@ const API_ERROR_I18N: Record<string, string> = {
   'Organize-only organizers cannot register as players': 'apiErrors.organizeOnlyCannotRegister',
   'Organize-only organizers must cover at least one division': 'apiErrors.organizeOnlyMustCoverDivision',
   'Only organizers can delete this tournament': 'apiErrors.onlyOrganizersDelete',
+  'Only admins can delete tournaments': 'apiErrors.onlyAdminCanDeleteTournament',
   'Only organizers can change team roster or group': 'apiErrors.onlyOrganizersTeamRosterOrGroup',
   'Team name cannot be changed after the tournament has started': 'apiErrors.teamNameLockedAfterStart',
   'Cannot delete tournament while players are registered. Remove all players from the roster first.':

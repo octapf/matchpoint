@@ -220,6 +220,20 @@ export default function TournamentDetailScreen() {
       await queryClient.cancelQueries({ queryKey: ['entries'] });
       const prev = queryClient.getQueryData(['tournament', id]) as any;
       const prevEntries = queryClient.getQueriesData({ queryKey: ['entries'] });
+      const prevTeams = queryClient.getQueryData(['teams', { tournamentId: id }]) as any;
+
+      const guestSlotsBefore: string[] = (() => {
+        const list = Array.isArray(prev?.guestPlayers) ? prev.guestPlayers : [];
+        return list.map((g: any) => `guest:${String(g?._id ?? '')}`).filter((s: string) => s !== 'guest:');
+      })();
+      const teamIdsWithGuests = new Set<string>(
+        isDeleteAll && Array.isArray(prevTeams)
+          ? (prevTeams as any[])
+              .filter((tm) => Array.isArray(tm?.playerIds) && (tm.playerIds as any[]).some((pid) => guestSlotsBefore.includes(String(pid))))
+              .map((tm) => String(tm?._id ?? ''))
+              .filter(Boolean)
+          : []
+      );
 
       // 1) Remove guest from tournament guestPlayers (guestMap source).
       queryClient.setQueryData(['tournament', id], (cur: any) => {
@@ -237,7 +251,19 @@ export default function TournamentDetailScreen() {
         (cur: unknown) => {
           if (!Array.isArray(cur)) return cur as any;
           const anyRows = cur as Array<any>;
-          const filtered = anyRows.filter((e) => {
+          const filtered = anyRows
+            .map((e) => {
+              if (!isDeleteAll) return e;
+              if (!e || typeof e !== 'object') return e;
+              const tid = String((e as any).tournamentId ?? '');
+              if (tid !== String(id)) return e;
+              const teamId = String((e as any).teamId ?? '');
+              if (teamId && teamIdsWithGuests.has(teamId)) {
+                return { ...(e as any), teamId: null, status: 'joined' };
+              }
+              return e;
+            })
+            .filter((e) => {
             if (!e || typeof e !== 'object') return true;
             const tid = String((e as any).tournamentId ?? '');
             if (tid !== String(id)) return true;
@@ -319,6 +345,31 @@ export default function TournamentDetailScreen() {
     () => allMatches.filter((m) => (m as { stage?: string }).stage === 'classification'),
     [allMatches]
   );
+
+  const classificationFullyComplete = useMemo(
+    () => classificationMatches.length > 0 && classificationMatches.every((m) => m.status === 'completed'),
+    [classificationMatches]
+  );
+
+  const confirmStartCategoriesPhase = useCallback(() => {
+    if (!id) return;
+    Alert.alert(
+      t('tournamentDetail.menuStartCategoriesPhase'),
+      t('tournamentDetail.startCategoriesPhaseConfirm'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.ok'),
+          onPress: () =>
+            finalizeClassificationMutation.mutate(
+              { id },
+              { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
+            ),
+        },
+      ]
+    );
+  }, [id, t, finalizeClassificationMutation]);
+
   /**
    * assignCategories() assigns Gold/Silver from tie-break even with 0 matches played.
    * Only show medal + qualified/eliminated icons once outcomes are meaningful.
@@ -327,11 +378,8 @@ export default function TournamentDetailScreen() {
     if (shouldUseDevMocks()) return true;
     const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
     if (phase === 'registration' || phase === 'open') return false;
-    if (phase === 'categories' || phase === 'completed') return true;
-    if (phase === 'classification') {
-      return classificationMatches.some((m) => m.status === 'completed');
-    }
-    return false;
+    // Categories/medals are only meaningful after the organizer/admin explicitly finalizes classification.
+    return phase === 'categories' || phase === 'completed';
   }, [tournament?.phase, classificationMatches]);
   /** Category matches from API; when empty, fall back to embedded dev bracket so Gold/Oro shows with API URL + OAuth on. */
   const categoryMatches = useMemo(() => {
@@ -379,37 +427,39 @@ export default function TournamentDetailScreen() {
   // Must be declared before any early `return` so hook order stays stable.
   const handleDelete = useCallback(() => {
     if (!userId || !id || !tournament) return;
+    if (user?.role !== 'admin') return;
     if (!requireOnline()) return;
-    const organizerIds = tournament.organizerIds ?? [];
-    const hasNonOrganizerEntry = entries.some((e) => {
-      if (e.userId) return !organizerIds.includes(e.userId);
-      if (e.guestPlayerId) return true;
-      return false;
-    });
-    if (hasNonOrganizerEntry) {
-      Alert.alert(t('common.error'), t('tournamentDetail.cannotDeleteWithPlayers'));
-      return;
-    }
     Alert.alert(
       t('tournamentDetail.deleteTournament'),
       t('tournamentDetail.deleteConfirm', { name: tournament.name }),
       [
         { text: t('common.cancel'), style: 'cancel' },
         {
-          text: t('common.delete'),
-          style: 'destructive',
+          text: t('settings.continue'),
           onPress: () =>
-            deleteTournament.mutate(
-              { id },
-              {
-                onError: (err: unknown) =>
-                  alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-              }
+            Alert.alert(
+              t('tournamentDetail.deleteTournamentFinalTitle'),
+              t('tournamentDetail.deleteTournamentFinalBody', { name: tournament.name }),
+              [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.delete'),
+                  style: 'destructive',
+                  onPress: () =>
+                    deleteTournament.mutate(
+                      { id },
+                      {
+                        onError: (err: unknown) =>
+                          alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+                      }
+                    ),
+                },
+              ]
             ),
         },
       ]
     );
-  }, [deleteTournament, entries, id, requireOnline, t, tournament, userId]);
+  }, [deleteTournament, id, requireOnline, t, tournament, user?.role, userId]);
 
   const handleShareInvite = useCallback(() => {
     if (!tournament?.inviteLink) return;
@@ -566,6 +616,21 @@ export default function TournamentDetailScreen() {
       });
     }
 
+    const phaseMenu = String((tournament as { phase?: unknown }).phase ?? '');
+    const orgOrAdminMenu =
+      ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin') ?? false;
+
+    if (started && id && !shouldUseDevMocks() && orgOrAdminMenu && phaseMenu === 'classification') {
+      list.push({
+        key: 'startCategoriesPhase',
+        label: t('tournamentDetail.menuStartCategoriesPhase'),
+        icon: 'medal-outline',
+        color: Colors.yellow,
+        disabled: finalizeClassificationMutation.isPending || !classificationFullyComplete,
+        onPress: confirmStartCategoriesPhase,
+      });
+    }
+
     if (
       started &&
       id &&
@@ -598,15 +663,17 @@ export default function TournamentDetailScreen() {
       });
     }
 
-    list.push({
-      key: 'delete',
-      label: t('tournamentDetail.menuCancel'),
-      icon: 'trash-outline',
-      color: Colors.danger,
-      onPress: handleDelete,
-      disabled: deleteTournament.isPending,
-      accessibilityLabel: t('tournamentDetail.deleteTournament'),
-    });
+    if (user?.role === 'admin') {
+      list.push({
+        key: 'delete',
+        label: t('tournamentDetail.menuCancel'),
+        icon: 'trash-outline',
+        color: Colors.danger,
+        onPress: handleDelete,
+        disabled: deleteTournament.isPending,
+        accessibilityLabel: t('tournamentDetail.deleteTournament'),
+      });
+    }
 
     return list;
   }, [
@@ -623,6 +690,9 @@ export default function TournamentDetailScreen() {
     userId,
     user?.role,
     guestMutation,
+    classificationFullyComplete,
+    finalizeClassificationMutation.isPending,
+    confirmStartCategoriesPhase,
   ]);
 
   // Everything below must be declared before any early `return` so hook order stays stable.
@@ -835,7 +905,7 @@ export default function TournamentDetailScreen() {
         1,
         Math.min(7, Number((tournament as { setsPerMatch?: unknown } | undefined)?.setsPerMatch ?? 1) || 1)
       );
-      return buildSeededClassificationData({
+      const seeded = buildSeededClassificationData({
         divisionTeamsByGroup,
         matchCategoryTabs,
         pointsToWin,
@@ -849,9 +919,13 @@ export default function TournamentDetailScreen() {
         ),
         tieBreakSeed: id,
       });
+      return {
+        ...seeded,
+        preCategoryPhaseTeamLists: {} as Partial<Record<MatchCategoryTab, { team: Team; wins: number; points: number }[]>>,
+      };
     }
 
-    // Live data: compute standings from completed matches and assign categories from tournament config.
+    // Live data: compute standings from completed matches.
     const groupMatchesByLocal = new Map<number, typeof classificationMatches>();
     for (let localGi = 0; localGi < groupsPerDivisionCap; localGi++) {
       const globalGi = divisionGroupOffset + localGi;
@@ -869,6 +943,7 @@ export default function TournamentDetailScreen() {
       })
     );
 
+    const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
       (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
     );
@@ -880,13 +955,22 @@ export default function TournamentDetailScreen() {
       (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
     );
 
-    const { teamCategory, eliminated, globalOrder } = assignCategories({
-      standingsByGroup,
-      categories: cats,
-      categoryFractions: categoryFractions ?? null,
-      singleCategoryAdvanceFraction,
-      tieBreakSeed: id,
-    });
+    /** No reparto por categoría en datos de grupo hasta que la clasificación esté cerrada o la fase haya comenzado. */
+    const runCategoryAssignment =
+      cats.length > 0 &&
+      (classificationFullyComplete || phase === 'categories' || phase === 'completed');
+
+    const { teamCategory, eliminated, globalOrder } = runCategoryAssignment
+      ? assignCategories({
+          standingsByGroup,
+          categories: cats,
+          categoryFractions: categoryFractions ?? null,
+          singleCategoryAdvanceFraction,
+          tieBreakSeed: id,
+        })
+      : { teamCategory: new Map(), eliminated: new Set<string>(), globalOrder: [] as string[] };
+
+    const fillGroupCategoryColumns = phase === 'categories' || phase === 'completed';
 
     const perGroup = standingsByGroup.map((standings, localGi) => {
       const matches = (groupMatchesByLocal.get(localGi) ?? []).map((m) => {
@@ -909,15 +993,30 @@ export default function TournamentDetailScreen() {
       });
 
       const categoriesMap: Partial<Record<MatchCategoryTab, typeof standings>> = {};
-      for (const cat of cats) {
-        categoriesMap[cat] = standings.filter((row) => teamCategory.get(row.team._id) === cat);
+      if (fillGroupCategoryColumns && cats.length) {
+        for (const cat of cats) categoriesMap[cat] = standings.filter((row) => teamCategory.get(row.team._id) === cat);
       }
       return { matches, standings, categories: categoriesMap };
     });
 
-    return { perGroup, teamCategory, eliminated, globalOrder };
+    type CatStandingRow = { team: Team; wins: number; points: number };
+    const preCategoryPhaseTeamLists: Partial<Record<MatchCategoryTab, CatStandingRow[]>> = {};
+    if (phase === 'classification' && classificationFullyComplete && cats.length && runCategoryAssignment) {
+      const standingByTeamId = new Map<string, CatStandingRow>();
+      for (const st of standingsByGroup.flat()) standingByTeamId.set(st.team._id, st);
+      for (const cat of cats) {
+        const rows = globalOrder
+          .filter((tid) => teamCategory.get(tid) === cat)
+          .map((tid) => standingByTeamId.get(tid))
+          .filter((r): r is CatStandingRow => r != null);
+        if (rows.length) preCategoryPhaseTeamLists[cat] = rows;
+      }
+    }
+
+    return { perGroup, teamCategory, eliminated, globalOrder, preCategoryPhaseTeamLists };
   }, [
     classificationMatches,
+    classificationFullyComplete,
     divisionTeamsByGroup,
     divisionGroupOffset,
     groupsPerDivisionCap,
@@ -1086,6 +1185,8 @@ export default function TournamentDetailScreen() {
    * Prefer this for the bracket so counts match the list; snapshot can be stale or from a different split.
    */
   const categoryTeamIdsFromClassification = useMemo(() => {
+    const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
+    if (phase !== 'categories' && phase !== 'completed') return {};
     const cats = (((tournament as { categories?: unknown } | undefined)?.categories ?? []) as unknown[]).filter(
       (c): c is MatchCategoryTab => c === 'Gold' || c === 'Silver' || c === 'Bronze'
     );
@@ -1343,7 +1444,8 @@ export default function TournamentDetailScreen() {
     updateTeam.isPending ||
     leaveWaitlist.isPending ||
     joinWaitlist.isPending ||
-    guestMutation.isPending;
+    guestMutation.isPending ||
+    finalizeClassificationMutation.isPending;
 
   const isOrganizer = organizerIds.includes(userId ?? '');
   const isAdmin = user?.role === 'admin';
@@ -1775,8 +1877,12 @@ export default function TournamentDetailScreen() {
     out.push(...infoMenuItems);
 
     if (canManageTournament) {
-      // edit + start
-      out.push(...organizerMenuBaseItems.filter((x) => x.key === 'edit' || x.key === 'start'));
+      // edit + start + (classification) start category phase
+      out.push(
+        ...organizerMenuBaseItems.filter(
+          (x) => x.key === 'edit' || x.key === 'start' || x.key === 'startCategoriesPhase'
+        )
+      );
     }
 
     if (canEnroll && !isCancelled && !isOrganizeOnlyOrganizer && isRegistered) {
@@ -2341,6 +2447,17 @@ export default function TournamentDetailScreen() {
               divisionHasTeams={filteredTeams.length > 0}
               groupsDistributionPending={groupsDistributionPending}
               fixtureClassificationEmptyLegendStyle={styles.fixtureClassificationEmptyLegend}
+              showStartCategoriesPhaseCta={
+                canManageTournament &&
+                !shouldUseDevMocks() &&
+                String((tournament as { phase?: unknown }).phase ?? '') === 'classification'
+              }
+              startCategoriesPhaseDisabled={!classificationFullyComplete}
+              startCategoriesPhasePending={finalizeClassificationMutation.isPending}
+              onPressStartCategoriesPhase={confirmStartCategoriesPhase}
+              tournamentPhase={String((tournament as { phase?: unknown }).phase ?? 'registration')}
+              classificationFullyComplete={classificationFullyComplete}
+              preCategoryPhaseTeamLists={classificationBundle.preCategoryPhaseTeamLists}
               onOpenMatch={(matchId) => {
                 if (!id) return;
                 router.push(`/tournament/${id}/match/${matchId}` as never);

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tournamentsApi } from '@/lib/api';
 import { RALLY_POINTS_ABS_CAP } from '@/lib/matchRallyScoring';
 import { shouldUseDevMocks } from '@/lib/config';
+import { normalizeMongoIdString } from '@/lib/mongoId';
 import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES } from '@/lib/mocks/devTournamentMocks';
 import type { Match } from '@/types';
 
@@ -137,8 +138,56 @@ export function useUpdateMatch() {
   return useMutation({
     mutationFn: ({ id, tournamentId, update }: { id: string; tournamentId: string; update: Record<string, unknown> }) =>
       tournamentsApi.action(tournamentId, { action: 'updateMatch', matchId: id, ...update }) as Promise<Match>,
-    onSuccess: (_data) => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['matches'] });
+      const snapshots = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
+      const nowIso = new Date().toISOString();
+      for (const [key, prev] of snapshots) {
+        if (!prev) continue;
+        queryClient.setQueryData<Match[]>(
+          key,
+          prev.map((m) => {
+            if (m._id !== vars.id) return m;
+            const u = vars.update || {};
+            const next: any = { ...m, updatedAt: nowIso };
+            if (typeof u.pointsA === 'number') next.pointsA = Math.max(0, Math.floor(u.pointsA));
+            if (typeof u.pointsB === 'number') next.pointsB = Math.max(0, Math.floor(u.pointsB));
+            if (typeof u.setsWonA === 'number') next.setsWonA = Math.max(0, Math.floor(u.setsWonA));
+            if (typeof u.setsWonB === 'number') next.setsWonB = Math.max(0, Math.floor(u.setsWonB));
+            // When we're saving an edited completed result we pass finalize:true; mirror API finalize rules
+            // so winner styling / sets row update immediately (not only after server roundtrip).
+            if (u.finalize === true) {
+              const pa = Math.max(0, Math.floor(Number(next.pointsA ?? 0) || 0));
+              const pb = Math.max(0, Math.floor(Number(next.pointsB ?? 0) || 0));
+              const teamAId = normalizeMongoIdString((m as { teamAId?: unknown }).teamAId);
+              const teamBId = normalizeMongoIdString((m as { teamBId?: unknown }).teamBId);
+              const winnerId = pa === pb ? null : pa > pb ? teamAId : teamBId;
+              next.winnerId = winnerId;
+              next.setsWonA = winnerId && winnerId === teamAId ? 1 : 0;
+              next.setsWonB = winnerId && winnerId === teamBId ? 1 : 0;
+              next.status = 'completed';
+              next.completedAt = nowIso;
+            }
+            return next as Match;
+          })
+        );
+      }
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      for (const [key, data] of (ctx as any)?.snapshots ?? []) {
+        queryClient.setQueryData(key, data);
+      }
+    },
+    onSuccess: (data) => {
+      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((m) => m._id === data._id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = data;
+        return next;
+      });
     },
   });
 }
@@ -195,6 +244,10 @@ export function useStartMatch() {
           prev.map((m) => {
             if (m._id !== vars.id) return m;
             const cur = m as any;
+            // Only optimistic-start when the match is truly scheduled. If a stray/late call happens,
+            // do NOT flip paused/in_progress and make the clock jump.
+            const curStatus = String(cur.status ?? '');
+            if (curStatus !== 'scheduled') return m;
             const serveOrder = Array.isArray(cur.serveOrder) ? cur.serveOrder : undefined;
             const optimisticServing =
               typeof cur.servingPlayerId === 'string' && cur.servingPlayerId ? cur.servingPlayerId : Array.isArray(serveOrder) ? serveOrder[0] : undefined;
@@ -215,38 +268,18 @@ export function useStartMatch() {
         queryClient.setQueryData(key, data);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: (data) => {
+      // Apply server-authoritative state without refetching stale data.
+      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((m) => m._id === data._id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = data;
+        return next;
+      });
     },
-  });
-}
-
-export function usePauseMatch() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, tournamentId }: { id: string; tournamentId: string }) =>
-      tournamentsApi.action(tournamentId, { action: 'pauseMatch', matchId: id }) as Promise<Match>,
-    onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: ['matches'] });
-      const snapshots = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
-      const nowIso = new Date().toISOString();
-      for (const [key, prev] of snapshots) {
-        if (!prev) continue;
-        queryClient.setQueryData<Match[]>(
-          key,
-          prev.map((m) => (m._id === vars.id ? ({ ...m, status: 'paused', pausedAt: nowIso, updatedAt: nowIso } as Match) : m))
-        );
-      }
-      return { snapshots };
-    },
-    onError: (_err, _vars, ctx) => {
-      for (const [key, data] of (ctx as any)?.snapshots ?? []) {
-        queryClient.setQueryData(key, data);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
-    },
+    retry: 0,
   });
 }
 

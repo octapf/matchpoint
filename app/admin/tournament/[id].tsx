@@ -28,6 +28,7 @@ import {
 import { alertApiError } from '@/lib/utils/apiError';
 import { ClassificationSettingsAutosave } from '@/components/tournament/ClassificationSettingsForm';
 import { TournamentLocationField } from '@/components/location/TournamentLocationField';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/lib/theme/useTheme';
 
 const MIN_DATE = new Date(2000, 0, 1);
@@ -416,7 +417,7 @@ export default function AdminEditTournamentScreen() {
       const tid = setTimeout(() => flushSave(), 120);
       return () => clearTimeout(tid);
     }
-  }, [maxTeams, flushSave]);
+  }, [maxTeams, groupCount, flushSave]);
 
   useEffect(() => {
     saveFnRef.current = () => {
@@ -446,9 +447,28 @@ export default function AdminEditTournamentScreen() {
     return (
       <>
         <Stack.Screen options={{ title: t('admin.editTournamentTitle') }} />
-        <View style={styles.centered}>
-          <Text style={styles.muted}>{t('common.loading')}</Text>
-        </View>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+          <Skeleton height={14} width={90} style={{ marginBottom: 8 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={120} style={{ marginBottom: 8 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={100} style={{ marginBottom: 8 }} />
+          <Skeleton height={88} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={140} style={{ marginBottom: 8 }} />
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 18 }}>
+            <Skeleton height={44} borderRadius={12} style={{ flex: 1 }} />
+            <Skeleton height={44} borderRadius={12} style={{ flex: 1 }} />
+          </View>
+          <Skeleton height={14} width={80} style={{ marginBottom: 8 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={110} style={{ marginBottom: 8 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={70} style={{ marginBottom: 8 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={130} style={{ marginBottom: 8 }} />
+          <Skeleton height={120} width="100%" borderRadius={12} style={{ marginBottom: 18 }} />
+          <Skeleton height={48} width="100%" borderRadius={12} />
+        </ScrollView>
       </>
     );
   }

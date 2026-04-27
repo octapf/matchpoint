@@ -7,7 +7,6 @@ import {
   TextInput,
   Pressable,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from '@/lib/i18n';
@@ -33,6 +32,7 @@ import {
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
 import { useTheme } from '@/lib/theme/useTheme';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const MAX_TEAM_PLAYERS = 2;
 
@@ -58,14 +58,11 @@ export default function AdminTournamentRosterScreen() {
   const { tokens } = useTheme();
   const adminId = useUserStore((s) => s.user?._id ?? null);
 
-  const { data: tournament, isLoading: loadingT } = useTournament(id);
-  const { data: entries = [], isLoading: loadingE, refetch: refetchEntries } = useEntries(
-    id ? { tournamentId: id } : undefined,
-    { enabled: !!id }
-  );
-  const { data: teams = [], isLoading: loadingTeams, refetch: refetchTeams } = useTeams(
-    id ? { tournamentId: id } : undefined
-  );
+  const { data: tournament, isLoading: loadingT, isError: tournamentLoadError } = useTournament(id);
+  const { data: entries = [], refetch: refetchEntries } = useEntries(id ? { tournamentId: id } : undefined, {
+    enabled: !!id,
+  });
+  const { data: teams = [], refetch: refetchTeams } = useTeams(id ? { tournamentId: id } : undefined);
 
   const guestMap = useMemo(
     () =>
@@ -304,9 +301,43 @@ export default function AdminTournamentRosterScreen() {
     return [...set];
   }, [entries, editingTeamId]);
 
-  const loading = loadingT || loadingE || loadingTeams;
-
   if (!id) {
+    return (
+      <>
+        <Stack.Screen options={{ title: t('admin.rosterTitle') }} />
+        <View style={styles.centered}>
+          <Text style={styles.muted}>{t('tournamentDetail.failedToLoad')}</Text>
+        </View>
+      </>
+    );
+  }
+
+  if (loadingT || (!tournament && !tournamentLoadError)) {
+    return (
+      <>
+        <Stack.Screen options={{ title: t('admin.rosterTitle') }} />
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+          <Skeleton height={16} width="88%" style={{ marginBottom: 18 }} />
+          <Skeleton height={14} width={160} style={{ marginBottom: 10 }} />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <View key={i} style={styles.skeletonRow}>
+              <Skeleton height={40} width={40} borderRadius={10} />
+              <View style={styles.skeletonRowText}>
+                <Skeleton height={16} width="72%" style={{ marginBottom: 6 }} />
+                <Skeleton height={13} width="38%" />
+              </View>
+            </View>
+          ))}
+          <Skeleton height={14} width={140} style={{ marginTop: 24, marginBottom: 10 }} />
+          <Skeleton height={44} width="100%" borderRadius={12} style={{ marginBottom: 12 }} />
+          <Skeleton height={14} width={100} style={{ marginBottom: 10 }} />
+          <Skeleton height={120} width="100%" borderRadius={12} />
+        </ScrollView>
+      </>
+    );
+  }
+
+  if (tournamentLoadError || !tournament) {
     return (
       <>
         <Stack.Screen options={{ title: t('admin.rosterTitle') }} />
@@ -321,10 +352,6 @@ export default function AdminTournamentRosterScreen() {
     <>
       <Stack.Screen options={{ title: tournament?.name ? `${t('admin.rosterTitle')}: ${tournament.name}` : t('admin.rosterTitle') }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {loading && !tournament ? (
-          <ActivityIndicator color={tokens.accent} style={{ marginTop: 24 }} />
-        ) : null}
-
         <Text style={styles.hint}>{t('admin.rosterHint')}</Text>
 
         <Text style={styles.sectionTitle}>{t('admin.rosterPlayers')}</Text>
@@ -544,6 +571,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, color: Colors.textMuted, marginBottom: 16, lineHeight: 18 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 12, marginTop: 8 },
   muted: { fontSize: 14, color: Colors.textMuted, marginBottom: 8 },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  skeletonRowText: { flex: 1, marginLeft: 12, minWidth: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

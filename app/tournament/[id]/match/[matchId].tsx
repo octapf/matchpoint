@@ -18,7 +18,6 @@ import { useNetInfo } from '@react-native-community/netinfo';
 import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
-import { isRallySetComplete } from '@/lib/matchRallyScoring';
 import { isTournamentPaused, isTournamentPlayActive, isTournamentStarted } from '@/lib/tournamentPlayAllowed';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme/useTheme';
@@ -31,7 +30,6 @@ import {
   useRefereePoint,
   useSetServeOrder,
   useStartMatch,
-  usePauseMatch,
   useUpdateMatch,
 } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
@@ -47,6 +45,7 @@ import type { Match, TournamentGuestPlayer } from '@/types';
 import { Pressable as GHPressable, type PressableProps } from 'react-native-gesture-handler';
 import { MPMark } from '@/components/ui/MPMark';
 import { AppBackgroundGradient } from '@/components/ui/AppBackgroundGradient';
+import { MatchDetailLoadingShell } from '@/components/match/MatchDetailLoadingShell';
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
 
@@ -59,18 +58,23 @@ export default function EditMatchScreen() {
   const queryClient = useQueryClient();
   const { id, matchId } = useLocalSearchParams<{ id: string; matchId: string }>();
   const insets = useSafeAreaInsets();
+  /** Android 3-button / gesture nav can still overlap UI even when `insets.bottom` is small. */
+  const bottomPad = Math.max(insets.bottom, 18) + 40;
+  const topPad = Math.max(insets.top, 8) + 2;
   const user = useUserStore((s) => s.user);
   const userId = user?._id ?? null;
   const netInfo = useNetInfo();
   const isOffline = netInfo.isConnected === false;
 
-  const { data: tournament } = useTournament(id);
+  const { data: tournament, isLoading: tournamentLoading, isError: tournamentIsError } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
   /** No polling here — periodic refetch was overwriting the score while pending ops were in flight. */
-  const { data: matches = [] } = useMatches(id ? { tournamentId: id } : undefined, id ? { enabled: !!id } : undefined);
+  const { data: matches = [], isLoading: matchesLoading } = useMatches(
+    id ? { tournamentId: id } : undefined,
+    id ? { enabled: !!id } : undefined
+  );
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
-  const pauseMatch = usePauseMatch();
   const updateMatch = useUpdateMatch();
   const refereePoint = useRefereePoint();
   const setServeOrder = useSetServeOrder();
@@ -87,6 +91,7 @@ export default function EditMatchScreen() {
 
   useEffect(() => {
     pendingPointOpsRef.current = [];
+    drainPointQueueRunningRef.current = false;
     setPendingVersion((v) => v + 1);
   }, [matchId]);
 
@@ -125,6 +130,7 @@ export default function EditMatchScreen() {
 
   /** Server snapshot + in-memory queue — avoids “counting back” when responses arrive out of order. */
   const displayedMatchForPoints = useMemo((): Match | null => {
+    void pendingVersion;
     if (!matchWithPointsLimit) return null;
     let m: Match = matchWithPointsLimit;
     for (const op of pendingPointOpsRef.current) {
@@ -186,6 +192,9 @@ export default function EditMatchScreen() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [startCountdown, setStartCountdown] = useState<{ seconds: number; action: 'startMatch' | 'claimReferee' } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isEditingCompletedScore, setIsEditingCompletedScore] = useState(false);
+  const [draftPointsA, setDraftPointsA] = useState(0);
+  const [draftPointsB, setDraftPointsB] = useState(0);
 
   useEffect(() => {
     if (!tournamentPlayActive && startCountdown) setStartCountdown(null);
@@ -194,6 +203,7 @@ export default function EditMatchScreen() {
   const drainPointQueue = useCallback(async () => {
     if (!id || !matchId) return;
     if (drainPointQueueRunningRef.current) return;
+    if (pendingPointOpsRef.current.length === 0) return;
     drainPointQueueRunningRef.current = true;
     try {
       while (pendingPointOpsRef.current.length > 0) {
@@ -297,6 +307,10 @@ export default function EditMatchScreen() {
       setStartCountdown(null);
       if (!tournamentPlayActive) return;
       if (action === 'startMatch') {
+        // Guard: countdown is only for starting a scheduled match.
+        // If the match changed state meanwhile (e.g. user paused/another ref started), don't fire startMatch late.
+        const curStatus = String((match as { status?: unknown } | null)?.status ?? '');
+        if (curStatus !== 'scheduled') return;
         startMatch.mutate(
           { id: matchId, tournamentId: id },
           { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
@@ -311,7 +325,13 @@ export default function EditMatchScreen() {
     }
     const h = setTimeout(() => setStartCountdown((prev) => (prev ? { ...prev, seconds: prev.seconds - 1 } : prev)), 1000);
     return () => clearTimeout(h);
-  }, [startCountdown, claimReferee, id, matchId, startMatch, t, tournamentPlayActive]);
+  }, [startCountdown, claimReferee, id, matchId, match, startMatch, t, tournamentPlayActive]);
+
+  useEffect(() => {
+    if (!startCountdown) return;
+    const status = String((match as { status?: unknown } | null)?.status ?? '');
+    if (status && status !== 'scheduled') setStartCountdown(null);
+  }, [match, startCountdown]);
 
   // Serving indicator is now the rotating volleyball icon (and no avatar ring).
 
@@ -485,32 +505,10 @@ export default function EditMatchScreen() {
     return (
       String((match as { status?: unknown }).status ?? '') === 'in_progress' && total > 0 && total % interval === 0
     );
-  }, [match, tournament, displayedMatchForPoints, matchWithPointsLimit]);
-
-  /**
-   * Who would win the set on the next rally if it lands (same rule as API `refereePoint`): reached `pointsToWin` and lead ≥ 2.
-   * When both sides can win on their next point (e.g. 20–20 going to 21), returns `both`.
-   */
-  const matchPointSide = useMemo((): 'A' | 'B' | 'both' | null => {
-    if (!match) return null;
-    if (String((match as { status?: unknown }).status ?? '') !== 'in_progress') return null;
-    const scoreM = displayedMatchForPoints ?? matchWithPointsLimit;
-    if (!scoreM) return null;
-    const ptw = Math.max(1, Math.min(99, Number(scoreM.pointsToWin ?? 21) || 21));
-    const a = Number(scoreM.pointsA ?? 0) || 0;
-    const b = Number(scoreM.pointsB ?? 0) || 0;
-    const winnerIf = (side: 'A' | 'B'): 'A' | 'B' | null => {
-      const na = side === 'A' ? a + 1 : a;
-      const nb = side === 'B' ? b + 1 : b;
-      if (!isRallySetComplete(na, nb, ptw)) return null;
-      return na > nb ? 'A' : 'B';
-    };
-    const aScoresWins = winnerIf('A') === 'A';
-    const bScoresWins = winnerIf('B') === 'B';
-    if (!aScoresWins && !bScoresWins) return null;
-    if (aScoresWins && bScoresWins) return 'both';
-    return aScoresWins ? 'A' : 'B';
   }, [match, displayedMatchForPoints, matchWithPointsLimit]);
+
+  // Match-point indicator removed: matches no longer auto-finish at pointsToWin.
+  const matchPointSide = null;
 
   useEffect(() => {
     if (!showSwitchSidesReminder && !matchPointSide) {
@@ -570,77 +568,118 @@ export default function EditMatchScreen() {
   const canEditScore = isReferee || canManageTournament;
   const canEditLiveScore = canEditScore && tournamentPlayActive;
 
-  const finalizeMatchWithWinner = useCallback(
-    (side: 'A' | 'B') => {
-      if (!id || !matchId || !matchWithPointsLimit) return;
-      const rawPw = Number((matchWithPointsLimit as { pointsToWin?: unknown }).pointsToWin ?? NaN);
-      const pw =
-        Number.isFinite(rawPw) && rawPw > 0 ? Math.max(1, Math.min(99, Math.floor(rawPw))) : 21;
-      const update =
-        side === 'A'
-          ? { finalize: true, setsWonA: 1, setsWonB: 0, pointsA: pw, pointsB: 0 }
-          : { finalize: true, setsWonA: 0, setsWonB: 1, pointsA: 0, pointsB: pw };
-      pendingPointOpsRef.current = [];
-      updateMatch.mutate(
-        { id: matchId, tournamentId: id, update },
-        {
-          onSuccess: () => {
-            bumpPendingVersion();
-          },
-          onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
-        }
-      );
-    },
-    [id, matchId, matchWithPointsLimit, updateMatch, bumpPendingVersion, t]
-  );
+  const canEditCompletedScore = canManageTournament && tournamentPlayActive;
 
-  const openEndMatchWinnerPicker = useCallback(() => {
-    if (!match || !matchWithPointsLimit || !id || !matchId) return;
-    const ta = teamById[normalizeMongoIdString(match.teamAId)];
-    const tb = teamById[normalizeMongoIdString(match.teamBId)];
-    if (!ta || !tb) return;
-    const tbdLabel = t('tournamentDetail.matchOpponentTbd');
-    const nameA = teamDisplayName(match.teamAId, ta, tbdLabel);
-    const nameB = teamDisplayName(match.teamBId, tb, tbdLabel);
-    const rawPw = Number((matchWithPointsLimit as { pointsToWin?: unknown }).pointsToWin ?? NaN);
-    const pw =
-      Number.isFinite(rawPw) && rawPw > 0 ? Math.max(1, Math.min(99, Math.floor(rawPw))) : 21;
+  const isFinalizePending = useMemo(() => {
+    if (!updateMatch.isPending) return false;
+    const vars = updateMatch.variables as { update?: { finalize?: boolean } } | undefined;
+    return !!vars?.update?.finalize;
+  }, [updateMatch.isPending, updateMatch.variables]);
 
-    const showWinnerPicker = () => {
-      Alert.alert(
-        t('tournamentDetail.endMatchPickWinnerTitle'),
-        t('tournamentDetail.endMatchPickWinnerMessage', { points: pw }),
-        [
-          { text: t('common.cancel'), style: 'cancel' },
-          { text: nameA, onPress: () => finalizeMatchWithWinner('A') },
-          { text: nameB, onPress: () => finalizeMatchWithWinner('B') },
-        ],
-        { cancelable: true }
-      );
-    };
+  const beginEditCompletedScore = useCallback(() => {
+    if (!match) return;
+    setIsEditingCompletedScore(true);
+    setDraftPointsA(Number(match.pointsA ?? 0) || 0);
+    setDraftPointsB(Number(match.pointsB ?? 0) || 0);
+  }, [match]);
 
-    Alert.alert(
-      t('tournamentDetail.endMatchConfirmTitle'),
-      t('tournamentDetail.endMatchConfirmMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('settings.continue'), onPress: showWinnerPicker },
-      ],
-      { cancelable: true }
+  const cancelEditCompletedScore = useCallback(() => {
+    setIsEditingCompletedScore(false);
+    if (!match) return;
+    setDraftPointsA(Number(match.pointsA ?? 0) || 0);
+    setDraftPointsB(Number(match.pointsB ?? 0) || 0);
+  }, [match]);
+
+  const saveEditCompletedScore = useCallback(() => {
+    if (!id || !matchId) return;
+    const ptsA = Math.max(0, Math.floor(Number(draftPointsA) || 0));
+    const ptsB = Math.max(0, Math.floor(Number(draftPointsB) || 0));
+    updateMatch.mutate(
+      { id: matchId, tournamentId: id, update: { finalize: true, pointsA: ptsA, pointsB: ptsB } },
+      {
+        onSuccess: () => setIsEditingCompletedScore(false),
+        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+      }
     );
-  }, [match, matchWithPointsLimit, teamById, finalizeMatchWithWinner, t, id, matchId]);
+  }, [draftPointsA, draftPointsB, id, matchId, updateMatch, t]);
 
-  if (!id || !matchId || !tournament || !match) {
+  const finalizeMatchNow = useCallback(() => {
+    if (!id || !matchId || !matchWithPointsLimit) return;
+    if (!tournamentPlayActive) return;
+    const ptsA = Math.max(0, Math.floor(Number(displayedMatchForPoints?.pointsA ?? matchWithPointsLimit.pointsA ?? 0) || 0));
+    const ptsB = Math.max(0, Math.floor(Number(displayedMatchForPoints?.pointsB ?? matchWithPointsLimit.pointsB ?? 0) || 0));
+    if (ptsA === ptsB) {
+      Alert.alert(t('tournamentDetail.endMatchTieTitle'), t('tournamentDetail.endMatchTieMessage'), [
+        { text: t('common.ok') },
+      ]);
+      return;
+    }
+    pendingPointOpsRef.current = [];
+    updateMatch.mutate(
+      {
+        id: matchId,
+        tournamentId: id,
+        update: {
+          finalize: true,
+          pointsA: ptsA,
+          pointsB: ptsB,
+        },
+      },
+      {
+        onSuccess: () => bumpPendingVersion(),
+        onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+      }
+    );
+  }, [
+    id,
+    matchId,
+    matchWithPointsLimit,
+    tournamentPlayActive,
+    displayedMatchForPoints,
+    updateMatch,
+    bumpPendingVersion,
+    t,
+  ]);
+
+  if (!id || !matchId) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingBottom: bottomPad }]}>
         <Text style={styles.stateTitle}>{t('common.loading')}</Text>
+      </View>
+    );
+  }
+
+  if (tournamentLoading || matchesLoading) {
+    return (
+      <MatchDetailLoadingShell
+        topPad={topPad}
+        bottomPad={bottomPad}
+        tokens={tokens}
+        appNameLabel={t('common.appName')}
+      />
+    );
+  }
+
+  if (tournamentIsError || !tournament) {
+    return (
+      <View style={[styles.container, { paddingBottom: bottomPad }]}>
+        <Text style={styles.stateTitle}>{t('tournamentDetail.failedToLoad')}</Text>
+      </View>
+    );
+  }
+
+  if (!match) {
+    return (
+      <View style={[styles.container, { paddingBottom: bottomPad }]}>
+        <Text style={styles.stateTitle}>{t('common.error')}</Text>
+        <Text style={styles.hint}>{t('tournamentDetail.failedToLoad')}</Text>
       </View>
     );
   }
 
   if (!canManageTournament && !isReferee && !eligibleRefTeam) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingBottom: bottomPad }]}>
         <Text style={styles.stateTitle}>{t('common.error')}</Text>
         <Text style={styles.hint}>{t('tournamentDetail.refereeNotAllowed')}</Text>
       </View>
@@ -674,8 +713,14 @@ export default function EditMatchScreen() {
         ? 'claimReferee'
         : null;
 
-  const livePointsA = Number(displayedMatchForPoints?.pointsA ?? match.pointsA ?? 0) || 0;
-  const livePointsB = Number(displayedMatchForPoints?.pointsB ?? match.pointsB ?? 0) || 0;
+  const displayedPointsA =
+    matchStatusForUi === 'completed' && isEditingCompletedScore
+      ? Math.max(0, Math.floor(Number(draftPointsA) || 0))
+      : Number(displayedMatchForPoints?.pointsA ?? match.pointsA ?? 0) || 0;
+  const displayedPointsB =
+    matchStatusForUi === 'completed' && isEditingCompletedScore
+      ? Math.max(0, Math.floor(Number(draftPointsB) || 0))
+      : Number(displayedMatchForPoints?.pointsB ?? match.pointsB ?? 0) || 0;
 
   const formatClock = (totalSeconds: number) => {
     const s = Math.max(0, Math.floor(totalSeconds));
@@ -698,8 +743,8 @@ export default function EditMatchScreen() {
     if (status === 'in_progress') {
       const startedAt = String((match as { startedAt?: unknown }).startedAt ?? '');
       const startedMs = startedAt ? Date.parse(startedAt) : NaN;
-      if (!Number.isFinite(startedMs)) return 0;
-      return Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+      const delta = Number.isFinite(startedMs) ? Math.max(0, Math.floor((nowMs - startedMs) / 1000)) : 0;
+      return delta;
     }
     return 0;
   })();
@@ -901,9 +946,8 @@ export default function EditMatchScreen() {
       return;
     }
     if (!tournamentPlayActive) return;
-    if ((match as { status?: string }).status !== 'in_progress') {
-      return;
-    }
+    const status = String((match as { status?: unknown }).status ?? '');
+    if (status !== 'in_progress') return;
     const base = displayedMatchForPoints ?? matchWithPointsLimit;
     if (!base || !applyRefereeDeltaToMatch(base, side, delta)) {
       return;
@@ -926,10 +970,14 @@ export default function EditMatchScreen() {
     if (h <= 0) return;
     const y = e.nativeEvent.locationY;
     const delta = (y < h / 2 ? 1 : -1) as 1 | -1;
+    if (isCompleted && isEditingCompletedScore) {
+      if (side === 'A') setDraftPointsA((v) => Math.max(0, Math.floor(Number(v) || 0) + delta));
+      else setDraftPointsB((v) => Math.max(0, Math.floor(Number(v) || 0) + delta));
+      void Haptics.selectionAsync();
+      return;
+    }
     handlePoint(side, delta);
   };
-
-  const topPad = Math.max(insets.top, 8) + 2;
 
   const matchPointBannerColor =
     matchPointSide === 'A'
@@ -958,7 +1006,7 @@ export default function EditMatchScreen() {
         </View>
       </View>
 
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingBottom: bottomPad }]}>
       {notice ? (
         <View style={styles.noticeBar}>
           <Text style={styles.noticeText}>{notice}</Text>
@@ -1012,6 +1060,7 @@ export default function EditMatchScreen() {
           </>
         ) : null}
       </View>
+      {null}
       {isCompleted ? (
         <View style={styles.endedLegendWrap}>
           <View style={styles.endedLegendPill}>
@@ -1055,10 +1104,10 @@ export default function EditMatchScreen() {
                       },
                     ]}
                   >
-                    {livePointsA}
+                    {displayedPointsA}
                   </Animated.Text>
                 </View>
-                {!isCompleted ? (
+                {!isCompleted || isEditingCompletedScore ? (
                   <View style={styles.scoreArrowsLayer} pointerEvents="none">
                     <Text
                       style={[
@@ -1085,12 +1134,20 @@ export default function EditMatchScreen() {
                 <GHPressable
                   style={[
                     styles.scoreTouchSurface,
-                    !(canEditLiveScore && (match as { status?: string }).status === 'in_progress')
+                    !(
+                      (canEditLiveScore && (match as { status?: string }).status === 'in_progress') ||
+                      (isCompleted && isEditingCompletedScore && canEditCompletedScore)
+                    )
                       ? styles.scoreOverlayDisabled
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('A', e)}
-                  disabled={!canEditLiveScore || (match as { status?: string }).status !== 'in_progress'}
+                  disabled={
+                    !(
+                      (canEditLiveScore && (match as { status?: string }).status === 'in_progress') ||
+                      (isCompleted && isEditingCompletedScore && canEditCompletedScore)
+                    )
+                  }
                   accessibilityRole="button"
                   accessibilityLabel={t('tournamentDetail.matchScoreSideA')}
                 />
@@ -1133,10 +1190,10 @@ export default function EditMatchScreen() {
                       },
                     ]}
                   >
-                    {livePointsB}
+                    {displayedPointsB}
                   </Animated.Text>
                 </View>
-                {!isCompleted ? (
+                {!isCompleted || isEditingCompletedScore ? (
                   <View style={styles.scoreArrowsLayer} pointerEvents="none">
                     <Text
                       style={[
@@ -1163,12 +1220,20 @@ export default function EditMatchScreen() {
                 <GHPressable
                   style={[
                     styles.scoreTouchSurface,
-                    !(canEditLiveScore && (match as { status?: string }).status === 'in_progress')
+                    !(
+                      (canEditLiveScore && (match as { status?: string }).status === 'in_progress') ||
+                      (isCompleted && isEditingCompletedScore && canEditCompletedScore)
+                    )
                       ? styles.scoreOverlayDisabled
                       : null,
                   ]}
                   onPress={(e) => onScoreHalfPress('B', e)}
-                  disabled={!canEditLiveScore || (match as { status?: string }).status !== 'in_progress'}
+                  disabled={
+                    !(
+                      (canEditLiveScore && (match as { status?: string }).status === 'in_progress') ||
+                      (isCompleted && isEditingCompletedScore && canEditCompletedScore)
+                    )
+                  }
                   accessibilityRole="button"
                   accessibilityLabel={t('tournamentDetail.matchScoreSideB')}
                 />
@@ -1209,7 +1274,7 @@ export default function EditMatchScreen() {
                 }
                 onPress={() => {
                   if (!tournamentPlayActive) return;
-                  setStartCountdown({ seconds: 5, action: primaryStartAction });
+                  setStartCountdown({ seconds: 3, action: primaryStartAction });
                 }}
                 disabled={
                   !tournamentPlayActive ||
@@ -1227,36 +1292,14 @@ export default function EditMatchScreen() {
         </View>
       ) : null}
 
-      {(match as { status?: string }).status === 'in_progress' && canManageTournament ? (
-        <View style={{ marginTop: 8 }}>
-          <Button
-            title={pauseMatch.isPending ? t('common.loading') : String(t('common.pause') ?? 'Pause').toUpperCase()}
-            onPress={() => {
-              if (!id || !matchId) return;
-              pauseMatch.mutate(
-                { id: matchId, tournamentId: id },
-                { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-              );
-            }}
-            disabled={pauseMatch.isPending || isOffline || !tournamentPlayActive}
-            variant="outline"
-            size="sm"
-            fullWidth
-          />
-        </View>
-      ) : null}
+      {null}
 
-      {((match as { status?: string }).status === 'in_progress' ||
-        (match as { status?: string }).status === 'paused') &&
-      canEditLiveScore &&
-      matchTeamsReady ? (
-        <View style={{ marginTop: 8 }}>
+      {(match as { status?: string }).status === 'in_progress' && canEditLiveScore && matchTeamsReady ? (
+        <View style={{ marginTop: 8, paddingBottom: bottomPad }}>
           <Button
-            title={
-              updateMatch.isPending ? t('common.loading') : t('tournamentDetail.endMatchPickWinner')
-            }
-            onPress={openEndMatchWinnerPicker}
-            disabled={updateMatch.isPending || isOffline || !tournamentPlayActive}
+            title={isFinalizePending ? t('common.loading') : String(t('common.finish') ?? 'Finish').toUpperCase()}
+            onPress={finalizeMatchNow}
+            disabled={isFinalizePending || isOffline || !tournamentPlayActive}
             variant="danger"
             size="sm"
             fullWidth
@@ -1264,18 +1307,46 @@ export default function EditMatchScreen() {
         </View>
       ) : null}
 
-      {(match as { status?: string }).status === 'paused' && canManageTournament ? (
-        <View style={{ marginTop: 8 }}>
+      {(match as { status?: string }).status === 'completed' && canEditScore ? (
+        <View style={{ marginTop: 8, paddingBottom: bottomPad }}>
           <Button
-            title={startMatch.isPending ? t('common.loading') : String(t('common.resume') ?? 'Resume').toUpperCase()}
-            onPress={() => setStartCountdown({ seconds: 3, action: 'startMatch' })}
-            disabled={startMatch.isPending || !!startCountdown || isOffline || !tournamentPlayActive}
-            variant="secondary"
+            title={
+              isEditingCompletedScore
+                ? updateMatch.isPending
+                  ? t('common.loading')
+                  : String(t('common.save') ?? 'Save').toUpperCase()
+                : String(t('common.edit') ?? 'Edit').toUpperCase()
+            }
+            onPress={() => {
+              if (!tournamentPlayActive) return;
+              if (!canEditCompletedScore) return;
+              if (isEditingCompletedScore) {
+                saveEditCompletedScore();
+              } else {
+                beginEditCompletedScore();
+              }
+            }}
+            disabled={isOffline || !tournamentPlayActive || !canEditCompletedScore}
+            variant={isEditingCompletedScore ? 'secondary' : 'secondary'}
             size="sm"
             fullWidth
           />
+          {isEditingCompletedScore ? (
+            <View style={{ marginTop: 8 }}>
+              <Button
+                title={String(t('common.cancel') ?? 'Cancel').toUpperCase()}
+                onPress={cancelEditCompletedScore}
+                disabled={updateMatch.isPending || isOffline}
+                variant="outline"
+                size="sm"
+                fullWidth
+              />
+            </View>
+          ) : null}
         </View>
       ) : null}
+
+      {null}
 
       {(match as { status?: string }).status === 'in_progress' &&
       ((match as { refereeUserId?: unknown }).refereeUserId || showSwitchSidesReminder || matchPointSide) ? (
@@ -1350,6 +1421,8 @@ export default function EditMatchScreen() {
           <Text style={styles.countdownText}>{startCountdown.seconds}</Text>
         </View>
       ) : null}
+
+      {null}
     </View>
   );
 }
