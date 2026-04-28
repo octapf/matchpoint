@@ -2462,6 +2462,7 @@ export default function TournamentDetailScreen() {
                 if (!id) return;
                 router.push(`/tournament/${id}/match/${matchId}` as never);
               }}
+              onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
               canQuickEditMatches={canManageTournament}
               emptyTextStyle={styles.emptyText}
               matchesSubtabBarStyle={styles.matchesSubtabBar}

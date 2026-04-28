@@ -9,6 +9,7 @@ import { useTheme } from '@/lib/theme/useTheme';
 import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
 import { Button } from '@/components/ui/Button';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
+import { TournamentTeamCard } from '@/components/tournament/detail/TournamentTeamCard';
 import { buildBracketRowsForCategory, isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
 import {
   bracketRoundTitleDisplay,
@@ -174,6 +175,7 @@ export function FixtureTab({
   classificationData,
   categoryMatchesByCategory,
   onOpenMatch,
+  onOpenProfile,
   canQuickEditMatches,
   emptyTextStyle,
   matchesSubtabBarStyle,
@@ -224,6 +226,7 @@ export function FixtureTab({
   }[];
   categoryMatchesByCategory: Partial<Record<MatchCategoryTab, MatchRow[]>>;
   onOpenMatch?: (matchId: string) => void;
+  onOpenProfile: (userId: string) => void;
   canQuickEditMatches?: boolean;
   emptyTextStyle: unknown;
   matchesSubtabBarStyle: unknown;
@@ -735,12 +738,16 @@ export function FixtureTab({
                       data={flat}
                       keyExtractor={(row) => row.team._id}
                       renderItem={({ item: row, index: idx }) => (
-                        <View style={matchStandingRowStyle as never}>
-                          <Text style={matchStandingRankStyle as never}>#{idx + 1}</Text>
-                          <Text style={matchStandingTeamStyle as never}>{row.team.name}</Text>
-                          <Text style={matchStandingMetaStyle as never}>
-                            {row.wins}W · {row.points}pts
-                          </Text>
+                        <View style={{ marginBottom: idx === flat.length - 1 ? 0 : 6 }}>
+                          <TournamentTeamCard
+                            team={row.team}
+                            userMap={userMap}
+                            guestMap={guestMap}
+                            currentUserId={null}
+                            t={t}
+                            onOpenProfile={onOpenProfile}
+                            headerRightLabel={`#${idx + 1} · ${row.wins}W · ${row.points}pts`}
+                          />
                         </View>
                       )}
                     />
