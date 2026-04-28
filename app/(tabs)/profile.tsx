@@ -20,6 +20,7 @@ import { config } from '@/lib/config';
 import { useThemeStore } from '@/store/useThemeStore';
 import type { ThemePresetId } from '@/lib/theme/colors';
 import { useTheme } from '@/lib/theme/useTheme';
+import { useQueryClient } from '@tanstack/react-query';
 
 function isAdminUser(role: string | undefined): boolean {
   return role === 'admin';
@@ -30,6 +31,7 @@ export default function ProfileScreen() {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const topPad = Math.max(insets.top, 12) + 8;
   const user = useUserStore((s) => s.user);
   const hasHydrated = useUserStore((s) => s._hasHydrated);
@@ -85,6 +87,8 @@ export default function ProfileScreen() {
       setPresetId(presetId);
       const updated = (await usersApi.updateOne(user._id, { themePresetId: presetId })) as typeof user;
       setUser({ ...user, ...updated });
+      void queryClient.invalidateQueries({ queryKey: ['user', user._id] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
       // If the client is ahead of the deployed backend schema, the server may reject the payload

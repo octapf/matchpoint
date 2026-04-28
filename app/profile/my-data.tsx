@@ -112,6 +112,9 @@ export default function MyDataScreen() {
         const updated = (await usersApi.updateOne(user._id, payload)) as typeof user;
         setUser({ ...user, ...updated });
         void queryClient.invalidateQueries({ queryKey: ['user', user._id] });
+        // Tournament detail screens use `useUsers` (queryKey: ['users', ...]) to render team names in Fixture.
+        // Invalidate so renames propagate immediately across tabs.
+        void queryClient.invalidateQueries({ queryKey: ['users'] });
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
         if (msg === 'Username already taken') {

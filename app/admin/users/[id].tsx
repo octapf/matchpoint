@@ -19,11 +19,13 @@ import { config } from '@/lib/config';
 import { useUserStore } from '@/store/useUserStore';
 import type { Gender, User, UserRole } from '@/types';
 import { normalizeUsername, isValidUsername } from '@/lib/validation/username';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function AdminEditUserScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTranslation();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const sessionUser = useUserStore((s) => s.user);
   const setUser = useUserStore((s) => s.setUser);
 
@@ -93,6 +95,8 @@ export default function AdminEditUserScreen() {
       if (sessionUser?._id === id) {
         setUser({ ...sessionUser, ...updated });
       }
+      void queryClient.invalidateQueries({ queryKey: ['user', id] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
       router.back();
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
