@@ -123,6 +123,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (update.name !== undefined && tournamentStartedPatch) {
         return corsRes.status(400).json({ error: 'Team name cannot be changed after the tournament has started' });
       }
+      if (update.playerIds !== undefined && tournamentStartedPatch) {
+        return corsRes.status(400).json({ error: 'Team roster cannot be changed after the tournament has started' });
+      }
 
       if (update.groupIndex !== undefined) {
         if (!tournamentAllowsManualGroupAssignment(tournament as { groupsDistributedAt?: string | null })) {

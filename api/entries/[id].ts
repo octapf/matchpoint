@@ -61,6 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const tournament = await db.collection('tournaments').findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
+      const started =
+        !!(tournament as { startedAt?: unknown }).startedAt ||
+        (tournament as { phase?: unknown }).phase === 'classification' ||
+        (tournament as { phase?: unknown }).phase === 'categories' ||
+        (tournament as { phase?: unknown }).phase === 'completed';
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actingUserId) });
       const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
       const actorIsOrganizer = isTournamentOrganizer(tournament as { organizerIds?: string[] }, actingUserId);
@@ -76,6 +81,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (Object.keys(update).length === 0) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
+      }
+      // Once the tournament starts, entries are locked (prevent dropping/reshuffling players mid-event).
+      if (started) {
+        return corsRes.status(400).json({ error: 'Tournament already started' });
       }
 
       // Validate teamId updates (string-only) and keep status consistent.
