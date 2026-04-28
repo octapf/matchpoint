@@ -594,6 +594,12 @@ export default function EditMatchScreen() {
     if (!id || !matchId) return;
     const ptsA = Math.max(0, Math.floor(Number(draftPointsA) || 0));
     const ptsB = Math.max(0, Math.floor(Number(draftPointsB) || 0));
+    if (ptsA === ptsB) {
+      Alert.alert(t('tournamentDetail.endMatchTieTitle'), t('tournamentDetail.endMatchTieMessage'), [
+        { text: t('common.ok') },
+      ]);
+      return;
+    }
     updateMatch.mutate(
       { id: matchId, tournamentId: id, update: { finalize: true, pointsA: ptsA, pointsB: ptsB } },
       {

@@ -786,10 +786,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           const pa = Math.floor(pointsA as number);
           const pb = Math.floor(pointsB as number);
+          if (pa === pb) {
+            return corsRes.status(400).json({ error: 'Matches cannot end in a tie' });
+          }
           const winnerId = pa === pb ? '' : pa > pb ? teamAId : teamBId;
-          // Winner is the team with more points; tie is allowed (winnerId empty).
-          if (winnerId) update.winnerId = winnerId;
-          else update.winnerId = null;
+          update.winnerId = winnerId;
           update.setsWonA = winnerId === teamAId ? 1 : 0;
           update.setsWonB = winnerId === teamBId ? 1 : 0;
           update.status = 'completed';
