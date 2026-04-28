@@ -700,6 +700,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (stage !== 'classification' && stage !== 'category') {
           return corsRes.status(400).json({ error: 'Invalid match stage' });
         }
+        // Once the tournament has moved to categories, classification results are locked for players/referees.
+        if (!actorIsAdmin && !isOrg && stage === 'classification' && String((cur as { phase?: unknown }).phase ?? '') === 'categories') {
+          return corsRes.status(403).json({ error: 'Only organizers can edit classification matches after categories start' });
+        }
         if (!division || (division !== 'men' && division !== 'women' && division !== 'mixed')) {
           return corsRes.status(400).json({ error: 'Match division is missing' });
         }
@@ -1244,6 +1248,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const delta = Number(body?.delta);
         if ((side !== 'A' && side !== 'B') || (delta !== 1 && delta !== -1)) {
           return corsRes.status(400).json({ error: 'Invalid side/delta' });
+        }
+        if (!actorIsAdmin && !isOrg && String((cur as { phase?: unknown }).phase ?? '') === 'categories') {
+          const matchOid = new ObjectId(matchId);
+          const matchStageRow = (await db.collection('matches').findOne({ _id: matchOid }, { projection: { tournamentId: 1, stage: 1 } })) as
+            | { tournamentId?: unknown; stage?: unknown }
+            | null;
+          if (!matchStageRow) return corsRes.status(404).json({ error: 'Match not found' });
+          if (String(matchStageRow.tournamentId ?? '') !== id) {
+            return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+          }
+          if (String(matchStageRow.stage ?? '') === 'classification') {
+            return corsRes.status(403).json({ error: 'Only organizers can score classification matches after categories start' });
+          }
         }
         const r = await applyOneRefereePoint({
           db,
