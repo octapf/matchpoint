@@ -128,19 +128,6 @@ export default function EditMatchScreen() {
     return { ...match, pointsToWin: pts } as Match;
   }, [match, tournament]);
 
-  /** Server snapshot + in-memory queue — avoids “counting back” when responses arrive out of order. */
-  const displayedMatchForPoints = useMemo((): Match | null => {
-    void pendingVersion;
-    if (!matchWithPointsLimit) return null;
-    let m: Match = matchWithPointsLimit;
-    for (const op of pendingPointOpsRef.current) {
-      const n = applyRefereeDeltaToMatch(m, op.side, op.delta);
-      if (!n) break;
-      m = n;
-    }
-    return m;
-  }, [matchWithPointsLimit, pendingVersion]);
-
   const teamAPlayerIds = useMemo(() => {
     if (!match) return [] as string[];
     const t = teamById[normalizeMongoIdString(match.teamAId)] as { playerIds?: unknown } | undefined;
@@ -160,6 +147,34 @@ export default function EditMatchScreen() {
     const b2 = teamBPlayerIds[1] ?? teamBPlayerIds[0];
     return [a1, b1, a2, b2].filter(Boolean) as string[];
   }, [teamAPlayerIds, teamBPlayerIds]);
+
+  /** Server snapshot + in-memory queue — avoids “counting back” when responses arrive out of order. */
+  const displayedMatchForPoints = useMemo((): Match | null => {
+    void pendingVersion;
+    if (!matchWithPointsLimit) return null;
+    // UX: initialize serve state locally so the FIRST side-out (often team B scoring first)
+    // updates the server indicator immediately, without waiting for the first refereePoint response.
+    const hasServeOrder =
+      Array.isArray((matchWithPointsLimit as { serveOrder?: unknown }).serveOrder) &&
+      ((matchWithPointsLimit as any).serveOrder as unknown[]).length === 4;
+    const order = hasServeOrder
+      ? (((matchWithPointsLimit as any).serveOrder as unknown[]).map(String).filter(Boolean) as string[])
+      : defaultServeOrder;
+    const canPatchServe = order.length === 4;
+    const idxRaw = Number((matchWithPointsLimit as { serveIndex?: unknown }).serveIndex ?? 0);
+    const idx = Number.isFinite(idxRaw) ? Math.floor(idxRaw) % 4 : 0;
+    const servingRaw = String((matchWithPointsLimit as { servingPlayerId?: unknown }).servingPlayerId ?? '').trim();
+    const servingPlayerId = servingRaw || String(order[idx] ?? order[0] ?? '');
+    let m: Match = canPatchServe
+      ? ({ ...matchWithPointsLimit, serveOrder: order, serveIndex: idx, servingPlayerId } as Match)
+      : matchWithPointsLimit;
+    for (const op of pendingPointOpsRef.current) {
+      const n = applyRefereeDeltaToMatch(m, op.side, op.delta);
+      if (!n) break;
+      m = n;
+    }
+    return m;
+  }, [matchWithPointsLimit, pendingVersion, defaultServeOrder]);
 
   const playerIdsForNames = useMemo(() => {
     if (!match) return [] as string[];
