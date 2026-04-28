@@ -861,7 +861,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             data: { tournamentId: id, matchId },
             dedupeKey: `match.ended:${matchId}:b`,
           });
-          if (stage === 'category' && winnerId && hasTeamA && hasTeamB) {
+        }
+        // Category bracket propagation: ensure downstream slots update even when editing a previously completed match.
+        if (nextStatusDoc === 'completed' && stage === 'category' && hasTeamA && hasTeamB) {
+          const winnerId = String((updated as any).winnerId ?? '');
+          if (winnerId) {
             const loserId = winnerId === teamAId ? teamBId : teamAId;
             await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
           }
