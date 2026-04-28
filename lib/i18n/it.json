@@ -22,6 +22,7 @@
     "resume": "Riprendi",
     "edit": "Modifica",
     "finish": "Termina",
+    "confirm": "Conferma",
     "appName": "Matchpoint"
   },
   "apiErrors": {
@@ -519,6 +520,11 @@
     "matchPointBanner": "MATCH POINT",
     "refereeNotAllowed": "Solo organizzatori/admin o l’arbitro assegnato possono modificare questa partita.",
     "serveOrderTitle": "Ordine di servizio (1 → 4)",
+    "manageServeOrder": "Ordine di servizio",
+    "serveOrderToggleOddTeam": "Alterna squadre",
+    "serveOrderTogglePlayers": "Alterna giocatori",
+    "setServerTitle": "Imposta battitore",
+    "setServerConfirm": "Impostare il servizio su %{name}?",
     "swapServeA": "Scambia %{team}",
     "swapServeB": "Scambia %{team}",
     "pointsToWinShort": "%{n} per vincere",

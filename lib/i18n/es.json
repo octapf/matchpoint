@@ -22,6 +22,7 @@
     "resume": "Reanudar",
     "edit": "Editar",
     "finish": "Finalizar",
+    "confirm": "Confirmar",
     "appName": "Matchpoint"
   },
   "apiErrors": {
@@ -519,6 +520,11 @@
     "matchPointBanner": "MATCH POINT",
     "refereeNotAllowed": "Solo organizadores/admin o el árbitro asignado pueden editar este partido.",
     "serveOrderTitle": "Orden de saque (1 → 4)",
+    "manageServeOrder": "Orden de saque",
+    "serveOrderToggleOddTeam": "Alternar equipos",
+    "serveOrderTogglePlayers": "Alternar jugadores",
+    "setServerTitle": "Asignar sacador",
+    "setServerConfirm": "¿Asignar el saque a %{name}?",
     "swapServeA": "Cambiar %{team}",
     "swapServeB": "Cambiar %{team}",
     "pointsToWinShort": "%{n} para ganar",

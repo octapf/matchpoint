@@ -283,6 +283,7 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
   const rosterLocked = !!editTeam;
   const nameEditable = !editTeam || !tournamentStarted;
   const pickerBusy = createTeam.isPending || updateTeam.isPending || joinTeamSlotWaitlist.isPending;
+  const disablePicker = !!editTeam && pickerBusy;
   const hasTwoPlayersSelected = !!userId && !!secondPick;
 
   return (
@@ -348,17 +349,17 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
                 style={[
                   styles.partnerRow,
                   selected && styles.partnerRowSelected,
-                  (rosterLocked || pickerBusy) && styles.partnerRowDisabled,
+                  (rosterLocked || disablePicker) && styles.partnerRowDisabled,
                 ]}
                 onPress={
-                  rosterLocked || pickerBusy
+                  rosterLocked || disablePicker
                     ? undefined
                     : () =>
                         setSecondPick((prev) =>
                           prev?.kind === 'waitlist' && prev.userId === pid ? null : { kind: 'waitlist', userId: pid }
                         )
                 }
-                disabled={rosterLocked || pickerBusy}
+                disabled={rosterLocked || disablePicker}
               >
                 <Avatar
                   firstName={u?.firstName ?? ''}
@@ -385,17 +386,17 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
                 style={[
                   styles.partnerRow,
                   selected && styles.partnerRowSelected,
-                  (rosterLocked || pickerBusy) && styles.partnerRowDisabled,
+                  (rosterLocked || disablePicker) && styles.partnerRowDisabled,
                 ]}
                 onPress={
-                  rosterLocked || pickerBusy
+                  rosterLocked || disablePicker
                     ? undefined
                     : () =>
                         setSecondPick((prev) =>
                           prev?.kind === 'guest' && prev.guest._id === g._id ? null : { kind: 'guest', guest: g }
                         )
                 }
-                disabled={rosterLocked || pickerBusy}
+                disabled={rosterLocked || disablePicker}
               >
                 <Avatar
                   firstName={(g.displayName ?? '').trim()}
@@ -431,9 +432,7 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
         }
         onPress={handleSubmit}
         disabled={
-          createTeam.isPending ||
-          updateTeam.isPending ||
-          joinTeamSlotWaitlist.isPending ||
+          (!!editTeam && (createTeam.isPending || updateTeam.isPending || joinTeamSlotWaitlist.isPending)) ||
           (!editTeam && atTeamCapacity && !hasTwoPlayersSelected) ||
           (!editTeam && (userHasTeam || groupsConfigInvalid || !canCreateAsPlayer)) ||
           (!!editTeam && tournamentStarted)

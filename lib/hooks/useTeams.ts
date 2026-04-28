@@ -38,11 +38,10 @@ export function useCreateTeam() {
       await queryClient.cancelQueries({ queryKey: ['tournament', tournamentId] });
       await queryClient.cancelQueries({ queryKey: ['tournaments'] });
 
-      const prevTeams = queryClient.getQueryData<Team[]>(['teams', { tournamentId }]);
-      const prevTournament = queryClient.getQueryData<Tournament>(['tournament', tournamentId]);
-      const prevTournaments = queryClient.getQueryData<Tournament[]>(['tournaments']);
-
-      const tempId = `optimistic-team-${Date.now()}`;
+      // Concurrency-safe optimistic insert:
+      // - use a unique temp id
+      // - rollback by removing ONLY this temp row (not by restoring whole snapshots)
+      const tempId = `optimistic-team-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const optimistic: Team = {
         _id: tempId,
         tournamentId,
@@ -65,23 +64,37 @@ export function useCreateTeam() {
         )
       );
 
-      return { prevTeams, prevTournament, prevTournaments, tournamentId } as const;
+      return { tournamentId, tempId } as const;
     },
     onError: (_err, _doc, ctx) => {
-      if (!ctx?.tournamentId) return;
+      if (!ctx?.tournamentId || !ctx.tempId) return;
       const tid = ctx.tournamentId;
-      if (ctx.prevTeams !== undefined) {
-        queryClient.setQueryData(['teams', { tournamentId: tid }], ctx.prevTeams);
-      }
-      if (ctx.prevTournament !== undefined) {
-        queryClient.setQueryData(['tournament', tid], ctx.prevTournament);
-      }
-      if (ctx.prevTournaments !== undefined) {
-        queryClient.setQueryData(['tournaments'], ctx.prevTournaments);
-      }
+      const tempId = ctx.tempId;
+      queryClient.setQueryData<Team[]>(['teams', { tournamentId: tid }], (old) =>
+        (Array.isArray(old) ? old : []).filter((t) => String(t?._id) !== String(tempId))
+      );
+      queryClient.setQueryData<Tournament>(['tournament', tid], (old) =>
+        old ? { ...old, teamsCount: Math.max(0, Number(old.teamsCount ?? 0) - 1) } : old
+      );
+      queryClient.setQueryData<Tournament[]>(['tournaments'], (old) =>
+        old?.map((t) =>
+          t._id === tid ? { ...t, teamsCount: Math.max(0, Number(t.teamsCount ?? 0) - 1) } : t
+        )
+      );
     },
-    onSuccess: (data) => {
+    onSuccess: (data, _doc, ctx) => {
       hapticSuccess();
+      // Best-effort: replace temp row with the real server one.
+      if (ctx?.tournamentId && ctx.tempId) {
+        queryClient.setQueryData<Team[]>(['teams', { tournamentId: ctx.tournamentId }], (old) => {
+          const cur = Array.isArray(old) ? old : [];
+          const idx = cur.findIndex((t) => String(t?._id) === String(ctx.tempId));
+          if (idx < 0) return cur;
+          const next = [...cur];
+          next[idx] = data;
+          return next;
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['entries'] });
       queryClient.invalidateQueries({ queryKey: ['waitlist', data.tournamentId] });

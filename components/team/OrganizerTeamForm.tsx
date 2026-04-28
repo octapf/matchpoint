@@ -223,8 +223,11 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
     !editTeam && Number.isFinite(maxT) && maxT > 0 && teams.length >= maxT && !tournamentStarted;
   const hasTwoPlayersSelected = !!p1 && !!p2 && p1 !== p2;
 
+  // UX: in "create" mode we want to allow rapid creation of multiple teams.
+  // Keep the UI interactive and rely on optimistic updates + picker filtering.
   const pickerBusy =
     createTeam.isPending || updateTeam.isPending || deleteTeam.isPending || joinTeamSlotWaitlist.isPending;
+  const disablePicker = !!editTeam && pickerBusy;
 
   const pick = (slotId: string) => {
     if (!p1) return setP1(slotId);
@@ -274,22 +277,26 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
     }
 
     if (atTeamCapacity) {
+      const name = teamName.trim();
+      const ids: [string, string] = [p1, p2];
+      // UX: allow rapid creation by clearing selection immediately.
+      resetCreateForm();
       joinTeamSlotWaitlist.mutate(
-        { tournamentId, name: teamName.trim(), playerIds: [p1, p2], createdBy: userId },
+        { tournamentId, name, playerIds: ids, createdBy: userId },
         {
-          onSuccess: () => resetCreateForm(),
           onError: (err: unknown) => alertApiError(t, err, 'team.failedToJoinTeamSlotWaitlist'),
         }
       );
       return;
     }
 
+    const name = teamName.trim();
+    const ids: [string, string] = [p1, p2];
+    // UX: allow rapid creation by clearing selection immediately.
+    resetCreateForm();
     createTeam.mutate(
-      { tournamentId, name: teamName.trim(), playerIds: [p1, p2], createdBy: userId },
+      { tournamentId, name, playerIds: ids, createdBy: userId },
       {
-        onSuccess: () => {
-          resetCreateForm();
-        },
         onError: (err: unknown) => alertApiError(t, err, 'team.failedToCreate'),
       }
     );
@@ -334,9 +341,9 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           return (
             <Pressable
               key={uid}
-              style={[styles.row, selected && styles.rowSelected, pickerBusy && styles.rowDisabled]}
-              onPress={pickerBusy ? undefined : () => pick(uid)}
-              disabled={pickerBusy}
+              style={[styles.row, selected && styles.rowSelected, disablePicker && styles.rowDisabled]}
+              onPress={disablePicker ? undefined : () => pick(uid)}
+              disabled={disablePicker}
             >
               <Avatar
                 firstName={u?.firstName ?? ''}
@@ -358,9 +365,9 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           return (
             <Pressable
               key={g._id}
-              style={[styles.row, selected && styles.rowSelected, pickerBusy && styles.rowDisabled]}
-              onPress={pickerBusy ? undefined : () => pick(slot)}
-              disabled={pickerBusy}
+              style={[styles.row, selected && styles.rowSelected, disablePicker && styles.rowDisabled]}
+              onPress={disablePicker ? undefined : () => pick(slot)}
+              disabled={disablePicker}
             >
               <Avatar
                 firstName={(g.displayName ?? '').trim()}
@@ -382,10 +389,7 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
           }
           onPress={handleSubmit}
           disabled={
-            createTeam.isPending ||
-            updateTeam.isPending ||
-            deleteTeam.isPending ||
-            joinTeamSlotWaitlist.isPending ||
+            (!!editTeam && (createTeam.isPending || updateTeam.isPending || deleteTeam.isPending || joinTeamSlotWaitlist.isPending)) ||
             (atTeamCapacity && !hasTwoPlayersSelected) ||
             (!editTeam && groupsConfigInvalid)
           }

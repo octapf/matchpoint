@@ -45,9 +45,18 @@ function computeOptimisticServeAfterRefereePoint(
   const order = Array.isArray(m.serveOrder) ? m.serveOrder.map(String).filter(Boolean) : [];
   if (order.length !== 4) return null;
 
-  let serveIndex = Number(m.serveIndex ?? 0);
-  if (!Number.isFinite(serveIndex) || serveIndex < 0) serveIndex = 0;
-  serveIndex = Math.floor(serveIndex) % 4;
+  // Derive the current serve index from `servingPlayerId` when present.
+  // This keeps optimistic serve progression consistent when the referee manually assigns the server.
+  const servingRaw = typeof (m as { servingPlayerId?: unknown }).servingPlayerId === 'string' ? String(m.servingPlayerId) : '';
+  const idxFromServing = servingRaw ? order.findIndex((p) => p === servingRaw) : -1;
+  let serveIndex =
+    idxFromServing >= 0
+      ? idxFromServing
+      : (() => {
+          let si = Number(m.serveIndex ?? 0);
+          if (!Number.isFinite(si) || si < 0) si = 0;
+          return Math.floor(si) % 4;
+        })();
 
   if (delta === 1) {
     const servingSide: 'A' | 'B' = serveIndex % 2 === 0 ? 'A' : 'B';

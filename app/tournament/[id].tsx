@@ -2180,6 +2180,7 @@ export default function TournamentDetailScreen() {
             currentUserId={userId}
             hasJoined={isRegistered}
             canManageTournament={canManageTournament}
+            hideDeleteActions={tournamentStarted}
             mutationBusy={mutationBusy || removeTournamentPlayer.isPending}
             onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
             onPromoteOrganizer={promoteOrganizer}
@@ -2298,8 +2299,8 @@ export default function TournamentDetailScreen() {
                   guestMap={guestMap}
                   currentUserId={userId}
                   t={t}
-                  canRemoveTeam={canManageTournament}
-                  onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
+                  canRemoveTeam={canManageTournament && !tournamentStarted}
+                  onRemoveTeam={canManageTournament && !tournamentStarted ? () => confirmRemoveTeam(team) : undefined}
                   removeTeamPending={deleteTeam.isPending}
                   onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
                   onPressTeam={
@@ -2381,8 +2382,8 @@ export default function TournamentDetailScreen() {
                 guestMap={guestMap}
                 currentUserId={userId}
                 t={t}
-                canRemoveTeam={canManageTournament}
-                onRemoveTeam={canManageTournament ? () => confirmRemoveTeam(team) : undefined}
+                canRemoveTeam={canManageTournament && !tournamentStarted}
+                onRemoveTeam={canManageTournament && !tournamentStarted ? () => confirmRemoveTeam(team) : undefined}
                 removeTeamPending={deleteTeam.isPending}
                 onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
                 onPressTeam={

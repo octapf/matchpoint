@@ -23,6 +23,7 @@
     "resume": "Resume",
     "edit": "Edit",
     "finish": "Finish",
+    "confirm": "Confirm",
     "appName": "Matchpoint"
   },
   "apiErrors": {
@@ -520,6 +521,11 @@
     "matchPointBanner": "MATCH POINT",
     "refereeNotAllowed": "Only organizers/admins or the assigned referee can edit this match.",
     "serveOrderTitle": "Serve order (1 → 4)",
+    "manageServeOrder": "Serve order",
+    "serveOrderToggleOddTeam": "Toggle teams",
+    "serveOrderTogglePlayers": "Toggle players",
+    "setServerTitle": "Set server",
+    "setServerConfirm": "Set the serve to %{name}?",
     "swapServeA": "Swap %{team}",
     "swapServeB": "Swap %{team}",
     "pointsToWinShort": "%{n} to win",

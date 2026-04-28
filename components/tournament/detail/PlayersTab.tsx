@@ -76,6 +76,7 @@ export function PlayersTab({
   currentUserId,
   hasJoined,
   canManageTournament,
+  hideDeleteActions,
   mutationBusy,
   onOpenProfile,
   onPromoteOrganizer,
@@ -118,6 +119,8 @@ export function PlayersTab({
   currentUserId: string | null;
   hasJoined: boolean;
   canManageTournament: boolean;
+  /** Hide destructive controls (trash icons) once the tournament has started. */
+  hideDeleteActions?: boolean;
   mutationBusy: boolean;
   onOpenProfile: (userId: string) => void;
   onPromoteOrganizer: (targetUserId: string, playerName: string) => void;
@@ -411,7 +414,7 @@ export function PlayersTab({
                       />
                     </View>
                   ) : null}
-                  {canManageTournament && onRemoveWaitlistPlayer ? (
+                  {!hideDeleteActions && canManageTournament && onRemoveWaitlistPlayer ? (
                     <View style={rightSlotStyle}>
                       <IconButton
                         icon="trash-outline"
@@ -433,7 +436,7 @@ export function PlayersTab({
           const g = row.guest;
           const playerName = String(g?.displayName ?? '').trim() || tournamentGuestDisplayName(g) || t('common.player');
           const guestGender = g.gender === 'male' || g.gender === 'female' ? g.gender : undefined;
-          const showGuestTrash = canManageTournament && !!onDeleteGuestPlayer;
+          const showGuestTrash = !hideDeleteActions && canManageTournament && !!onDeleteGuestPlayer;
           const showGuestEdit = canManageTournament && !!onEditGuestPlayer;
           return (
             <View style={playerRowStyle as never}>
@@ -494,7 +497,7 @@ export function PlayersTab({
         const isOrg = !!(entry.userId && organizerIds.includes(entry.userId));
         const isSelf = !!(entry.userId && entry.userId === currentUserId);
         const showTopTrash =
-          !isGuestEntry && ((canManageTournament && !isSelf) || (isSelf && hasJoined));
+          !hideDeleteActions && !isGuestEntry && ((canManageTournament && !isSelf) || (isSelf && hasJoined));
         const showOrganizerToggleIcon =
           canManageTournament && !isGuestEntry && (!isSelf || (isSelf && isOrg));
         const hasTeam = !!entry.teamId;
@@ -502,7 +505,7 @@ export function PlayersTab({
           guest?.gender === 'male' || guest?.gender === 'female' ? guest.gender : undefined;
         const rosterUserId =
           !isGuestEntry && typeof entry.userId === 'string' && entry.userId ? entry.userId : undefined;
-        const showGuestTrash = canManageTournament && isGuestEntry && !!guest && !!onDeleteGuestPlayer;
+        const showGuestTrash = !hideDeleteActions && canManageTournament && isGuestEntry && !!guest && !!onDeleteGuestPlayer;
         const showGuestEdit = canManageTournament && isGuestEntry && !!guest && !!onEditGuestPlayer;
 
         return (

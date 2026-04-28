@@ -21,7 +21,7 @@ import { assertOrganizersCoverAllDivisions } from '../../server/lib/tournamentOr
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
 import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentPostAction';
 import { notifyMany, notifyOne } from '../../server/lib/notify';
-import { applyCategoryKnockoutAdvances } from '../../server/lib/knockoutAdvance';
+import { applyCategoryKnockoutAdvances, recomputeCategoryBracketAfterWinnerChange } from '../../server/lib/knockoutAdvance';
 import { insertAuditLogSafe } from '../../server/lib/auditLog';
 import {
   buildDivisionStatsFromTeams,
@@ -659,6 +659,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         const prevScheduledAt = String((match as any).scheduledAt ?? '');
         const refereeUserId = String((match as { refereeUserId?: unknown }).refereeUserId ?? '');
+        const prevWinnerId = String((match as any).winnerId ?? '');
 
         // Permission:
         // - organizers/admins can always edit
@@ -867,7 +868,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const winnerId = String((updated as any).winnerId ?? '');
           if (winnerId) {
             const loserId = winnerId === teamAId ? teamBId : teamAId;
-            await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
+            const winnerChanged = !!prevWinnerId && prevWinnerId !== winnerId;
+            if (winnerChanged) {
+              await recomputeCategoryBracketAfterWinnerChange(db, id, division, category, now, matchId);
+            } else {
+              await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
+            }
           }
         }
 
