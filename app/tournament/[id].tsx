@@ -393,13 +393,6 @@ export default function TournamentDetailScreen() {
     return fromApi;
   }, [allMatches, tournament]);
 
-  const teamById = useMemo(() => {
-    const entries = teams
-      .map((tm) => [normalizeMongoIdString(tm._id), tm] as const)
-      .filter(([k]) => k.length > 0);
-    return Object.fromEntries(entries);
-  }, [teams]);
-
   const navigation = useNavigation();
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -785,6 +778,23 @@ export default function TournamentDetailScreen() {
   ];
   const { data: users = [] } = useUsers(combinedUserIds);
   const userMap = Object.fromEntries(users.map((u) => [u._id, u]));
+
+  /**
+   * Display names in Fixture / Classification / Categories should reflect current user/guest names.
+   * Team `name` can be stale (created earlier) if a user/guest updates their name later.
+   */
+  const teamById = useMemo(() => {
+    const out: Record<string, Team> = {};
+    for (const tm of teams) {
+      const tid = normalizeMongoIdString(tm._id);
+      if (!tid) continue;
+      const p0 = tm.playerIds?.[0] ? resolveRosterSlotLabel(tm.playerIds[0], userMap, guestMap) : '';
+      const p1 = tm.playerIds?.[1] ? resolveRosterSlotLabel(tm.playerIds[1], userMap, guestMap) : '';
+      const computed = [p0, p1].filter(Boolean).join(' & ').trim();
+      out[tid] = computed ? ({ ...tm, name: computed } as Team) : tm;
+    }
+    return out;
+  }, [teams, userMap, guestMap]);
 
   const isLoading = loadingTournament;
   const isError = errorTournament;
