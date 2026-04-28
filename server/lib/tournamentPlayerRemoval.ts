@@ -3,6 +3,13 @@ import { ObjectId } from 'mongodb';
 import { isGuestPlayerSlot } from '../../lib/playerSlots';
 import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
+function tournamentStartedFromDoc(doc: Record<string, unknown> | null): boolean {
+  if (!doc) return false;
+  const startedAt = (doc as { startedAt?: unknown }).startedAt;
+  const phase = String((doc as { phase?: unknown }).phase ?? '');
+  return !!startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed';
+}
+
 /**
  * Remove a player from a tournament: dissolve any team they were on (both players → waiting list),
  * then remove this user's waitlist row if they are leaving entirely.
@@ -15,6 +22,12 @@ export async function removePlayerFromTournament(
 ): Promise<void> {
   const session = options?.session;
   const leaveTournament = options?.leaveTournament !== false;
+  const tournamentsCol = db.collection('tournaments');
+  const tour = ObjectId.isValid(tournamentId) ? await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) }, { session }) : null;
+  // Safety: never allow destructive roster changes after the tournament starts.
+  if (tournamentStartedFromDoc(tour as Record<string, unknown> | null)) {
+    throw new Error('Tournament already started');
+  }
   const entriesCol = db.collection('entries');
   const teamsCol = db.collection('teams');
   const waitlistCol = db.collection('waitlist');
