@@ -5,7 +5,6 @@ import { withCors } from '../../server/lib/cors';
 import { entryPatchSchema } from '../../server/lib/schemas/entryPatch';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRemoval';
-import { replaceLeavingUserWithGuest } from '../../server/lib/tournamentStartedPlayerReplacement';
 import { isUserAdmin, resolveActorUserId } from '../../server/lib/auth';
 import { syncTournamentOpenFullStatus } from '../../server/lib/tournamentStatusSync';
 import {
@@ -182,18 +181,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(403).json({ error: 'Not allowed to remove this entry' });
       }
 
-      // Tournament started: do not allow deleting players. If the player leaves, replace them with a guest clone.
+      // Tournament started: never allow removing entries (even self-leave). This preserves bracket + fixture integrity.
       if (started) {
-        if (!selfRemove) {
-          return corsRes.status(400).json({ error: 'Tournament already started' });
-        }
-        const orgsStarted = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
-        if (orgsStarted.includes(entryUserId)) {
-          return corsRes.status(400).json({ error: 'Promote another organizer before you leave the tournament' });
-        }
-        const repl = await replaceLeavingUserWithGuest(db, tournamentId, entryUserId);
-        if (!repl.ok) return corsRes.status(500).json({ error: repl.error });
-        return corsRes.status(200).json({ ok: true, replacedWithGuest: true, guestId: repl.guestId });
+        return corsRes.status(400).json({ error: 'Tournament already started' });
       }
 
       if (selfRemove) {

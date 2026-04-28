@@ -41,7 +41,7 @@ import {
   updateGuestPlayer,
   deleteAllGuestPlayers,
 } from '../../server/lib/tournamentGuestPlayerActions';
-import { isGuestPlayerSlot } from '../../lib/playerSlots';
+import { isGuestPlayerSlot, toGuestPlayerSlot } from '../../lib/playerSlots';
 import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/apiErrorResponse';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
@@ -1337,6 +1337,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fix = body?.fix === true;
         const matchesCol = db.collection('matches');
         const teamsCol = db.collection('teams');
+        const guestsCol = db.collection('tournament_guest_players');
+        const entriesCol = db.collection('entries');
         const matches = await matchesCol
           .find({ tournamentId: id })
           .project({ _id: 1, stage: 1, status: 1, division: 1, groupIndex: 1, category: 1, teamAId: 1, teamBId: 1, serveOrder: 1, orderIndex: 1, scheduledAt: 1, createdAt: 1 })
@@ -1349,6 +1351,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const issues: { matchId: string; issue: string }[] = [];
         const fixes: { matchId: string; set: Record<string, unknown> }[] = [];
+        const rosterFixes: { teamId: string; createdGuests: number; createdEntries: number }[] = [];
+
+        const missingTeamIds = new Set<string>();
+        const metaByMissingTeamId = new Map<string, { division: string; stage: string; groupIndex?: number; category?: string }>();
+        for (const m of matches as any[]) {
+          const div = String(m.division ?? '');
+          const stage = String(m.stage ?? '');
+          const cat = String(m.category ?? '');
+          const gi = typeof m.groupIndex === 'number' && Number.isFinite(m.groupIndex) ? m.groupIndex : undefined;
+          for (const rawTid of [m.teamAId, m.teamBId]) {
+            const tid = typeof rawTid === 'string' ? rawTid.trim() : rawTid instanceof ObjectId ? rawTid.toString() : '';
+            if (!tid || !ObjectId.isValid(tid)) continue;
+            if (teamPlayers.has(tid)) continue;
+            missingTeamIds.add(tid);
+            if (!metaByMissingTeamId.has(tid)) metaByMissingTeamId.set(tid, { division: div, stage, ...(gi != null ? { groupIndex: gi } : null), ...(cat ? { category: cat } : null) });
+          }
+        }
 
         for (const m of matches as any[]) {
           const mid = String(m._id);
@@ -1377,6 +1396,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         if (fix) {
+          // Repair missing team docs referenced by matches (prevents “TBD / Por definir” after accidental deletions).
+          // We recreate the team with the SAME _id so existing match references become valid again.
+          for (const tid of missingTeamIds) {
+            const now = new Date().toISOString();
+            const meta = metaByMissingTeamId.get(tid);
+            const division = String(meta?.division ?? '');
+            const baseName = division ? `Equipo invitado (${division})` : 'Equipo invitado';
+            const g1 = await guestsCol.insertOne(
+              { tournamentId: id, displayName: `${baseName} A`, gender: 'male', createdBy: actingUserId, createdAt: now, updatedAt: now },
+              {} as any
+            );
+            const g2 = await guestsCol.insertOne(
+              { tournamentId: id, displayName: `${baseName} B`, gender: 'female', createdBy: actingUserId, createdAt: now, updatedAt: now },
+              {} as any
+            );
+            const guestId1 = String(g1.insertedId);
+            const guestId2 = String(g2.insertedId);
+            const slot1 = toGuestPlayerSlot(guestId1);
+            const slot2 = toGuestPlayerSlot(guestId2);
+            await teamsCol.insertOne({
+              _id: new ObjectId(tid),
+              tournamentId: id,
+              name: baseName,
+              playerIds: [slot1, slot2],
+              ...(division ? { division } : null),
+              ...(meta?.stage === 'classification' && meta?.groupIndex != null ? { groupIndex: meta.groupIndex } : null),
+              ...(meta?.stage === 'category' && meta?.category ? { category: meta.category } : null),
+              createdAt: now,
+              updatedAt: now,
+            } as any);
+            // Best-effort: create guest roster rows so Teams/Players tabs can resolve them.
+            let createdEntries = 0;
+            for (const [guestId, slot] of [
+              [guestId1, slot1],
+              [guestId2, slot2],
+            ] as const) {
+              await entriesCol.deleteMany({ tournamentId: id, guestPlayerId: guestId }, {} as any);
+              await entriesCol.insertOne(
+                {
+                  tournamentId: id,
+                  userId: slot,
+                  guestPlayerId: guestId,
+                  teamId: tid,
+                  status: 'in_team',
+                  lookingForPartner: false,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                {} as any
+              );
+              createdEntries++;
+            }
+            rosterFixes.push({ teamId: tid, createdGuests: 2, createdEntries });
+          }
+
           // Best-effort: fill missing orderIndex/scheduledAt per slice ordered by createdAt.
           const bySlice = new Map<string, any[]>();
           for (const m of matches as any[]) {
@@ -1406,7 +1480,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        return corsRes.status(200).json({ ok: true, issues, fixed: fix ? fixes.length : 0 });
+        return corsRes.status(200).json({ ok: true, issues, fixed: fix ? fixes.length : 0, rosterFixed: fix ? rosterFixes : [] });
       }
 
       return corsRes.status(400).json({ error: 'Invalid action' });
