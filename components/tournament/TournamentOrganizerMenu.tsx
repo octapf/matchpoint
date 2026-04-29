@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { IconButton } from '@/components/ui/IconButton';
 import { useTheme } from '@/lib/theme/useTheme';
@@ -12,6 +12,8 @@ export type OrganizerMenuItem =
       key: string;
       label: string;
       icon: keyof typeof Ionicons.glyphMap;
+      /** Same pattern as fixture category tabs (e.g. Gold = medal-outline on MCI). When set, overrides `icon`. */
+      materialCommunityIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
       color: string;
       onPress: () => void;
       disabled?: boolean;
@@ -94,11 +96,19 @@ export function TournamentOrganizerMenu({ items, menuLabel, title }: Props) {
                     {item.label}
                   </Text>
                   <View style={styles.iconSlot}>
-                    <Ionicons
-                      name={item.icon}
-                      size={ROW_ICON}
-                      color={item.disabled ? Colors.textMuted : item.color}
-                    />
+                    {item.materialCommunityIcon ? (
+                      <MaterialCommunityIcons
+                        name={item.materialCommunityIcon}
+                        size={ROW_ICON}
+                        color={item.disabled ? Colors.textMuted : item.color}
+                      />
+                    ) : (
+                      <Ionicons
+                        name={item.icon}
+                        size={ROW_ICON}
+                        color={item.disabled ? Colors.textMuted : item.color}
+                      />
+                    )}
                   </View>
                 </Pressable>
               )

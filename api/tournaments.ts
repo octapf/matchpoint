@@ -272,6 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         classificationMatchesPerOpponent: rawClsMatches,
         singleCategoryAdvanceFraction: rawAdvance,
         categoryFractions: rawCategoryFractions,
+        categoryCounts: rawCategoryCounts,
         inviteLink,
         organizerIds,
         visibility: rawVisibility,
@@ -332,9 +333,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rawCategoryFractions && typeof rawCategoryFractions === 'object'
           ? rawCategoryFractions
           : null;
+      const rawCountsDoc =
+        rawCategoryCounts && typeof rawCategoryCounts === 'object' ? rawCategoryCounts : null;
       const hasCategories = validCategories.length > 0;
+      const categoryCountsStored = (() => {
+        if (!hasCategories || !rawCountsDoc) return null;
+        const keys = ['Gold', 'Silver', 'Bronze'] as const;
+        const cleaned: Partial<Record<(typeof keys)[number], number>> = {};
+        for (const k of keys) {
+          const v = (rawCountsDoc as Record<string, unknown>)[k];
+          if (v === undefined) continue;
+          const n = Math.floor(Number(v));
+          if (!Number.isFinite(n) || n < 0) continue;
+          cleaned[k] = n;
+        }
+        const sum = keys.reduce((acc, k) => acc + (cleaned[k] ?? 0), 0);
+        return sum > 0 ? cleaned : null;
+      })();
       const categoryFractionsStored =
-        hasCategories && fracDoc && Object.keys(fracDoc).length > 0 ? fracDoc : null;
+        hasCategories && !categoryCountsStored && fracDoc && Object.keys(fracDoc).length > 0 ? fracDoc : null;
       const doc = {
         name,
         date: sDate,
@@ -356,6 +373,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         startedAt: null,
         classificationMatchesPerOpponent: clsMatches >= 1 && clsMatches <= 5 ? clsMatches : 1,
         categoryFractions: categoryFractionsStored,
+        categoryCounts: categoryCountsStored,
         singleCategoryAdvanceFraction: hasCategories ? 0.5 : advanceFrac,
         categoryPhaseFormat: categoryPhaseFormat ?? 'single_elim',
         organizerIds: orgIds,

@@ -22,7 +22,10 @@ import {
   defaultMaxTeamsForDivisions,
 } from '@/lib/tournamentGroups';
 import { alertApiError } from '@/lib/utils/apiError';
-import { ClassificationSettingsFormFields } from '@/components/tournament/ClassificationSettingsForm';
+import {
+  ClassificationSettingsFormFields,
+  equalTeamCountsForCategories,
+} from '@/components/tournament/ClassificationSettingsForm';
 import { TournamentLocationField } from '@/components/location/TournamentLocationField';
 
 const MIN_DATE = new Date(2000, 0, 1);
@@ -65,7 +68,7 @@ export default function CreateTournamentScreen() {
   const [lastDivisionsCount, setLastDivisionsCount] = useState<number>(1);
   const [clsMatches, setClsMatches] = useState('1');
   const [clsAdvance, setClsAdvance] = useState('0.5');
-  const [clsFractions, setClsFractions] = useState({ Gold: '', Silver: '', Bronze: '' });
+  const [clsCounts, setClsCounts] = useState({ Gold: '', Silver: '', Bronze: '' });
   const maxTeamsForSelect = useMemo(() => {
     const n = parseInt(maxTeams, 10);
     return Number.isFinite(n) && n >= 2 && n <= 64 ? n : 16;
@@ -116,6 +119,18 @@ export default function CreateTournamentScreen() {
       return next;
     });
   }, [divisions]);
+
+  /** Al cambiar cantidad de categorías o máximo de equipos, reparte de nuevo según ese máximo. */
+  useEffect(() => {
+    const cats = presetToCategories(categoryPreset) as TournamentCategory[];
+    if (cats.length === 0) {
+      setClsCounts({ Gold: '', Silver: '', Bronze: '' });
+      return;
+    }
+    const total = maxTeamsForSelect;
+    if (total > 0) setClsCounts(equalTeamCountsForCategories(total, cats));
+    else setClsCounts({ Gold: '', Silver: '', Bronze: '' });
+  }, [categoryPreset, maxTeamsForSelect]);
 
   const globalRangeLabel = useMemo(() => {
     const divs = (divisions.length ? divisions : (['mixed'] as TournamentDivision[])).filter(Boolean);
@@ -183,20 +198,20 @@ export default function CreateTournamentScreen() {
       classificationMatchesPerOpponent: clsM,
     };
     if (categories.length > 0) {
+      clsPayload.categoryPhaseFormat = 'single_elim';
       const raw: Partial<Record<TournamentCategory, number>> = {};
       for (const k of ['Gold', 'Silver', 'Bronze'] as const) {
-        const s = clsFractions[k].trim();
+        if (!categories.includes(k)) continue;
+        const s = clsCounts[k].trim();
         if (!s) continue;
         const n = Number(s);
         if (!Number.isFinite(n) || n < 0) {
           Alert.alert(t('common.error'), t('tournamentDetail.categoryFractionsInvalid'));
           return;
         }
-        raw[k] = n;
+        raw[k] = Math.floor(n);
       }
-      // API schema expects the field to be omitted when empty (null is rejected).
-      if (Object.keys(raw).length) clsPayload.categoryFractions = raw;
-      clsPayload.categoryPhaseFormat = 'single_elim';
+      if (Object.keys(raw).length) clsPayload.categoryCounts = raw;
     } else {
       const f = Number(clsAdvance);
       if (!Number.isFinite(f) || f <= 0 || f >= 1) {
@@ -467,14 +482,14 @@ export default function CreateTournamentScreen() {
         <Text style={styles.hintInline}>{t('tournamentDetail.classificationSettingsHint')}</Text>
         <ClassificationSettingsFormFields
           hasCategories={presetToCategories(categoryPreset).length > 0}
+          activeCategories={presetToCategories(categoryPreset) as TournamentCategory[]}
+          totalTeamsHint={maxTeamsForSelect}
           matchesPerOpponent={clsMatches}
           advanceFraction={clsAdvance}
-          fractions={clsFractions}
+          counts={clsCounts}
           onChangeMatches={setClsMatches}
           onChangeAdvance={setClsAdvance}
-          onChangeFraction={(k, v) => setClsFractions((p) => ({ ...p, [k]: v }))}
-          onEqualDistribution={() => setClsFractions({ Gold: '1', Silver: '1', Bronze: '1' })}
-          onClearFractions={() => setClsFractions({ Gold: '', Silver: '', Bronze: '' })}
+          onChangeCount={(k, v) => setClsCounts((p) => ({ ...p, [k]: v }))}
           variant="admin"
         />
       </View>

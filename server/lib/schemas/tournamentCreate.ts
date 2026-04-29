@@ -40,6 +40,13 @@ export const tournamentCreateSchema = z.object({
       Bronze: z.number().optional(),
     })
     .optional(),
+  categoryCounts: z
+    .object({
+      Gold: z.number().optional(),
+      Silver: z.number().optional(),
+      Bronze: z.number().optional(),
+    })
+    .optional(),
   inviteLink: z.string().min(1).max(512),
   organizerIds: z.array(z.string().min(1)).min(1),
   visibility: z.enum(['public', 'private']).optional(),

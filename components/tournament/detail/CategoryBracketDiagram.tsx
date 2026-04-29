@@ -12,16 +12,23 @@
  *     align tight to match boxes (small gaps; non-final columns have no medal).
  *  6. Optional `userMap`: team A — avatars above the name; team B — avatars below (doubles: two photos).
  */
-import React, { useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Animated, Easing } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { G, Path } from 'react-native-svg';
 import type { Team, TournamentGuestPlayer, User } from '@/types';
 import { guestPlayerIdFromSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
 import Colors from '@/constants/Colors';
-import { fixtureBracketSectionTitleStyle, FIXTURE_BRACKET_SECTION_TITLE_FS } from '@/constants/fixtureSectionTitle';
+import {
+  fixtureBracketSectionTitleStyle,
+  FIXTURE_BRACKET_SECTION_TITLE_FS,
+  medalCategoryAccentColor,
+  FIXTURE_SILVER_ACCENT,
+  FIXTURE_BRONZE_ACCENT,
+} from '@/constants/fixtureSectionTitle';
 import { Avatar } from '@/components/ui/Avatar';
+import { isSyntheticBracketMatchId } from '@/lib/categoryBracketRows';
 import {
   bracketMatchShouldShowVsPlaceholder,
   bracketRoundTitleDisplay,
@@ -474,6 +481,97 @@ type Props = {
   guestMap?: Record<string, TournamentGuestPlayer | undefined>;
 };
 
+const LIVE_MATCH_PULSE_MS = 1100;
+
+/** Pulsing border + wash behind the card while a category knockout match is live (`in_progress` / `paused`). */
+function BracketMatchLiveShell({
+  isLive,
+  accentColor,
+  matchH,
+  radius,
+  children,
+}: {
+  isLive: boolean;
+  accentColor: string;
+  matchH: number;
+  radius: number;
+  children: React.ReactNode;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isLive) {
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: LIVE_MATCH_PULSE_MS,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: LIVE_MATCH_PULSE_MS,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      pulse.setValue(0);
+    };
+  }, [isLive, pulse]);
+
+  const ringOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.38, 1],
+  });
+  const haloOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.07, 0.22],
+  });
+
+  if (!isLive) return <>{children}</>;
+
+  return (
+    <View style={{ height: matchH, borderRadius: radius, position: 'relative' }}>
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: -2,
+          right: -2,
+          top: -2,
+          bottom: -2,
+          borderRadius: radius + 2,
+          borderWidth: 2,
+          borderColor: accentColor,
+          opacity: ringOpacity,
+        }}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          borderRadius: radius,
+          backgroundColor: accentColor,
+          opacity: haloOpacity,
+        }}
+      />
+      <View style={{ position: 'relative', zIndex: 1, flex: 1 }}>{children}</View>
+    </View>
+  );
+}
+
 function BracketTeamBlock({
   team,
   userMap,
@@ -581,6 +679,10 @@ function BracketTeamBlock({
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, userMap, guestMap }: Props) {
+  const sectionAccentColor =
+    category === 'Gold' || category === 'Silver' || category === 'Bronze'
+      ? medalCategoryAccentColor(category)
+      : Colors.yellow;
   const showAvatars = Boolean(userMap) || Boolean(guestMap && Object.keys(guestMap).length > 0);
   const layout = useMemo(
     () => computeLayout(matches, 1, category, showAvatars),
@@ -635,35 +737,44 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
     const wB = m.winnerId === m.teamB._id;
     const showVs = bracketMatchShouldShowVsPlaceholder(m, matches);
     const scoreLine = showVs ? t('tournamentDetail.bracketMatchVs') : `${m.pointsA} – ${m.pointsB}`;
+    const isLiveBracketMatch =
+      (m.status === 'in_progress' || m.status === 'paused') && !isSyntheticBracketMatchId(m.id);
     const inner = (
-      <View
-        style={[styles.card, {
-          height: matchH, borderRadius: radius,
-          paddingHorizontal: padH, paddingVertical: padV,
-        }]}
+      <BracketMatchLiveShell
+        isLive={isLiveBracketMatch}
+        accentColor={sectionAccentColor}
+        matchH={matchH}
+        radius={radius}
       >
-        <BracketTeamBlock
-          team={m.teamA}
-          userMap={userMap}
-          guestMap={guestMap}
-          fTeam={fTeam}
-          isWinner={wA}
-          label={teamLabel(m.teamA)}
-          avatarPlacement="above"
-        />
-        <Text style={[styles.score, showVs && styles.scoreVs, { fontSize: fScore }]}>
-          {scoreLine}
-        </Text>
-        <BracketTeamBlock
-          team={m.teamB}
-          userMap={userMap}
-          guestMap={guestMap}
-          fTeam={fTeam}
-          isWinner={wB}
-          label={teamLabel(m.teamB)}
-          avatarPlacement="below"
-        />
-      </View>
+        <View
+          style={[styles.card, {
+            height: matchH, borderRadius: radius,
+            paddingHorizontal: padH, paddingVertical: padV,
+          }]}
+        >
+          <BracketTeamBlock
+            team={m.teamA}
+            userMap={userMap}
+            guestMap={guestMap}
+            fTeam={fTeam}
+            isWinner={wA}
+            label={teamLabel(m.teamA)}
+            avatarPlacement="above"
+          />
+          <Text style={[styles.score, showVs && styles.scoreVs, { fontSize: fScore }]}>
+            {scoreLine}
+          </Text>
+          <BracketTeamBlock
+            team={m.teamB}
+            userMap={userMap}
+            guestMap={guestMap}
+            fTeam={fTeam}
+            isWinner={wB}
+            label={teamLabel(m.teamB)}
+            avatarPlacement="below"
+          />
+        </View>
+      </BracketMatchLiveShell>
     );
     if (!onOpenMatch) return inner;
     return (
@@ -675,7 +786,9 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
 
   return (
     <View style={styles.wrap}>
-      <Text style={fixtureBracketSectionTitleStyle}>{t('tournamentDetail.bracketDiagramTitle')}</Text>
+      <Text style={[fixtureBracketSectionTitleStyle, { color: sectionAccentColor }]}>
+        {t('tournamentDetail.bracketDiagramTitle')}
+      </Text>
       <ScrollView
         horizontal
         nestedScrollEnabled
@@ -723,7 +836,10 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
             ]}
           >
             <Text
-              style={[styles.colRoundLabel, { fontSize: Math.max(10, B_BRACKET_ROUND_LABEL_FS * s) }]}
+              style={[
+                styles.colRoundLabel,
+                { fontSize: Math.max(10, B_BRACKET_ROUND_LABEL_FS * s), color: sectionAccentColor },
+              ]}
               numberOfLines={2}
               adjustsFontSizeToFit
               minimumFontScale={0.75}
@@ -746,7 +862,10 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
             ]}
           >
             <Text
-              style={[styles.colRoundLabel, { fontSize: Math.max(10, B_BRACKET_ROUND_LABEL_FS * s) }]}
+              style={[
+                styles.colRoundLabel,
+                { fontSize: Math.max(10, B_BRACKET_ROUND_LABEL_FS * s), color: sectionAccentColor },
+              ]}
               numberOfLines={2}
               adjustsFontSizeToFit
               minimumFontScale={0.75}
@@ -808,9 +927,9 @@ export function CategoryBracketDiagram({ matches, onOpenMatch, t, category, user
           {category === 'Gold' ? (
             <MedalIcon3D size={finaleIconSize} color={Colors.yellow} depthColor={MEDAL_DEPTH.Gold} />
           ) : category === 'Silver' ? (
-            <MedalIcon3D size={finaleIconSize} color="#C8C8D0" depthColor={MEDAL_DEPTH.Silver} />
+            <MedalIcon3D size={finaleIconSize} color={FIXTURE_SILVER_ACCENT} depthColor={MEDAL_DEPTH.Silver} />
           ) : category === 'Bronze' ? (
-            <MedalIcon3D size={finaleIconSize} color="#CD7F32" depthColor={MEDAL_DEPTH.Bronze} />
+            <MedalIcon3D size={finaleIconSize} color={FIXTURE_BRONZE_ACCENT} depthColor={MEDAL_DEPTH.Bronze} />
           ) : (
             <Ionicons name="trophy" size={finaleIconSize} color={Colors.yellow} />
           )}
@@ -943,6 +1062,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   colRoundLabel: {
+    /** Default; overridden per medal tab via `sectionAccentColor` in render. */
     color: Colors.yellow,
     fontWeight: '700',
     fontStyle: 'italic',

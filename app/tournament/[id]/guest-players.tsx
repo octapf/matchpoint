@@ -21,6 +21,7 @@ import { useUserStore } from '@/store/useUserStore';
 import { useTranslation } from '@/lib/i18n';
 import { alertApiError } from '@/lib/utils/apiError';
 import { shouldUseDevMocks } from '@/lib/config';
+import { randomHexObjectId24 } from '@/lib/mongoId';
 import type { Gender, Tournament, TournamentGuestPlayer } from '@/types';
 
 type GuestActionBody = Record<string, unknown> & { action?: string };
@@ -75,13 +76,14 @@ export default function TournamentGuestPlayersScreen() {
 
       await queryClient.cancelQueries({ queryKey: ['tournament', id] });
       const previous = queryClient.getQueryData<Tournament>(['tournament', id]);
-      const optimisticGuestId = `optimistic-guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const optimisticGuestId = randomHexObjectId24();
       const now = new Date().toISOString();
       const optimisticGuest: TournamentGuestPlayer = {
         _id: optimisticGuestId,
         tournamentId: id,
         displayName,
         gender,
+        pending: true,
         ...(note ? { note } : {}),
         createdBy: userId ?? '',
         createdAt: now,

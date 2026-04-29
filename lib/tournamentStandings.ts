@@ -42,10 +42,68 @@ export function computeStandingsForGroup(params: {
   });
 }
 
+/** Mirrors server `normalizeFractions` — keeps client preview aligned with `allocateCategoryCounts`. */
+export function normalizeFractions(
+  fractions: Partial<Record<TournamentCategory, number>> | null | undefined
+): Partial<Record<TournamentCategory, number>> | null {
+  if (!fractions) return null;
+  const keys: TournamentCategory[] = ['Gold', 'Silver', 'Bronze'];
+  const cleaned: Partial<Record<TournamentCategory, number>> = {};
+  for (const k of keys) {
+    const v = fractions[k];
+    if (v == null) continue;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    cleaned[k] = n;
+  }
+  const sum = keys.reduce((acc, k) => acc + (cleaned[k] ?? 0), 0);
+  if (sum <= 0) return null;
+  const out: Partial<Record<TournamentCategory, number>> = {};
+  for (const k of keys) {
+    const v = cleaned[k] ?? 0;
+    if (v <= 0) continue;
+    out[k] = v / sum;
+  }
+  return out;
+}
+
+/** Mirrors server `allocateCategoryCounts` — proportional slots from weights or equal weights fallback. */
+export function allocateCategoryCounts(params: {
+  totalTeams: number;
+  categories: TournamentCategory[];
+  fractions: Partial<Record<TournamentCategory, number>> | null;
+}): Record<TournamentCategory, number> {
+  const total = Math.max(0, Math.floor(params.totalTeams));
+  const cats = params.categories.length ? params.categories : (['Gold'] as TournamentCategory[]);
+  const frac = normalizeFractions(params.fractions);
+
+  const weights = cats.map((c) => frac?.[c] ?? (frac ? 0 : 1));
+  const sumW = weights.reduce((a, b) => a + b, 0) || 1;
+  const norm = weights.map((w) => w / sumW);
+
+  const raw = norm.map((w) => w * total);
+  const base = raw.map((x) => Math.floor(x));
+  let used = base.reduce((a, b) => a + b, 0);
+  let remaining = total - used;
+
+  const remainderOrder = (['Gold', 'Silver', 'Bronze'] as TournamentCategory[]).filter((c) => cats.includes(c));
+  for (let r = 0; r < remaining; r++) {
+    const cat = remainderOrder[r % remainderOrder.length]!;
+    const idx = cats.indexOf(cat);
+    if (idx >= 0) base[idx] = (base[idx] ?? 0) + 1;
+  }
+
+  const out: Record<TournamentCategory, number> = { Gold: 0, Silver: 0, Bronze: 0 };
+  for (let i = 0; i < cats.length; i++) out[cats[i]!] = base[i] ?? 0;
+  return out;
+}
+
 export function assignCategories(params: {
   standingsByGroup: StandingRow[][];
   categories: TournamentCategory[];
   categoryFractions: Partial<Record<TournamentCategory, number>> | null | undefined;
+  /** Same as server: when set and positive sum for active categories, drives allocation (with floor split). */
+  categoryCounts?: Partial<Record<TournamentCategory, number>> | null | undefined;
   singleCategoryAdvanceFraction: number | null | undefined;
   tieBreakSeed?: string;
 }): {
@@ -95,36 +153,34 @@ export function assignCategories(params: {
     return { teamCategory, eliminated, globalOrder };
   }
 
-  const keys: TournamentCategory[] = ['Gold', 'Silver', 'Bronze'];
-  const frac = params.categoryFractions ?? null;
-  const cleaned: Partial<Record<TournamentCategory, number>> = {};
-  for (const k of keys) {
-    const v = frac?.[k];
-    if (v == null) continue;
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) continue;
-    cleaned[k] = n;
-  }
-  const sum = keys.reduce((acc, k) => acc + (cleaned[k] ?? 0), 0);
-  const hasConfig = sum > 0;
-  const weights = cats.map((c) => (hasConfig ? cleaned[c] ?? 0 : 1));
-  const sumW = weights.reduce((a, b) => a + b, 0) || 1;
-  const raw = weights.map((w) => (w / sumW) * global.length);
-  const base = raw.map((x) => Math.floor(x));
-  let remaining = global.length - base.reduce((a, b) => a + b, 0);
-  const order = raw
-    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
-    .sort((a, b) => b.frac - a.frac);
-  for (let k = 0; k < order.length && remaining > 0; k++) {
-    base[order[k]!.i] += 1;
-    remaining -= 1;
-  }
+  const rawCounts = params.categoryCounts ?? null;
+  const sumConfiguredCounts = cats.reduce((acc, c) => {
+    const n = Math.floor(Number(rawCounts?.[c] ?? 0));
+    return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+
+  const weightsAsFractions: Partial<Record<TournamentCategory, number>> | null =
+    sumConfiguredCounts > 0 && rawCounts
+      ? (() => {
+          const w: Partial<Record<TournamentCategory, number>> = {};
+          for (const c of cats) {
+            const n = Math.floor(Number(rawCounts[c] ?? 0));
+            if (Number.isFinite(n) && n > 0) w[c] = n;
+          }
+          return Object.keys(w).length ? w : null;
+        })()
+      : null;
+
+  const counts = allocateCategoryCounts({
+    totalTeams: global.length,
+    categories: cats,
+    fractions: weightsAsFractions ?? params.categoryFractions ?? null,
+  });
 
   let cursor = 0;
-  for (let i = 0; i < cats.length; i++) {
-    const cat = cats[i]!;
-    const take = Math.max(0, base[i] ?? 0);
-    for (let k = 0; k < take && cursor < global.length; k++) {
+  for (const cat of cats) {
+    const take = Math.max(0, Math.floor(counts[cat] ?? 0));
+    for (let i = 0; i < take && cursor < global.length; i++) {
       teamCategory.set(global[cursor]!.team._id, cat);
       cursor++;
     }

@@ -14,6 +14,7 @@ import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/us
 import { resolveRosterSlotLabel } from '@/lib/utils/resolveParticipant';
 import { alertApiError } from '@/lib/utils/apiError';
 import { useTranslation } from '@/lib/i18n';
+import { isValidMongoObjectIdHex } from '@/lib/mongoId';
 import { toGuestPlayerSlot, isGuestPlayerSlot } from '@/lib/playerSlots';
 import { normalizeGroupCount, validateTournamentGroups } from '@/lib/tournamentGroups';
 import { isTournamentStarted } from '@/lib/isTournamentStarted';
@@ -117,7 +118,13 @@ export function OrganizerTeamForm({ tournamentId, division, userId, editTeam = n
   }, [allUserIds, blockedForPicker, userMap]);
 
   const availableGuests = useMemo(
-    () => guestPlayers.filter((g) => !blockedForPicker.has(toGuestPlayerSlot(g._id))),
+    () =>
+      guestPlayers.filter((g) => {
+        if (g.pending) return false;
+        const id = String(g._id ?? '').trim();
+        if (!isValidMongoObjectIdHex(id)) return false;
+        return !blockedForPicker.has(toGuestPlayerSlot(id));
+      }),
     [guestPlayers, blockedForPicker]
   );
 

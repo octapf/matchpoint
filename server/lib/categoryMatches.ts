@@ -6,6 +6,7 @@ import { computeStandingsForGroup, assignCategoriesForDivision } from './tournam
 import { deriveTournamentGroupConfig } from './tournamentConfig';
 import { planCategorySingleElimination } from './singleElimBracket';
 import { insertAuditLogSafe } from './auditLog';
+import { notifyPlayersEnteredCategoryPhase } from './categoryPhaseNotify';
 
 export async function generateCategoryMatches(
   db: Db,
@@ -31,6 +32,10 @@ export async function generateCategoryMatches(
   const categoryFractions =
     (t as { categoryFractions?: unknown }).categoryFractions && typeof (t as { categoryFractions?: unknown }).categoryFractions === 'object'
       ? ((t as { categoryFractions?: unknown }).categoryFractions as Partial<Record<TournamentCategory, number>>)
+      : null;
+  const categoryCounts =
+    (t as { categoryCounts?: unknown }).categoryCounts && typeof (t as { categoryCounts?: unknown }).categoryCounts === 'object'
+      ? ((t as { categoryCounts?: unknown }).categoryCounts as Partial<Record<TournamentCategory, number>>)
       : null;
   const singleCategoryAdvanceFractionRaw = Number((t as { singleCategoryAdvanceFraction?: unknown }).singleCategoryAdvanceFraction ?? 0.5);
   const singleCategoryAdvanceFraction = Number.isFinite(singleCategoryAdvanceFractionRaw) ? singleCategoryAdvanceFractionRaw : 0.5;
@@ -105,6 +110,7 @@ export async function generateCategoryMatches(
       standingsByGroup,
       categories,
       categoryFractions,
+      categoryCounts,
       singleCategoryAdvanceFraction,
       tieBreakSeed: tournamentId,
     });
@@ -213,6 +219,17 @@ export async function generateCategoryMatches(
       },
     }
   );
+
+  const tournamentName = String((t as { name?: unknown }).name ?? 'Tournament');
+  for (const snapDiv of snapshotDivisions) {
+    const div = String(snapDiv.division ?? 'mixed');
+    for (const c of snapDiv.categories) {
+      if (!c.teamIds?.length) continue;
+      const cat = c.category;
+      if (cat !== 'Gold' && cat !== 'Silver' && cat !== 'Bronze') continue;
+      await notifyPlayersEnteredCategoryPhase(db, tournamentId, tournamentName, div, cat, c.teamIds);
+    }
+  }
 
   if (opts?.actorId) {
     await insertAuditLogSafe(db, {

@@ -17,6 +17,7 @@ import { isPairValidForTournamentDivisions } from '@/lib/teamDivisionPairing';
 import { useUserStore } from '@/store/useUserStore';
 import { getPlayerSortKey, getTournamentPlayerDisplayName } from '@/lib/utils/userDisplay';
 import { alertApiError } from '@/lib/utils/apiError';
+import { isValidMongoObjectIdHex } from '@/lib/mongoId';
 import { toGuestPlayerSlot, isGuestPlayerSlot, guestPlayerIdFromSlot } from '@/lib/playerSlots';
 import { isTournamentStarted } from '@/lib/isTournamentStarted';
 import type { Team, TournamentDivision, TournamentGuestPlayer } from '@/types';
@@ -90,7 +91,13 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
       (((tournament.organizerIds ?? []) as string[]).includes(userId) || user?.role === 'admin')
   );
   const availableGuests = useMemo(
-    () => guestPlayers.filter((g) => !inTeamSlotIds.has(toGuestPlayerSlot(g._id))),
+    () =>
+      guestPlayers.filter((g) => {
+        if (g.pending) return false;
+        const id = String(g._id ?? '').trim();
+        if (!isValidMongoObjectIdHex(id)) return false;
+        return !inTeamSlotIds.has(toGuestPlayerSlot(id));
+      }),
     [guestPlayers, inTeamSlotIds]
   );
 
@@ -239,8 +246,13 @@ export function PlayerTeamForm({ tournamentId, division, editTeam = null }: Play
       partnerGender = partnerMap[secondPick.userId]?.gender;
       playerIds = [userId, secondPick.userId];
     } else {
+      const gid = String(secondPick.guest._id ?? '').trim();
+      if (secondPick.guest.pending || !isValidMongoObjectIdHex(gid)) {
+        Alert.alert(t('common.error'), t('team.guestNotReady'));
+        return;
+      }
       partnerGender = secondPick.guest.gender;
-      playerIds = [userId, toGuestPlayerSlot(secondPick.guest._id)];
+      playerIds = [userId, toGuestPlayerSlot(gid)];
     }
 
     const divCheck = isPairValidForTournamentDivisions(divisions, user?.gender, partnerGender);

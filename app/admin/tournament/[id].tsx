@@ -18,7 +18,7 @@ import { DatePickerField } from '@/components/ui/DatePickerField';
 import { GroupCountSelect } from '@/components/ui/GroupCountSelect';
 import { MaxTeamsSelect } from '@/components/ui/MaxTeamsSelect';
 import { useTournament, useUpdateTournament } from '@/lib/hooks/useTournaments';
-import type { Tournament, TournamentDivision } from '@/types';
+import type { Tournament, TournamentCategory, TournamentDivision } from '@/types';
 import {
   normalizeGroupCount,
   validateTournamentGroups,
@@ -30,6 +30,7 @@ import { ClassificationSettingsAutosave } from '@/components/tournament/Classifi
 import { TournamentLocationField } from '@/components/location/TournamentLocationField';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/lib/theme/useTheme';
+import { useUserStore } from '@/store/useUserStore';
 
 const MIN_DATE = new Date(2000, 0, 1);
 const SAVE_DEBOUNCE_MS = 750;
@@ -150,6 +151,8 @@ export default function AdminEditTournamentScreen() {
   const { t } = useTranslation();
   const { tokens } = useTheme();
   const router = useRouter();
+  const sessionUserId = useUserStore((s) => s.user?._id ?? '');
+  const sessionRole = useUserStore((s) => s.user?.role);
 
   const { data: tournament, isLoading, isError, error: loadError } = useTournament(id);
   const updateTournament = useUpdateTournament();
@@ -213,6 +216,13 @@ export default function AdminEditTournamentScreen() {
       bettingAnonymous: !!(tournament as unknown as Record<string, unknown>).bettingAnonymous,
     });
   }, [tournament]);
+
+  const canEditTournamentConfig = useMemo(() => {
+    if (!tournament || !sessionUserId) return false;
+    const isOrganizer = (tournament.organizerIds ?? []).includes(sessionUserId);
+    const isAdmin = sessionRole === 'admin';
+    return isOrganizer || isAdmin;
+  }, [tournament, sessionUserId, sessionRole]);
 
   const maxTeamsForSelect = useMemo(() => {
     const n = parseInt(maxTeams, 10);
@@ -315,9 +325,9 @@ export default function AdminEditTournamentScreen() {
           setsPerMatch,
           groupCount,
           description,
-          divisions,
-          categoryPreset,
-          visibilityPrivate,
+          divisionsEff,
+          categoryPresetEff,
+          visibilityPrivateEff,
           cancelledEff,
         )
       ) {
@@ -473,6 +483,18 @@ export default function AdminEditTournamentScreen() {
     );
   }
 
+  if (!canEditTournamentConfig) {
+    return (
+      <>
+        <Stack.Screen options={{ title: t('admin.editTournamentTitle') }} />
+        <View style={styles.centered}>
+          <Text style={styles.muted}>{t('admin.editTournamentAccessDenied')}</Text>
+          <Button title={t('common.ok')} onPress={() => router.back()} fullWidth />
+        </View>
+      </>
+    );
+  }
+
   const tournamentStarted =
     !!(tournament as { startedAt?: string | null }).startedAt ||
     tournament.phase === 'classification' ||
@@ -561,7 +583,9 @@ export default function AdminEditTournamentScreen() {
                 </View>
                 <Switch
                   value={!!(bettingLocal as unknown as Record<string, boolean>)[key]}
-                  disabled={key !== 'bettingEnabled' && !bettingLocal.bettingEnabled}
+                  disabled={
+                    tournamentStarted || (key !== 'bettingEnabled' && !bettingLocal.bettingEnabled)
+                  }
                   trackColor={{ false: Colors.surfaceLight, true: tokens.accentHover }}
                   thumbColor="#f4f4f5"
                   onValueChange={(v) => {
@@ -726,6 +750,7 @@ export default function AdminEditTournamentScreen() {
                         label={`${t('tournaments.startDate')}${t('common.requiredSuffix')}`}
                         value={r.startDate}
                         size="sm"
+                        disabled={tournamentStarted}
                         onChange={(d) => {
                           setDivisionDates((prev) => ({
                             ...(prev ?? {}),
@@ -740,6 +765,7 @@ export default function AdminEditTournamentScreen() {
                         label={t('tournaments.endDate')}
                         value={r.endDate}
                         size="sm"
+                        disabled={tournamentStarted}
                         onChange={(d) => {
                           setDivisionDates((prev) => ({
                             ...(prev ?? {}),
@@ -844,6 +870,8 @@ export default function AdminEditTournamentScreen() {
           tournament={tournament}
           started={tournamentStarted}
           embedded
+          activeCategoriesOverride={presetToCategories(categoryPreset) as TournamentCategory[]}
+          totalTeamsHintOverride={parseInt(maxTeams, 10) || 16}
         />
 
         <View style={styles.switchRow}>

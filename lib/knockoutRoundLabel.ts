@@ -81,6 +81,42 @@ export function resolveKnockoutRoundHeading(
   return t('tournamentDetail.bracketRoundHeading', { n: roundNumberForFallback });
 }
 
+/**
+ * Same rules as {@link resolveKnockoutRoundHeading} but returns i18n keys for server-side
+ * notification params (no `t` on the server).
+ */
+export function knockoutRoundHeadingI18nKey(
+  roundIndexFromEnd: number,
+  roundNumberForFallback: number,
+  teamCountInCategory: number,
+  mainRoundCount: number
+): { key: string; n?: number } {
+  const n = Math.max(2, teamCountInCategory);
+  const kFromTeams = nextPowerOf2(n);
+  const kFromDepth = mainRoundCount > 0 ? 2 ** mainRoundCount : kFromTeams;
+  const K = Math.max(kFromTeams, kFromDepth);
+
+  if (roundIndexFromEnd === 0) return { key: 'tournamentDetail.bracketPhaseFinal' };
+  if (roundIndexFromEnd === 1) return { key: 'tournamentDetail.bracketPhaseSemi' };
+  if (roundIndexFromEnd === 2) {
+    if (K >= 8) return { key: 'tournamentDetail.bracketPhaseQuarter' };
+    return { key: 'tournamentDetail.bracketPhaseSemi' };
+  }
+  if (roundIndexFromEnd === 3) {
+    if (K >= 16) return { key: 'tournamentDetail.bracketPhaseOctavos' };
+    if (K >= 8) return { key: 'tournamentDetail.bracketPhaseQuarter' };
+    return { key: 'tournamentDetail.bracketPhaseSemi' };
+  }
+  if (roundIndexFromEnd === 4) {
+    if (K >= 32) return { key: 'tournamentDetail.bracketPhaseRoundOf32' };
+    if (K >= 16) return { key: 'tournamentDetail.bracketPhaseOctavos' };
+    if (K >= 8) return { key: 'tournamentDetail.bracketPhaseQuarter' };
+    return { key: 'tournamentDetail.bracketPhaseSemi' };
+  }
+
+  return { key: 'tournamentDetail.bracketRoundHeading', n: roundNumberForFallback };
+}
+
 /** Bracket round title for UI — same in diagram column headers and fixture list (no decoration). */
 export function bracketRoundTitleDisplay(raw: string): string {
   return raw.trim();

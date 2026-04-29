@@ -11,6 +11,9 @@ import type { Team, TournamentCategory, TournamentGuestPlayer, User } from '@/ty
 
 const TEAM_TAB_BRONZE_MEDAL = '#cd7f32';
 
+/** Same outer size for green `checkmark-circle` and red elimination badge on the Teams tab. */
+const OUTCOME_STATUS_ICON_SIZE = 20;
+
 export const tournamentTeamCardStyles = StyleSheet.create({
   teamCard: {
     position: 'relative',
@@ -208,11 +211,28 @@ export function TournamentTeamCard({
           {classificationSummary ? (
             <View style={styles.teamCardIconsCluster} accessibilityLabel={a11yIcons} accessible={true}>
               {showOutcomeIcons ? (
-                <Ionicons
-                  name={classificationSummary.classified ? 'checkmark-circle' : 'close-circle'}
-                  size={20}
-                  color={classificationSummary.classified ? Colors.success : Colors.error}
-                />
+                classificationSummary.classified ? (
+                  <Ionicons name="checkmark-circle" size={OUTCOME_STATUS_ICON_SIZE} color={Colors.success} />
+                ) : (
+                  <View
+                    style={{
+                      width: OUTCOME_STATUS_ICON_SIZE,
+                      height: OUTCOME_STATUS_ICON_SIZE,
+                      borderRadius: OUTCOME_STATUS_ICON_SIZE / 2,
+                      backgroundColor: Colors.error,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <Ionicons
+                      name="close"
+                      size={Math.round(OUTCOME_STATUS_ICON_SIZE * 0.75)}
+                      color="#ffffff"
+                    />
+                  </View>
+                )
               ) : null}
               {showOutcomeIcons && classificationSummary.category ? (
                 <MaterialCommunityIcons name="medal-outline" size={20} color={medalColor} />

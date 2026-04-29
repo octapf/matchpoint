@@ -48,6 +48,8 @@ Client types live in `types/index.ts` as `Notification` + `NotificationType`.
 - **Referee assigned**: `api/tournaments/[id].ts` actions `claimReferee` / `startMatch` → `match.refereeAssigned` (referee only)
 - **Match ended**: `api/tournaments/[id].ts` actions `refereePoint` (auto-complete) and `updateMatch` finalize → `match.ended` (both teams)
 - **Classification**: `api/tournaments/[id].ts` action `finalizeClassification` → `tournament.classified`
+- **Category phase (bracket)**: `server/lib/categoryMatches.ts` after matches are generated → `category.entered` (per team: category + division in this tournament)
+- **Category knockout win**: `api/tournaments/[id].ts` `updateMatch` when a category match is completed → `category.roundAdvanced` (winning team’s players: next round name) or `category.tournamentWon` if that match was the main-bracket final (no downstream winner slot)
 
 ### UI
 

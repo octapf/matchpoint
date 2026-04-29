@@ -147,6 +147,20 @@
         "body": "%{fromName} wants to form a team with you in %{tournament}."
       }
     },
+    "category": {
+      "entered": {
+        "title": "Category phase",
+        "body": "You’re in the %{category} bracket (%{division}) in %{tournament}."
+      },
+      "roundAdvanced": {
+        "title": "You advanced",
+        "body": "You moved on to %{nextRound} in %{tournament}."
+      },
+      "tournamentWon": {
+        "title": "Champion",
+        "body": "You won %{tournament} — %{category} · %{division}."
+      }
+    },
     "match": {
       "scheduled": {
         "title": "Next match scheduled",
@@ -224,6 +238,7 @@
     "recentTournamentsListed": "Recent tournaments fetched (max 100): %{count}",
     "editUserTitle": "Edit user",
     "editTournamentTitle": "Edit tournament",
+    "editTournamentAccessDenied": "Only tournament organizers or admins can edit the configuration.",
     "editTournamentHint": "Changes apply immediately for all players.",
     "divisionDatesTitle": "Dates by division",
     "readOnlyDerivedFromDivisionDates": "The overall date range is generated automatically from division dates.",
@@ -452,11 +467,6 @@
     "categories": "Categories",
     "categoriesPlaceholder": "e.g. Gold, Silver",
     "categoriesHint": "Choose one category preset.",
-    "categoryPhaseFormatLabel": "Category stage format",
-    "categoryPhaseFormatHint": "Categories use a knockout bracket only.",
-    "categoryPhaseFormatBracketOnly": "Gold, Silver, and Bronze are knockout brackets: you play the pairings in the tree (not round-robin).",
-    "categoryPhaseFormatRoundRobin": "Round robin",
-    "categoryPhaseFormatSingleElim": "Single elimination",
     "categoryDefault": "None",
     "categoryNone": "None",
     "categoryGold": "Gold",
@@ -554,14 +564,9 @@
     "matchesPerOpponentLabel": "Matches per opponent",
     "matchesPerOpponentHint": "Default: 1 match against each team in your group (round-robin).",
     "matchesPerOpponentInvalid": "Matches per opponent must be between 1 and 5.",
-    "categoryFractionsLabel": "Category distribution",
-    "categoryFractionsHint": "Enter any non-negative numbers (they’ll be normalized). Leave empty to use the default equal split.",
+    "categoryFractionsLabel": "Team distribution by category",
+    "categoryFractionsHint": "Set team counts per category (based on max teams). Leave empty to use the default equal split.",
     "categoryFractionsInvalid": "Enter valid non-negative numbers for category distribution.",
-    "categoryPhaseFormatLabel": "Category stage format",
-    "categoryPhaseFormatHint": "Category matches are always a knockout bracket.",
-    "categoryPhaseFormatBracketOnly": "Gold, Silver, and Bronze are knockout brackets: each match follows the bracket (not everyone vs everyone).",
-    "categoryPhaseFormatRoundRobin": "Round robin",
-    "categoryPhaseFormatSingleElim": "Single elimination",
     "matchOpponentTbd": "TBD",
     "matchWaitingForOpponents": "Waiting for both opponents to be set before this match can start.",
     "bracketRoundHeading": "Round %{n}",
@@ -576,7 +581,6 @@
     "bracketViewBoth": "Both",
     "bracketViewDiagram": "Bracket",
     "bracketViewList": "List",
-    "equalDistribution": "Equal split",
     "advanceFractionLabel": "Advance fraction",
     "advanceFractionHint": "When there’s only one category, this fraction of teams advance and the rest are eliminated. Default: 0.5",
     "advanceFractionInvalid": "Advance fraction must be between 0 and 1 (exclusive).",
@@ -773,6 +777,7 @@
     "pickPartnerFromWaitlist": "Partner — choose someone on the waiting list (not in a team yet)",
     "guestPlayersSection": "Guest players (no app account)",
     "noGuestPlayers": "No guest players defined for this tournament.",
+    "guestNotReady": "This guest player is still being created. Wait a moment and try again.",
     "joinWaitlistFirst": "Join the waiting list first, then create a team with another waitlisted player.",
     "groupLabel": "Group",
     "groupHint": "Pick a group for this team. Capacity per group is max teams ÷ groups (at least 2).",

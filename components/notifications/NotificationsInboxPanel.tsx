@@ -15,7 +15,29 @@ function notificationLabel(
   n: Notification,
   t: (k: string, o?: Record<string, string | number>) => string
 ): { title: string; body: string } {
-  const params = (n.params ?? {}) as Record<string, string | number>;
+  const raw = (n.params ?? {}) as Record<string, string | number | boolean | undefined>;
+  const params: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined || typeof v === 'boolean') continue;
+    params[k] = v as string | number;
+  }
+  if (typeof params.categoryLabelKey === 'string') {
+    params.category = t(params.categoryLabelKey);
+    delete params.categoryLabelKey;
+  }
+  if (typeof params.divisionLabelKey === 'string') {
+    params.division = t(params.divisionLabelKey);
+    delete params.divisionLabelKey;
+  }
+  if (typeof params.nextRoundKey === 'string') {
+    if (typeof params.nextRoundN === 'number') {
+      params.nextRound = t(params.nextRoundKey, { n: params.nextRoundN });
+    } else {
+      params.nextRound = t(params.nextRoundKey);
+    }
+    delete params.nextRoundKey;
+    delete params.nextRoundN;
+  }
   const titleKey = `notifications.${n.type}.title`;
   const bodyKey = `notifications.${n.type}.body`;
   return {

@@ -11,6 +11,7 @@ export function buildSeededClassificationData(params: {
   pointsToWin: number;
   setsPerMatch: number;
   categoryFractions?: Partial<Record<MatchCategoryTab, number>> | null;
+  categoryCounts?: Partial<Record<MatchCategoryTab, number>> | null;
   singleCategoryAdvanceFraction?: number | null;
   tieBreakSeed?: string;
 }) {
@@ -107,6 +108,7 @@ export function buildSeededClassificationData(params: {
     standingsByGroup,
     categories: orderedCats,
     categoryFractions: params.categoryFractions ?? null,
+    categoryCounts: params.categoryCounts ?? null,
     singleCategoryAdvanceFraction: params.singleCategoryAdvanceFraction ?? 0.5,
     tieBreakSeed: params.tieBreakSeed ?? 'dev-seeded-classification',
   });

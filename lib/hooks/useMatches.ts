@@ -1,10 +1,46 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { tournamentsApi } from '@/lib/api';
 import { RALLY_POINTS_ABS_CAP } from '@/lib/matchRallyScoring';
 import { shouldUseDevMocks } from '@/lib/config';
 import { normalizeMongoIdString } from '@/lib/mongoId';
 import { DEV_TOURNAMENT_ID, MOCK_DEV_CATEGORY_MATCHES } from '@/lib/mocks/devTournamentMocks';
 import type { Match } from '@/types';
+
+/**
+ * Late `refereePoint` / `setServeOrder` responses can resolve after `updateMatch` finalize already set the match
+ * to `completed` in cache. Applying those snapshots would briefly show the match as in progress again.
+ */
+function shouldRejectStaleMatchMerge(prev: Match | undefined, incoming: Match): boolean {
+  const prevStatus = String((prev as { status?: unknown })?.status ?? '');
+  const incomingStatus = String((incoming as { status?: unknown })?.status ?? '');
+  return prevStatus === 'completed' && incomingStatus === 'in_progress';
+}
+
+function upsertMatchFromServer(queryClient: QueryClient, data: Match): void {
+  queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
+    if (!old) return old;
+    const idx = old.findIndex((m) => m._id === data._id);
+    if (idx < 0) return old;
+    if (shouldRejectStaleMatchMerge(old[idx], data)) return old;
+    const next = [...old];
+    next[idx] = data;
+    return next;
+  });
+}
+
+/**
+ * Full list refetches (invalidateQueries, window focus, etc.) can return rows before finalize is committed,
+ * briefly showing `in_progress` again while cache already has optimistic `completed`.
+ */
+function mergeFreshMatchesWithCache(prev: Match[] | undefined, fresh: Match[]): Match[] {
+  if (!prev?.length) return fresh;
+  const prevById = new Map(prev.map((m) => [String(m._id), m]));
+  return fresh.map((m) => {
+    const p = prevById.get(String(m._id));
+    if (p && shouldRejectStaleMatchMerge(p, m)) return p;
+    return m;
+  });
+}
 
 /**
  * Find the +1 event that produced the current score (curA, curB) when `side` scored;
@@ -115,26 +151,32 @@ export function useMatches(
   params: { tournamentId: string; stage?: string; division?: string; category?: string; groupIndex?: string } | undefined,
   options?: { enabled?: boolean; refetchIntervalMs?: number }
 ) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ['matches', params],
-    queryFn: () => {
-      if (!params?.tournamentId) return Promise.resolve([] as Match[]);
+    queryFn: async () => {
+      if (!params?.tournamentId) return [] as Match[];
+      const cacheKey = ['matches', params] as const;
+      const prev = queryClient.getQueryData<Match[]>(cacheKey);
+
       if (shouldUseDevMocks()) {
-        if (params.tournamentId !== DEV_TOURNAMENT_ID) return Promise.resolve([] as Match[]);
-        return Promise.resolve(MOCK_DEV_CATEGORY_MATCHES);
+        if (params.tournamentId !== DEV_TOURNAMENT_ID) return [] as Match[];
+        return mergeFreshMatchesWithCache(prev, MOCK_DEV_CATEGORY_MATCHES);
       }
-      return tournamentsApi.findOneWithMatches(params.tournamentId).then((t) => {
-        const raw = t as { matches?: unknown[] } | null;
-        const all = Array.isArray(raw?.matches) ? (raw!.matches as Match[]) : ([] as Match[]);
-        if (!params.stage && !params.division && !params.category && !params.groupIndex) return all;
-        return all.filter((m) => {
+
+      const t = await tournamentsApi.findOneWithMatches(params.tournamentId);
+      const raw = t as { matches?: unknown[] } | null;
+      let all = Array.isArray(raw?.matches) ? (raw!.matches as Match[]) : ([] as Match[]);
+      if (params.stage || params.division || params.category || params.groupIndex) {
+        all = all.filter((m) => {
           if (params.stage && (m as { stage?: string }).stage !== params.stage) return false;
           if (params.division && (m as { division?: string }).division !== params.division) return false;
           if (params.category && (m as { category?: string }).category !== params.category) return false;
           if (params.groupIndex && String((m as { groupIndex?: unknown }).groupIndex ?? '') !== params.groupIndex) return false;
           return true;
         });
-      });
+      }
+      return mergeFreshMatchesWithCache(prev, all);
     },
     enabled: options?.enabled ?? !!params?.tournamentId,
     staleTime: 15_000,
@@ -189,14 +231,7 @@ export function useUpdateMatch() {
       }
     },
     onSuccess: (data) => {
-      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((m) => m._id === data._id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = data;
-        return next;
-      });
+      upsertMatchFromServer(queryClient, data);
     },
   });
 }
@@ -278,15 +313,7 @@ export function useStartMatch() {
       }
     },
     onSuccess: (data) => {
-      // Apply server-authoritative state without refetching stale data.
-      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((m) => m._id === data._id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = data;
-        return next;
-      });
+      upsertMatchFromServer(queryClient, data);
     },
     retry: 0,
   });
@@ -324,14 +351,7 @@ export function useRefereePoint() {
     },
     retryDelay: (attemptIndex) => (attemptIndex === 0 ? 360 : 120 * attemptIndex),
     onSuccess: (data) => {
-      queryClient.setQueriesData<Match[]>({ queryKey: ['matches'] }, (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((m) => m._id === data._id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = data;
-        return next;
-      });
+      upsertMatchFromServer(queryClient, data);
     },
   });
 }
@@ -389,8 +409,8 @@ export function useSetServeOrder() {
         queryClient.setQueryData(key, data);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: (data) => {
+      upsertMatchFromServer(queryClient, data);
     },
   });
 }

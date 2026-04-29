@@ -6,7 +6,12 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'reac
 import type { Team, TournamentGuestPlayer, User } from '@/types';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme/useTheme';
-import { fixtureBracketSectionTitleStyle } from '@/constants/fixtureSectionTitle';
+import {
+  fixtureBracketSectionTitleStyle,
+  medalCategoryAccentColor,
+  FIXTURE_SILVER_ACCENT,
+  FIXTURE_BRONZE_ACCENT,
+} from '@/constants/fixtureSectionTitle';
 import { Button } from '@/components/ui/Button';
 import { CategoryBracketDiagram, type BracketMatchRow } from '@/components/tournament/detail/CategoryBracketDiagram';
 import { TournamentTeamCard } from '@/components/tournament/detail/TournamentTeamCard';
@@ -27,8 +32,6 @@ type MatchSubTab = 'live' | 'classification' | MatchCategoryTab;
  * `tournamentGroupPlacementPending`: no ISO `groupsDistributedAt` and no numeric `groupIndex` on teams)
  * plus `divisionHasTeams` — not `phase` alone, so UI matches “groups exist or not”.
  */
-
-const BRONZE = '#cd7f32';
 
 const WASH_PEAK: Record<MatchCategoryTab, number> = {
   Gold: 0.28,
@@ -61,7 +64,8 @@ function CategoryTabContentGradient({ category }: { category: MatchCategoryTab }
   const uid = useId().replace(/:/g, '');
   const gradId = `fxCatBg${category}${uid}`;
   const peak = WASH_PEAK[category];
-  const color = category === 'Gold' ? Colors.yellow : category === 'Silver' ? '#94a3b8' : BRONZE;
+  const color =
+    category === 'Gold' ? Colors.yellow : category === 'Silver' ? FIXTURE_SILVER_ACCENT : FIXTURE_BRONZE_ACCENT;
   const prefix = category === 'Gold' ? 'g' : category === 'Silver' ? 's' : 'b';
   return (
     <Svg style={StyleSheet.absoluteFillObject} viewBox="0 0 1 1" preserveAspectRatio="none" pointerEvents="none">
@@ -346,9 +350,9 @@ export function FixtureTab({
       m.liveCategory === 'Gold'
         ? Colors.yellow
         : m.liveCategory === 'Silver'
-          ? Colors.textSecondary
+          ? FIXTURE_SILVER_ACCENT
           : m.liveCategory === 'Bronze'
-            ? BRONZE
+            ? FIXTURE_BRONZE_ACCENT
             : Colors.textMuted;
 
     const statusBg =
@@ -466,7 +470,13 @@ export function FixtureTab({
           // Text tabs need more room; medal icon tabs stay compact.
           const flexWeight = tab === 'classification' ? 2.75 : tab === 'live' ? 1.25 : 0.48;
           const medalColor =
-            tab === 'Gold' ? Colors.yellow : tab === 'Silver' ? Colors.textSecondary : tab === 'Bronze' ? BRONZE : Colors.textMuted;
+            tab === 'Gold'
+              ? Colors.yellow
+              : tab === 'Silver'
+                ? FIXTURE_SILVER_ACCENT
+                : tab === 'Bronze'
+                  ? FIXTURE_BRONZE_ACCENT
+                  : Colors.textMuted;
           return (
             <Pressable
               key={tab}
@@ -604,8 +614,8 @@ export function FixtureTab({
                           : (selectedMatchesSubtab as MatchCategoryTab) === 'Gold'
                             ? Colors.yellow
                             : (selectedMatchesSubtab as MatchCategoryTab) === 'Silver'
-                              ? Colors.textSecondary
-                              : BRONZE
+                              ? FIXTURE_SILVER_ACCENT
+                              : FIXTURE_BRONZE_ACCENT
                       }
                       accessibilityLabel={t(
                         tournamentCategoryI18nKey(selectedMatchesSubtab as MatchCategoryTab)
@@ -675,7 +685,14 @@ export function FixtureTab({
                     {bracketGroups && bracketGroups.length > 0 ? (
                       bracketGroups.map((g, gi) => (
                         <View key={`br-${g.round}-${g.heading}-${gi}`} style={{ marginBottom: 14 }}>
-                          <Text style={bracketRoundHeadingStyle as never}>{bracketRoundTitleDisplay(g.heading)}</Text>
+                          <Text
+                            style={[
+                              bracketRoundHeadingStyle as never,
+                              { color: medalCategoryAccentColor(tab) },
+                            ]}
+                          >
+                            {bracketRoundTitleDisplay(g.heading)}
+                          </Text>
                           {sortMatches(g.matches).map((m, mi) => (
                             <View key={`${g.round}-${g.heading}-${m.id}-${mi}`}>{renderMatchRow(m)}</View>
                           ))}

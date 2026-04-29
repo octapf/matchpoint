@@ -239,6 +239,8 @@ export function assignCategoriesForDivision(params: {
   standingsByGroup: StandingRow[][];
   categories: TournamentCategory[];
   categoryFractions: Partial<Record<TournamentCategory, number>> | null;
+  /** Integer team counts per category (optional). When positive total for active categories, used as allocation weights. */
+  categoryCounts?: Partial<Record<TournamentCategory, number>> | null;
   singleCategoryAdvanceFraction: number;
   /** Same as computeStandingsForGroup.tieBreakSeed — deterministic draw among tied cross-group rows. */
   tieBreakSeed?: string;
@@ -275,10 +277,28 @@ export function assignCategoriesForDivision(params: {
     return { teamCategory, eliminated, globalOrder };
   }
 
+  const rawCounts = params.categoryCounts ?? null;
+  const sumConfiguredCounts = params.categories.reduce((acc, c) => {
+    const n = Math.floor(Number(rawCounts?.[c] ?? 0));
+    return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+
+  const weightsAsFractions: Partial<Record<TournamentCategory, number>> | null =
+    sumConfiguredCounts > 0 && rawCounts
+      ? (() => {
+          const w: Partial<Record<TournamentCategory, number>> = {};
+          for (const c of params.categories) {
+            const n = Math.floor(Number(rawCounts[c] ?? 0));
+            if (Number.isFinite(n) && n > 0) w[c] = n;
+          }
+          return Object.keys(w).length ? w : null;
+        })()
+      : null;
+
   const counts = allocateCategoryCounts({
     totalTeams: global.length,
     categories: params.categories,
-    fractions: params.categoryFractions,
+    fractions: weightsAsFractions ?? params.categoryFractions,
   });
 
   let cursor = 0;

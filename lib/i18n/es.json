@@ -146,6 +146,20 @@
         "body": "%{fromName} quiere formar equipo contigo en %{tournament}."
       }
     },
+    "category": {
+      "entered": {
+        "title": "Fase por categorías",
+        "body": "Entraste en la categoría %{category} (%{division}) en %{tournament}."
+      },
+      "roundAdvanced": {
+        "title": "Seguís en el cuadro",
+        "body": "¡Pasaste a %{nextRound} en %{tournament}!"
+      },
+      "tournamentWon": {
+        "title": "¡Campeones!",
+        "body": "¡Felicitaciones! Ganaste %{tournament} en %{category} · %{division}."
+      }
+    },
     "match": {
       "scheduled": {
         "title": "Próximo partido programado",
@@ -223,6 +237,7 @@
     "recentTournamentsListed": "Torneos recientes cargados (máx. 100): %{count}",
     "editUserTitle": "Editar usuario",
     "editTournamentTitle": "Editar torneo",
+    "editTournamentAccessDenied": "Solo organizadores del torneo o administradores pueden editar la configuración.",
     "editTournamentHint": "Los cambios se aplican de inmediato para todos los jugadores.",
     "divisionDatesTitle": "Fechas por división",
     "readOnlyDerivedFromDivisionDates": "La fecha general se genera automáticamente según las fechas de las divisiones.",
@@ -451,11 +466,6 @@
     "categories": "Categorías",
     "categoriesPlaceholder": "p. ej. Oro, Plata",
     "categoriesHint": "Elige un preset de categorías.",
-    "categoryPhaseFormatLabel": "Formato de la fase por categorías",
-    "categoryPhaseFormatHint": "Las categorías son solo cuadro eliminatorio.",
-    "categoryPhaseFormatBracketOnly": "Oro, Plata y Bronce son llave: cada partido es el cruce que toca, no todos contra todos.",
-    "categoryPhaseFormatRoundRobin": "Round robin",
-    "categoryPhaseFormatSingleElim": "Eliminación directa",
     "categoryDefault": "Unica categoría",
     "categoryNone": "Unica categoría",
     "categoryGold": "Oro",
@@ -667,14 +677,9 @@
     "matchesPerOpponentLabel": "Partidos por rival",
     "matchesPerOpponentHint": "Por defecto: 1 partido contra cada equipo del grupo (clasificación).",
     "matchesPerOpponentInvalid": "Partidos por rival debe estar entre 1 y 5.",
-    "categoryFractionsLabel": "Distribución por categorías",
-    "categoryFractionsHint": "Escribe números (se normalizan). Déjalo vacío para usar reparto igual.",
+    "categoryFractionsLabel": "Distribución de equipos por categorías",
+    "categoryFractionsHint": "Indica equipos por categoría (orientado al máximo del torneo). Déjalo vacío para usar reparto igual.",
     "categoryFractionsInvalid": "Introduce números válidos (≥ 0) para la distribución.",
-    "categoryPhaseFormatLabel": "Formato de la fase por categorías",
-    "categoryPhaseFormatHint": "Los partidos por categoría son siempre cuadro eliminatorio.",
-    "categoryPhaseFormatBracketOnly": "Oro, Plata y Bronce son llave: se juega lo que marca el cuadro, no todos contra todos.",
-    "categoryPhaseFormatRoundRobin": "Round robin",
-    "categoryPhaseFormatSingleElim": "Eliminación directa",
     "matchOpponentTbd": "Por definir",
     "matchWaitingForOpponents": "Esperando a que se asignen ambos rivales (cuadro) antes de empezar.",
     "bracketRoundHeading": "Ronda %{n}",
@@ -689,7 +694,6 @@
     "bracketViewBoth": "Ambos",
     "bracketViewDiagram": "Cuadro",
     "bracketViewList": "Lista",
-    "equalDistribution": "Reparto igual",
     "advanceFractionLabel": "Fracción que avanza",
     "advanceFractionHint": "Si hay solo una categoría, esta fracción avanza y el resto queda eliminado. Por defecto: 0.5",
     "advanceFractionInvalid": "La fracción debe estar entre 0 y 1 (sin incluir).",
@@ -772,6 +776,7 @@
     "pickPartnerFromWaitlist": "Compañero — elegí alguien en la lista de espera (sin equipo aún)",
     "guestPlayersSection": "Invitados (sin cuenta en la app)",
     "noGuestPlayers": "No hay invitados definidos para este torneo.",
+    "guestNotReady": "Este invitado todavía se está creando. Esperá un momento y probá de nuevo.",
     "joinWaitlistFirst": "Primero unite a la lista de espera; después creá un equipo con otro jugador en lista.",
     "groupLabel": "Grupo",
     "groupHint": "Elige un grupo para este equipo. La capacidad por grupo es equipos máx. ÷ grupos (mín. 2).",

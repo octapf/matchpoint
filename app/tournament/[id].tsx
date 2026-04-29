@@ -53,6 +53,8 @@ import { isGuestPlayerSlot } from '@/lib/playerSlots';
 import { resolveRosterSlotLabel, tournamentGuestDisplayName } from '@/lib/utils/resolveParticipant';
 import { buildSeededClassificationData } from '@/lib/tournamentFixtureSeed';
 import { assignCategories, computeStandingsForGroup, tieBreakOrdinal } from '@/lib/tournamentStandings';
+import { buildBracketRowsForCategory } from '@/lib/categoryBracketRows';
+import { isTeamEliminatedFromCategoryBracketRows } from '@/lib/categoryBracketElimination';
 import { normalizeMongoIdString } from '@/lib/mongoId';
 import { resolveTeamForFixture } from '@/lib/tournamentMatchDisplay';
 import { divisionForEntry, divisionForTeam, type DivisionTab as DivisionTabUtil } from '@/lib/tournamentDivision';
@@ -532,19 +534,23 @@ export default function TournamentDetailScreen() {
     const cannotStartForGroups = rosterFull && !groupsDistributedMenu && !allTeamsPlacedInGroups;
     const cannotStartForRoster = !rosterFull;
 
+    /** Same gate as `canManageTournament` — only organizers + global admins get destructive / phase actions. */
+    const orgOrAdminMenu =
+      ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin') ?? false;
+
     // Burger menu is intentionally kept short and ordered at the call site
     // (share, open location, edit, start, leave, delete guests, delete tournament).
-    if (id) {
+    if (id && orgOrAdminMenu) {
       list.push({
         key: 'edit',
-        label: t('tournamentDetail.menuEdit'),
+        label: t('tournamentDetail.editTournament'),
         icon: 'create-outline',
         color: tokens.accent,
         onPress: () => router.push(`/admin/tournament/${id}` as never),
       });
     }
 
-    if (!started && id && !shouldUseDevMocks()) {
+    if (!started && id && !shouldUseDevMocks() && orgOrAdminMenu) {
       list.push({
         key: 'start',
         label: t('tournamentDetail.menuStartTournament'),
@@ -582,7 +588,7 @@ export default function TournamentDetailScreen() {
       });
     }
 
-    if (!started && id && !shouldUseDevMocks()) {
+    if (!started && id && !shouldUseDevMocks() && orgOrAdminMenu) {
       list.push({
         key: 'deleteAllGuestPlayers',
         label: t('tournamentDetail.menuDeleteAllGuestPlayers'),
@@ -610,26 +616,20 @@ export default function TournamentDetailScreen() {
     }
 
     const phaseMenu = String((tournament as { phase?: unknown }).phase ?? '');
-    const orgOrAdminMenu =
-      ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin') ?? false;
 
     if (started && id && !shouldUseDevMocks() && orgOrAdminMenu && phaseMenu === 'classification') {
       list.push({
         key: 'startCategoriesPhase',
         label: t('tournamentDetail.menuStartCategoriesPhase'),
         icon: 'medal-outline',
+        materialCommunityIcon: 'medal-outline',
         color: Colors.yellow,
         disabled: finalizeClassificationMutation.isPending || !classificationFullyComplete,
         onPress: confirmStartCategoriesPhase,
       });
     }
 
-    if (
-      started &&
-      id &&
-      !shouldUseDevMocks() &&
-      ((tournament.organizerIds ?? []).includes(userId ?? '') || user?.role === 'admin')
-    ) {
+    if (started && id && !shouldUseDevMocks() && orgOrAdminMenu) {
       const tp = isTournamentPaused(tournament);
       list.push({
         key: tp ? 'resumeTournament' : 'pauseTournament',
@@ -924,6 +924,10 @@ export default function TournamentDetailScreen() {
           | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
           | null
           | undefined,
+        categoryCounts: (tournament as { categoryCounts?: unknown } | undefined)?.categoryCounts as
+          | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
+          | null
+          | undefined,
         singleCategoryAdvanceFraction: Number(
           (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
         ),
@@ -961,6 +965,10 @@ export default function TournamentDetailScreen() {
       | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
       | null
       | undefined;
+    const categoryCounts = (tournament as { categoryCounts?: unknown } | undefined)?.categoryCounts as
+      | Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>
+      | null
+      | undefined;
     const singleCategoryAdvanceFraction = Number(
       (tournament as { singleCategoryAdvanceFraction?: unknown } | undefined)?.singleCategoryAdvanceFraction ?? 0.5
     );
@@ -975,6 +983,7 @@ export default function TournamentDetailScreen() {
           standingsByGroup,
           categories: cats,
           categoryFractions: categoryFractions ?? null,
+          categoryCounts: categoryCounts ?? null,
           singleCategoryAdvanceFraction,
           tieBreakSeed: id,
         })
@@ -1191,8 +1200,11 @@ export default function TournamentDetailScreen() {
   }, [tournament, currentDivision]);
 
   /**
-   * Same teams and order as the classification category lists (`assignCategories` + `globalOrder`).
-   * Prefer this for the bracket so counts match the list; snapshot can be stale or from a different split.
+   * Teams per category from live classification (client bundle). Used when `categoriesSnapshot`
+   * has no `teamIds` (legacy). Do not prefer this over snapshot for bracket planning: the server
+   * single-elim plan and `orderIndex` on each match are derived from snapshot order at generation;
+   * a different order here replans the tree and `buildBracketRowsForCategory` pairs the wrong
+   * `Match` to each slot (wrong names on tap, wrong winner feeding the next round).
    */
   const categoryTeamIdsFromClassification = useMemo(() => {
     const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
@@ -1215,11 +1227,38 @@ export default function TournamentDetailScreen() {
     if (groupsDistributionPending && !shouldUseDevMocks()) {
       return {};
     }
+    const fromSnap = categoryTeamIdsFromSnapshot;
     const fromClass = categoryTeamIdsFromClassification;
-    const hasClass = (['Gold', 'Silver', 'Bronze'] as const).some((k) => (fromClass[k]?.length ?? 0) > 0);
-    if (hasClass) return fromClass;
-    return categoryTeamIdsFromSnapshot;
+    const out: Partial<Record<'Gold' | 'Silver' | 'Bronze', string[]>> = {};
+    for (const k of ['Gold', 'Silver', 'Bronze'] as const) {
+      const snap = fromSnap[k];
+      const cls = fromClass[k];
+      if (snap?.length) out[k] = snap;
+      else if (cls?.length) out[k] = cls;
+    }
+    return out;
   }, [categoryTeamIdsFromClassification, categoryTeamIdsFromSnapshot, groupsDistributionPending]);
+
+  /** Teams knocked out of the category single-elim bracket (shown as red X on Teams tab). */
+  const categoryBracketEliminatedMap = useMemo(() => {
+    const out = new Map<string, boolean>();
+    const phase = String((tournament as { phase?: unknown } | undefined)?.phase ?? 'registration');
+    if (phase !== 'categories' && phase !== 'completed') return out;
+    if (!id) return out;
+
+    const cats: TournamentCategory[] = ['Gold', 'Silver', 'Bronze'];
+    for (const cat of cats) {
+      const teamIds = categoryTeamIdsByCategory[cat];
+      const rawRows = categoryMatchesByCategory[cat] ?? [];
+      if (!teamIds?.length || teamIds.length < 2) continue;
+
+      const bracketRows = buildBracketRowsForCategory(rawRows, teamIds, teamById, id, opponentTbdLabel);
+      for (const tid of teamIds) {
+        if (isTeamEliminatedFromCategoryBracketRows(tid, bracketRows)) out.set(tid, true);
+      }
+    }
+    return out;
+  }, [categoryMatchesByCategory, categoryTeamIdsByCategory, id, opponentTbdLabel, teamById, tournament]);
 
   /** Ongoing matches in the current division (classification + category stages). */
   const liveMatchesRows = useMemo(() => {
@@ -1465,6 +1504,7 @@ export default function TournamentDetailScreen() {
   const rosterFull =
     (tournament?.maxTeams ?? 0) > 0 && teams.length >= (tournament?.maxTeams ?? 0);
 
+  /** Crear / reorganizar grupos: solo organizadores y admins (`canManageTournament`). */
   const primaryGroupAction = useMemo((): 'distribute' | 'reorganize' | null => {
     if (!canManageTournament || shouldUseDevMocks() || !id || tournamentStarted) return null;
     if (!rosterFull) return null;
@@ -2291,6 +2331,7 @@ export default function TournamentDetailScreen() {
               const row = teamClassificationLookup.get(team._id);
               const showOut = showQualificationOutcomeOnTeamsTab;
               const cat = showOut ? (classificationBundle.teamCategory.get(team._id) ?? null) : null;
+              const bracketEliminated = categoryBracketEliminatedMap.get(team._id) === true;
               return (
                 <TournamentTeamCard
                   key={team._id}
@@ -2317,7 +2358,10 @@ export default function TournamentDetailScreen() {
                     wins: row?.wins ?? 0,
                     points: row?.points ?? 0,
                     category: cat,
-                    classified: showOut && classificationBundle.teamCategory.has(team._id),
+                    classified:
+                      showOut &&
+                      classificationBundle.teamCategory.has(team._id) &&
+                      !bracketEliminated,
                     showOutcomeIcons: showOut,
                   }}
                 />
@@ -2849,16 +2893,16 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textTransform: 'uppercase',
   },
-  /** Knockout round titles in fixture list — same size as bracket diagram column labels and “Grupo n”. */
+  /** Knockout round titles in fixture list — same color/weight as “Cuadro” (`fixtureBracketSectionTitleStyle`). */
   bracketRoundHeading: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.text,
+    color: Colors.yellow,
     marginBottom: 8,
     marginTop: 4,
     fontStyle: 'italic',
     textTransform: 'uppercase',
-    letterSpacing: 0.45,
+    letterSpacing: 0.6,
   },
   emptyGroup: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', marginBottom: 8 },
   rebalanceBanner: {

@@ -278,17 +278,12 @@ export default function EditMatchScreen() {
     [teamAPlayerIds, teamBPlayerIds, servingPlayerId]
   );
 
-  useEffect(() => {
-    if (!serveOrderModalOpen) return;
-    // Always start from a valid interleaved order in the modal.
+  /** Seed draft only when opening — do not resync while open or refetches/heartbeat overwrite toggles before Save. */
+  const openServeOrderModal = useCallback(() => {
     const initial = computeInterleavedServeOrder(order);
-    if (initial.length !== 4) return;
-    // Only set when it actually differs (avoid loops).
-    setServeOrderDraft((prev) => {
-      if (Array.isArray(prev) && prev.length === 4 && prev.every((v, i) => String(v) === String(initial[i]))) return prev;
-      return initial;
-    });
-  }, [serveOrderModalOpen, computeInterleavedServeOrder, order]);
+    setServeOrderDraft(initial.length === 4 ? initial : null);
+    setServeOrderModalOpen(true);
+  }, [computeInterleavedServeOrder, order]);
 
   useEffect(() => {
     if (!tournamentPlayActive && startCountdown) setStartCountdown(null);
@@ -400,16 +395,18 @@ export default function EditMatchScreen() {
       const action = startCountdown.action;
       setStartCountdown(null);
       if (!tournamentPlayActive) return;
+      const curStatus = String((match as { status?: unknown } | null)?.status ?? '');
       if (action === 'startMatch') {
         // Guard: countdown is only for starting a scheduled match.
         // If the match changed state meanwhile (e.g. user paused/another ref started), don't fire startMatch late.
-        const curStatus = String((match as { status?: unknown } | null)?.status ?? '');
         if (curStatus !== 'scheduled') return;
         startMatch.mutate(
           { id: matchId, tournamentId: id },
           { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
         );
       } else {
+        // Same guard for claim: avoid late claim + matches invalidation after the match already went live / ended.
+        if (curStatus !== 'scheduled') return;
         claimReferee.mutate(
           { id: matchId, tournamentId: id, mode: 'claim' },
           { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
@@ -721,6 +718,7 @@ export default function EditMatchScreen() {
       ]);
       return;
     }
+    setStartCountdown(null);
     pendingPointOpsRef.current = [];
     updateMatch.mutate(
       {
@@ -746,6 +744,7 @@ export default function EditMatchScreen() {
     updateMatch,
     bumpPendingVersion,
     t,
+    setStartCountdown,
   ]);
 
   if (!id || !matchId) {
@@ -1402,7 +1401,7 @@ export default function EditMatchScreen() {
                 <View style={styles.preStartActionCol}>
                   <Button
                     title={String(t('tournamentDetail.manageServeOrder') ?? '').toUpperCase()}
-                    onPress={() => setServeOrderModalOpen(true)}
+                    onPress={openServeOrderModal}
                     disabled={!tournamentPlayActive || isOffline}
                     variant="muted"
                     size="sm"
@@ -1626,7 +1625,7 @@ export default function EditMatchScreen() {
             <View style={styles.preStartActionCol}>
               <Button
                 title={String(t('tournamentDetail.manageServeOrder') ?? '').toUpperCase()}
-                onPress={() => setServeOrderModalOpen(true)}
+                onPress={openServeOrderModal}
                 disabled={isOffline || !tournamentPlayActive}
                 variant="muted"
                 size="sm"

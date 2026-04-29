@@ -220,6 +220,10 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string,
     (cfg as { categoryFractions?: unknown }).categoryFractions && typeof (cfg as { categoryFractions?: unknown }).categoryFractions === 'object'
       ? ((cfg as { categoryFractions?: unknown }).categoryFractions as Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>)
       : null;
+  const categoryCounts =
+    (cfg as { categoryCounts?: unknown }).categoryCounts && typeof (cfg as { categoryCounts?: unknown }).categoryCounts === 'object'
+      ? ((cfg as { categoryCounts?: unknown }).categoryCounts as Partial<Record<'Gold' | 'Silver' | 'Bronze', number>>)
+      : null;
   const singleCategoryAdvanceFractionRaw = Number((cfg as { singleCategoryAdvanceFraction?: unknown }).singleCategoryAdvanceFraction ?? 0.5);
   const singleCategoryAdvanceFraction = Number.isFinite(singleCategoryAdvanceFractionRaw) ? singleCategoryAdvanceFractionRaw : 0.5;
 
@@ -232,6 +236,7 @@ export async function actionFinalizeClassification(db: Db, tournamentId: string,
       standingsByGroup,
       categories: categories as any,
       categoryFractions: categoryFractions as any,
+      categoryCounts: categoryCounts as any,
       singleCategoryAdvanceFraction,
       tieBreakSeed: tournamentId,
     });

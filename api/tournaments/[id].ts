@@ -22,6 +22,7 @@ import { removePlayerFromTournament } from '../../server/lib/tournamentPlayerRem
 import { tournamentPostActionSchema } from '../../server/lib/schemas/tournamentPostAction';
 import { notifyMany, notifyOne } from '../../server/lib/notify';
 import { applyCategoryKnockoutAdvances, recomputeCategoryBracketAfterWinnerChange } from '../../server/lib/knockoutAdvance';
+import { notifyCategoryKnockoutAfterMatchCompleted } from '../../server/lib/categoryPhaseNotify';
 import { insertAuditLogSafe } from '../../server/lib/auditLog';
 import {
   buildDivisionStatsFromTeams,
@@ -874,6 +875,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             } else {
               await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
             }
+            if (prevStatus !== 'completed' && !winnerChanged) {
+              try {
+                await notifyCategoryKnockoutAfterMatchCompleted(db, {
+                  tournamentId: id,
+                  tournamentName: String((cur as { name?: unknown }).name ?? 'Tournament'),
+                  completedMatchId: matchId,
+                  division,
+                  category,
+                  isBronzeMatch: !!(updated as { isBronzeMatch?: unknown }).isBronzeMatch,
+                  winnerTeamId: winnerId,
+                });
+              } catch (notifyErr) {
+                console.error('[tournaments] notifyCategoryKnockoutAfterMatchCompleted', notifyErr);
+              }
+            }
           }
         }
 
@@ -1521,6 +1537,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'groupCount',
         'classificationMatchesPerOpponent',
         'categoryFractions',
+        'categoryCounts',
         'singleCategoryAdvanceFraction',
         'categoryPhaseFormat',
         'status',
@@ -1579,6 +1596,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         started &&
         (update.classificationMatchesPerOpponent !== undefined ||
           update.categoryFractions !== undefined ||
+          update.categoryCounts !== undefined ||
           update.singleCategoryAdvanceFraction !== undefined ||
           update.divisions !== undefined ||
           update.categories !== undefined ||
@@ -1718,6 +1736,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               normalized[k] = Math.round((v / sum) * 1000) / 1000;
             }
             update.categoryFractions = normalized;
+          }
+        }
+      }
+
+      if (update.categoryCounts !== undefined) {
+        const raw = update.categoryCounts;
+        if (raw == null) {
+          update.categoryCounts = null;
+        } else if (typeof raw !== 'object' || Array.isArray(raw)) {
+          return corsRes.status(400).json({ error: 'Category counts must be an object' });
+        } else {
+          const allowedKeys = ['Gold', 'Silver', 'Bronze'] as const;
+          const cleaned: Partial<Record<(typeof allowedKeys)[number], number>> = {};
+          for (const k of allowedKeys) {
+            const v = (raw as Record<string, unknown>)[k];
+            if (v === undefined) continue;
+            const n = Number(v);
+            if (!Number.isFinite(n) || n < 0) {
+              return corsRes.status(400).json({ error: 'Invalid category counts' });
+            }
+            cleaned[k] = Math.floor(n);
+          }
+          const sum = allowedKeys.reduce((acc, k) => acc + (cleaned[k] ?? 0), 0);
+          if (sum <= 0) {
+            update.categoryCounts = null;
+          } else {
+            update.categoryCounts = cleaned;
           }
         }
       }

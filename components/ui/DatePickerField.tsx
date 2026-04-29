@@ -26,6 +26,8 @@ type DatePickerFieldProps = {
   minDate?: Date;
   fieldStyle?: StyleProp<ViewStyle>;
   size?: 'md' | 'sm';
+  /** When true, the control cannot be opened or changed. */
+  disabled?: boolean;
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -46,6 +48,7 @@ export function DatePickerField({
   minDate = new Date(),
   fieldStyle,
   size = 'md',
+  disabled = false,
 }: DatePickerFieldProps) {
   const { t, i18n } = useTranslation();
   const { tokens } = useTheme();
@@ -69,6 +72,10 @@ export function DatePickerField({
   const layoutW = useRef(320);
   const monthAnimating = useRef(false);
   const [monthTransitioning, setMonthTransitioning] = useState(false);
+
+  useEffect(() => {
+    if (disabled) setShow(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (show) {
@@ -219,6 +226,7 @@ export function DatePickerField({
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           min={toISODate(minDate)}
+          disabled={disabled}
           style={{
             backgroundColor: Colors.surface,
             color: Colors.text,
@@ -228,6 +236,8 @@ export function DatePickerField({
             fontSize,
             width: '100%',
             boxSizing: 'border-box',
+            opacity: disabled ? 0.55 : 1,
+            cursor: disabled ? 'not-allowed' : undefined,
           } as React.CSSProperties}
         />
       </View>
@@ -237,13 +247,20 @@ export function DatePickerField({
   return (
     <View style={[styles.field, fieldStyle]}>
       {label ? <Text style={[styles.label, size === 'sm' && styles.labelSm]}>{label}</Text> : null}
-      <Pressable style={[styles.input, size === 'sm' && styles.inputSm]} onPress={() => setShow(true)}>
+      <Pressable
+        style={[styles.input, size === 'sm' && styles.inputSm, disabled && styles.inputDisabled]}
+        onPress={() => {
+          if (!disabled) setShow(true);
+        }}
+        disabled={disabled}
+        accessibilityState={{ disabled }}
+      >
         <Text style={[styles.inputText, size === 'sm' && styles.inputTextSm, !value && styles.placeholder]}>
           {displayValue}
         </Text>
       </Pressable>
 
-      <Modal visible={show} transparent animationType="slide">
+      <Modal visible={show && !disabled} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setShow(false)} />
           <View style={styles.modalContent}>
@@ -386,6 +403,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   inputSm: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10 },
+  inputDisabled: { opacity: 0.55 },
   inputText: { fontSize: 16, color: Colors.text },
   inputTextSm: { fontSize: 14 },
   placeholder: { color: Colors.textMuted },

@@ -145,6 +145,12 @@ export interface Tournament {
    * If categories are empty/omitted, single-category behavior uses `singleCategoryAdvanceFraction`.
    */
   categoryFractions?: Partial<Record<TournamentCategory, number>>;
+  /**
+   * Optional exact team counts per category (e.g. { Gold: 10, Silver: 10 }).
+   * When set, allocation uses these as weights scaled to the division size (server-side).
+   * Mutually exclusive with `categoryFractions` in normal client flows.
+   */
+  categoryCounts?: Partial<Record<TournamentCategory, number>>;
   /** When only one (or no) category is configured, fraction of teams that advance (default 0.5). */
   singleCategoryAdvanceFraction?: number;
   /**
@@ -309,7 +315,10 @@ export type NotificationType =
   | 'match.started'
   | 'match.ended'
   | 'match.refereeAssigned'
-  | 'tournament.classified';
+  | 'tournament.classified'
+  | 'category.entered'
+  | 'category.roundAdvanced'
+  | 'category.tournamentWon';
 
 export interface Notification {
   _id: string;
@@ -354,6 +363,8 @@ export interface TournamentGuestPlayer {
   gender: Gender;
   /** Organizer memo; may be absent in tournament GET responses for non-organizers. */
   note?: string;
+  /** Client-only: guest row is optimistic until the create API responds. */
+  pending?: boolean;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
