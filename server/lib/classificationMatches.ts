@@ -164,7 +164,7 @@ export function buildClassificationPairs(teamIds: string[], matchesPerOpponent: 
  * - Avoid back-to-back matches for any team whenever possible.
  * - If unavoidable, avoid long streaks and try to force a break after a 2-match streak.
  */
-export function orderPairsForRest(pairs: [string, string][]): [string, string][] {
+function orderPairsForRest(pairs: [string, string][]): [string, string][] {
   const remaining = pairs.map((p, idx) => ({ idx, a: p[0], b: p[1] }));
   const out: [string, string][] = [];
   let prevTeams = new Set<string>();
@@ -213,81 +213,6 @@ export function orderPairsForRest(pairs: [string, string][]): [string, string][]
     prevTeams = nextTeams;
   }
   return out;
-}
-
-function pairKey(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-/**
- * Reorder existing classification matches by updating `orderIndex` in-place.
- *
- * - Reorders only `status === 'scheduled'` (completed/in_progress keep their indices).
- * - Reorders within each (division, groupIndex) bucket independently.
- */
-export async function reorderExistingClassificationMatches(db: Db, tournamentId: string): Promise<{
-  tournamentId: string;
-  buckets: number;
-  scheduledMatches: number;
-  orderIndexUpdated: number;
-}> {
-  const matchesCol = db.collection('matches');
-  const all = await matchesCol
-    .find({ tournamentId, stage: 'classification' })
-    .project({ _id: 1, division: 1, groupIndex: 1, teamAId: 1, teamBId: 1, status: 1, orderIndex: 1, createdAt: 1 })
-    .toArray();
-
-  const scheduled = all.filter((m: any) => String(m.status ?? '') === 'scheduled');
-  const byBucket = new Map<string, any[]>();
-  for (const m of scheduled as any[]) {
-    const div = String(m.division ?? '');
-    const gi = Number(m.groupIndex ?? -1);
-    const key = `${div}|${Number.isFinite(gi) ? gi : -1}`;
-    const list = byBucket.get(key) ?? [];
-    list.push(m);
-    byBucket.set(key, list);
-  }
-
-  const ops: any[] = [];
-  let updated = 0;
-  for (const bucketMatches of byBucket.values()) {
-    const original = bucketMatches
-      .slice()
-      .sort(
-        (x, y) =>
-          Number(x.orderIndex ?? 0) - Number(y.orderIndex ?? 0) ||
-          String(x.createdAt ?? '').localeCompare(String(y.createdAt ?? ''))
-      );
-    const pairs: [string, string][] = original.map((m) => [String((m as any).teamAId ?? ''), String((m as any).teamBId ?? '')]);
-    const orderedPairs = orderPairsForRest(pairs);
-
-    // pair→queue to handle duplicates (matchesPerOpponent > 1)
-    const q = new Map<string, any[]>();
-    for (const m of original) {
-      const a = String((m as any).teamAId ?? '');
-      const b = String((m as any).teamBId ?? '');
-      const k = pairKey(a, b);
-      const list = q.get(k) ?? [];
-      list.push(m);
-      q.set(k, list);
-    }
-
-    for (let i = 0; i < orderedPairs.length; i++) {
-      const [a, b] = orderedPairs[i]!;
-      const k = pairKey(a, b);
-      const list = q.get(k) ?? [];
-      const doc = list.shift();
-      if (!doc) continue;
-      q.set(k, list);
-      if (Number(doc.orderIndex ?? -1) !== i) {
-        ops.push({ updateOne: { filter: { _id: doc._id }, update: { $set: { orderIndex: i } } } });
-        updated++;
-      }
-    }
-  }
-
-  if (ops.length > 0) await matchesCol.bulkWrite(ops, { ordered: false });
-  return { tournamentId, buckets: byBucket.size, scheduledMatches: scheduled.length, orderIndexUpdated: updated };
 }
 
 export async function generateClassificationMatches(

@@ -74,7 +74,7 @@ import {
   organizerOnlyCoversFromTournament,
   tournamentDivisionsNormalized,
 } from '@/lib/tournamentOrganizerCoverage';
-import { adminApi, tournamentsApi } from '@/lib/api';
+import { tournamentsApi } from '@/lib/api';
 import { OrganizeOnlyDivisionsModal } from '@/components/tournament/detail/OrganizeOnlyDivisionsModal';
 import { NotificationsInboxButton } from '@/components/notifications/NotificationsInboxButton';
 import { openVenueInMaps } from '@/components/tournament/venueMapShared';
@@ -1501,24 +1501,6 @@ export default function TournamentDetailScreen() {
   /** Organizers and global admins can manage roster, teams, and invites from this screen. */
   const canManageTournament = isOrganizer || isAdmin;
 
-  const reorderClassificationMutation = useMutation({
-    mutationFn: async () => adminApi.reorderClassification({ tournamentId: String(id) }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['matches', { tournamentId: id }] }),
-        queryClient.invalidateQueries({ queryKey: ['tournament', id] }),
-      ]);
-    },
-  });
-
-  const onPressReorderClassification = useCallback(() => {
-    if (shouldUseDevMocks()) return;
-    if (!requireOnline()) return;
-    reorderClassificationMutation.mutate(undefined, {
-      onError: (err: unknown) => alertApiError(t, err, 'common.error'),
-    });
-  }, [requireOnline, reorderClassificationMutation, t]);
-
   const rosterFull =
     (tournament?.maxTeams ?? 0) > 0 && teams.length >= (tournament?.maxTeams ?? 0);
 
@@ -2531,13 +2513,6 @@ export default function TournamentDetailScreen() {
               }}
               onOpenProfile={(uid) => router.push(`/profile/${uid}` as never)}
               canQuickEditMatches={canManageTournament}
-              canAdminReorderClassification={
-                isAdmin &&
-                !shouldUseDevMocks() &&
-                classificationMatches.length > 0
-              }
-              reorderClassificationPending={reorderClassificationMutation.isPending}
-              onPressReorderClassification={onPressReorderClassification}
               emptyTextStyle={styles.emptyText}
               matchesSubtabBarStyle={styles.matchesSubtabBar}
               matchesSubtabItemStyle={styles.matchesSubtabItem}

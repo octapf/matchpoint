@@ -13,7 +13,6 @@ import { runDbBackfill } from '../server/lib/dbBackfill';
 import { ensureDbIndexes } from '../server/lib/dbIndexes';
 import { adminPostSchema } from '../server/lib/schemas/adminPost';
 import { insertAuditLogSafe } from '../server/lib/auditLog';
-import { reorderExistingClassificationMatches } from '../server/lib/classificationMatches';
 import { captureException } from '../server/lib/observability';
 import { getDeploymentRevision, isMongoConfigured } from '../server/lib/env';
 
@@ -77,19 +76,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           actorId: admin.userId,
           action: 'admin.dbIndexes',
           resource: 'admin',
-          meta: { result },
-          req,
-        });
-        return corsRes.status(200).json(result);
-      }
-      if (body.action === 'reorderClassification') {
-        const tournamentId = body.tournamentId;
-        const result = await reorderExistingClassificationMatches(db, tournamentId);
-        await insertAuditLogSafe(db, {
-          actorId: admin.userId,
-          action: 'admin.reorderClassification',
-          resource: 'tournament',
-          resourceId: tournamentId,
           meta: { result },
           req,
         });

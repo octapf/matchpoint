@@ -181,9 +181,6 @@ export function FixtureTab({
   onOpenMatch,
   onOpenProfile,
   canQuickEditMatches,
-  canAdminReorderClassification,
-  reorderClassificationPending,
-  onPressReorderClassification,
   emptyTextStyle,
   matchesSubtabBarStyle,
   matchesSubtabItemStyle,
@@ -235,9 +232,6 @@ export function FixtureTab({
   onOpenMatch?: (matchId: string) => void;
   onOpenProfile: (userId: string) => void;
   canQuickEditMatches?: boolean;
-  canAdminReorderClassification?: boolean;
-  reorderClassificationPending?: boolean;
-  onPressReorderClassification?: () => void;
   emptyTextStyle: unknown;
   matchesSubtabBarStyle: unknown;
   matchesSubtabItemStyle: unknown;
@@ -567,29 +561,6 @@ export function FixtureTab({
         <View style={fixtureCategoryContentShell}>
           <VioletFixtureTabGradient stopKeyPrefix="cl" />
           <View style={fixtureCategoryContentInner}>
-            {canAdminReorderClassification && onPressReorderClassification ? (
-              <View style={{ marginBottom: 10 }}>
-                <Button
-                  title={
-                    reorderClassificationPending ? t('common.loading') : t('admin.reorderClassification')
-                  }
-                  variant="secondary"
-                  size="sm"
-                  onPress={() => {
-                    if (reorderClassificationPending) return;
-                    Alert.alert(
-                      t('admin.reorderClassification'),
-                      t('admin.reorderClassificationConfirm'),
-                      [
-                        { text: t('common.cancel'), style: 'cancel' },
-                        { text: t('common.ok'), onPress: () => onPressReorderClassification() },
-                      ]
-                    );
-                  }}
-                  fullWidth
-                />
-              </View>
-            ) : null}
             {!divisionHasTeams || groupsDistributionPending ? (
               <Text style={fixtureClassificationEmptyLegendStyle as never}>
                 {t(
