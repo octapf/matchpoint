@@ -243,6 +243,8 @@
     "readOnlyDerivedFromDivisionDates": "La fecha general se genera automáticamente según las fechas de las divisiones.",
     "edit": "Editar",
     "manageRoster": "Jugadores y equipos",
+    "reorderClassification": "Reordenar clasificación",
+    "reorderClassificationConfirm": "Reordena el orden de los partidos de clasificación para maximizar el descanso entre partidos. Solo afecta el orden (orderIndex) de los partidos programados.",
     "rosterTitle": "Plantilla",
     "rosterHint": "Añade jugadores por email, elimina inscripciones y gestiona equipos (máx. 2 jugadores por equipo).",
     "rosterPlayers": "Jugadores",

@@ -399,4 +399,13 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ action: 'dbIndexes' }),
     }),
+
+  reorderClassification: (body: { tournamentId: string }) =>
+    apiRequest<{ tournamentId: string; buckets: number; scheduledMatches: number; orderIndexUpdated: number }>(
+      '/api/admin',
+      {
+        method: 'POST',
+        body: JSON.stringify({ action: 'reorderClassification', ...body }),
+      }
+    ),
 };

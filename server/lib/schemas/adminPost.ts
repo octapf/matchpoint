@@ -8,6 +8,7 @@ export const adminPostSchema = z.discriminatedUnion('action', [
     tournamentId: z.string().optional(),
   }),
   z.object({ action: z.literal('dbIndexes') }),
+  z.object({ action: z.literal('reorderClassification'), tournamentId: z.string() }),
 ]);
 
 export type AdminPostBody = z.infer<typeof adminPostSchema>;

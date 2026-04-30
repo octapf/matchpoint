@@ -180,7 +180,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         matches = await db
           .collection('matches')
           .find({ tournamentId: id })
-          .sort({ createdAt: 1, _id: 1 })
+          // Important: the UI plays top-to-bottom. Respect persisted orderIndex within a phase.
+          .sort({ stage: 1, division: 1, groupIndex: 1, category: 1, orderIndex: 1, createdAt: 1, _id: 1 })
           .toArray();
       }
 

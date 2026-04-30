@@ -243,6 +243,8 @@
     "readOnlyDerivedFromDivisionDates": "L’intervallo date generale viene generato automaticamente dalle date delle divisioni.",
     "edit": "Modifica",
     "manageRoster": "Giocatori e squadre",
+    "reorderClassification": "Riordina classificazione",
+    "reorderClassificationConfirm": "Riordina la lista delle partite di classificazione per massimizzare il riposo tra le partite. Influisce solo sull’ordine (orderIndex) delle partite programmate.",
     "rosterTitle": "Rosa",
     "rosterHint": "Aggiungi giocatori con email, rimuovi iscrizioni e gestisci squadre (max 2 giocatori per squadra).",
     "rosterPlayers": "Giocatori",

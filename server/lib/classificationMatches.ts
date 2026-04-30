@@ -157,6 +157,139 @@ export function buildClassificationPairs(teamIds: string[], matchesPerOpponent: 
   return out;
 }
 
+/**
+ * Order matches to maximize rest when played top-to-bottom.
+ *
+ * Goal:
+ * - Avoid back-to-back matches for any team whenever possible.
+ * - If unavoidable, avoid long streaks and try to force a break after a 2-match streak.
+ */
+export function orderPairsForRest(pairs: [string, string][]): [string, string][] {
+  const remaining = pairs.map((p, idx) => ({ idx, a: p[0], b: p[1] }));
+  const out: [string, string][] = [];
+  let prevTeams = new Set<string>();
+  const streak = new Map<string, number>(); // consecutive appearances up to last scheduled match
+
+  const scoreCandidate = (a: string, b: string): number => {
+    const teams = [a, b];
+    let s = 0;
+    // Biggest rule: avoid any team from previous match.
+    if (prevTeams.has(a)) s += 10_000;
+    if (prevTeams.has(b)) s += 10_000;
+    // Avoid extending streaks (especially 2+).
+    for (const t of teams) {
+      const st = streak.get(t) ?? 0;
+      if (st >= 2) s += 5_000 + (st - 2) * 1_000;
+      else if (st === 1) s += 400;
+    }
+    // Tie-breaker: prefer spreading participation across more teams.
+    s += (streak.get(a) ?? 0) + (streak.get(b) ?? 0);
+    return s;
+  };
+
+  while (remaining.length > 0) {
+    let bestI = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < remaining.length; i++) {
+      const cand = remaining[i]!;
+      const sc = scoreCandidate(cand.a, cand.b);
+      if (sc < bestScore) {
+        bestScore = sc;
+        bestI = i;
+      }
+    }
+    const chosen = remaining.splice(bestI, 1)[0]!;
+    out.push([chosen.a, chosen.b]);
+
+    // Update streaks based on appearance in the newly scheduled match.
+    const nextTeams = new Set<string>([chosen.a, chosen.b]);
+    for (const t of Array.from(streak.keys())) {
+      if (!nextTeams.has(t)) streak.set(t, 0);
+    }
+    for (const t of nextTeams) {
+      const prev = streak.get(t) ?? 0;
+      streak.set(t, prevTeams.has(t) ? prev + 1 : 1);
+    }
+    prevTeams = nextTeams;
+  }
+  return out;
+}
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
+ * Reorder existing classification matches by updating `orderIndex` in-place.
+ *
+ * - Reorders only `status === 'scheduled'` (completed/in_progress keep their indices).
+ * - Reorders within each (division, groupIndex) bucket independently.
+ */
+export async function reorderExistingClassificationMatches(db: Db, tournamentId: string): Promise<{
+  tournamentId: string;
+  buckets: number;
+  scheduledMatches: number;
+  orderIndexUpdated: number;
+}> {
+  const matchesCol = db.collection('matches');
+  const all = await matchesCol
+    .find({ tournamentId, stage: 'classification' })
+    .project({ _id: 1, division: 1, groupIndex: 1, teamAId: 1, teamBId: 1, status: 1, orderIndex: 1, createdAt: 1 })
+    .toArray();
+
+  const scheduled = all.filter((m: any) => String(m.status ?? '') === 'scheduled');
+  const byBucket = new Map<string, any[]>();
+  for (const m of scheduled as any[]) {
+    const div = String(m.division ?? '');
+    const gi = Number(m.groupIndex ?? -1);
+    const key = `${div}|${Number.isFinite(gi) ? gi : -1}`;
+    const list = byBucket.get(key) ?? [];
+    list.push(m);
+    byBucket.set(key, list);
+  }
+
+  const ops: any[] = [];
+  let updated = 0;
+  for (const bucketMatches of byBucket.values()) {
+    const original = bucketMatches
+      .slice()
+      .sort(
+        (x, y) =>
+          Number(x.orderIndex ?? 0) - Number(y.orderIndex ?? 0) ||
+          String(x.createdAt ?? '').localeCompare(String(y.createdAt ?? ''))
+      );
+    const pairs: [string, string][] = original.map((m) => [String((m as any).teamAId ?? ''), String((m as any).teamBId ?? '')]);
+    const orderedPairs = orderPairsForRest(pairs);
+
+    // pair→queue to handle duplicates (matchesPerOpponent > 1)
+    const q = new Map<string, any[]>();
+    for (const m of original) {
+      const a = String((m as any).teamAId ?? '');
+      const b = String((m as any).teamBId ?? '');
+      const k = pairKey(a, b);
+      const list = q.get(k) ?? [];
+      list.push(m);
+      q.set(k, list);
+    }
+
+    for (let i = 0; i < orderedPairs.length; i++) {
+      const [a, b] = orderedPairs[i]!;
+      const k = pairKey(a, b);
+      const list = q.get(k) ?? [];
+      const doc = list.shift();
+      if (!doc) continue;
+      q.set(k, list);
+      if (Number(doc.orderIndex ?? -1) !== i) {
+        ops.push({ updateOne: { filter: { _id: doc._id }, update: { $set: { orderIndex: i } } } });
+        updated++;
+      }
+    }
+  }
+
+  if (ops.length > 0) await matchesCol.bulkWrite(ops, { ordered: false });
+  return { tournamentId, buckets: byBucket.size, scheduledMatches: scheduled.length, orderIndexUpdated: updated };
+}
+
 export async function generateClassificationMatches(
   db: Db,
   tournamentId: string,
@@ -194,7 +327,8 @@ export async function generateClassificationMatches(
   let total = 0;
   for (const [groupIndex, ids] of groups.entries()) {
     if (ids.length < 2) continue;
-    const pairs = buildClassificationPairs(ids, opts.matchesPerOpponent);
+    const rawPairs = buildClassificationPairs(ids, opts.matchesPerOpponent);
+    const pairs = orderPairsForRest(rawPairs);
     total += pairs.length;
     for (let i = 0; i < pairs.length; i++) {
       const [a, b] = pairs[i]!;

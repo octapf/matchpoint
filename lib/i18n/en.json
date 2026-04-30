@@ -244,6 +244,8 @@
     "readOnlyDerivedFromDivisionDates": "The overall date range is generated automatically from division dates.",
     "edit": "Edit",
     "manageRoster": "Players & teams",
+    "reorderClassification": "Reorder classification",
+    "reorderClassificationConfirm": "Reorders the classification match list to maximize rest between games. Only affects the ordering (orderIndex) of scheduled matches.",
     "rosterTitle": "Roster",
     "rosterHint": "Add players by email, remove registrations, and manage teams (max 2 players per team).",
     "rosterPlayers": "Players",
