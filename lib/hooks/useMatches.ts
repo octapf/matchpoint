@@ -356,6 +356,43 @@ export function useRefereePoint() {
   });
 }
 
+export function useRefereePointsBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      tournamentId,
+      ops,
+      clientMutationId,
+    }: {
+      id: string;
+      tournamentId: string;
+      ops: { side: 'A' | 'B'; delta: 1 | -1 }[];
+      clientMutationId: string;
+    }) =>
+      tournamentsApi.action(tournamentId, {
+        action: 'refereePointsBatch',
+        matchId: id,
+        ops,
+        clientMutationId,
+      }) as Promise<Match>,
+    /**
+     * No onMutate: matchdetail uses a local pending-ops queue to render instantly.
+     * We only upsert the authoritative server state when the batch resolves.
+     */
+    retry: (failureCount, err: any) => {
+      const status = typeof err?.status === 'number' ? err.status : typeof err?.response?.status === 'number' ? err.response.status : null;
+      if (status === 409 && failureCount < 2) return true;
+      if (status === 429 && failureCount < 2) return true;
+      return false;
+    },
+    retryDelay: (attemptIndex) => (attemptIndex === 0 ? 240 : 120 * attemptIndex),
+    onSuccess: (data) => {
+      upsertMatchFromServer(queryClient, data);
+    },
+  });
+}
+
 export function useSetServeOrder() {
   const queryClient = useQueryClient();
   return useMutation({

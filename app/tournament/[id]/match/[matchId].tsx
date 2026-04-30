@@ -30,7 +30,7 @@ import {
   useClaimReferee,
   useMatches,
   useRefereeHeartbeat,
-  useRefereePoint,
+  useRefereePointsBatch,
   useSetServeOrder,
   useStartMatch,
   useUpdateMatch,
@@ -54,8 +54,9 @@ import { MatchDetailLoadingShell } from '@/components/match/MatchDetailLoadingSh
 
 type PressableEvent = Parameters<NonNullable<PressableProps['onPress']>>[0];
 
-/** API rate limit (~300ms between points); spacing between queued mutateAsync calls. */
-const REFEREE_POINT_QUEUE_GAP_MS = 320;
+/** Debounce to batch multiple taps into a single server request. */
+const REFEREE_POINTS_BATCH_DEBOUNCE_MS = 260;
+const REFEREE_POINTS_BATCH_MAX_OPS = 40;
 
 export default function EditMatchScreen() {
   const { t } = useTranslation();
@@ -86,14 +87,16 @@ export default function EditMatchScreen() {
   const claimReferee = useClaimReferee();
   const startMatch = useStartMatch();
   const updateMatch = useUpdateMatch();
-  const refereePoint = useRefereePoint();
+  const refereePointsBatch = useRefereePointsBatch();
   const setServeOrder = useSetServeOrder();
   const refereeHeartbeat = useRefereeHeartbeat();
 
   /** FIFO deltas not yet confirmed by the server; UI = server match + these (see `displayedMatchForPoints`). */
   const pendingPointOpsRef = useRef<{ side: 'A' | 'B'; delta: 1 | -1 }[]>([]);
   const [pendingVersion, setPendingVersion] = useState(0);
-  const drainPointQueueRunningRef = useRef(false);
+  const pendingNetworkOpsRef = useRef<{ side: 'A' | 'B'; delta: 1 | -1 }[]>([]);
+  const flushRunningRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bumpPendingVersion = useCallback(() => {
     setPendingVersion((v) => v + 1);
@@ -101,7 +104,10 @@ export default function EditMatchScreen() {
 
   useEffect(() => {
     pendingPointOpsRef.current = [];
-    drainPointQueueRunningRef.current = false;
+    pendingNetworkOpsRef.current = [];
+    flushRunningRef.current = false;
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
     setPendingVersion((v) => v + 1);
   }, [matchId]);
 
@@ -306,46 +312,64 @@ export default function EditMatchScreen() {
     if (!tournamentPlayActive && startCountdown) setStartCountdown(null);
   }, [tournamentPlayActive, startCountdown]);
 
-  const drainPointQueue = useCallback(async () => {
+  const flushPointsBatch = useCallback(async () => {
     if (!id || !matchId) return;
-    if (drainPointQueueRunningRef.current) return;
-    if (pendingPointOpsRef.current.length === 0) return;
-    drainPointQueueRunningRef.current = true;
+    if (flushRunningRef.current) return;
+    if (pendingNetworkOpsRef.current.length === 0) return;
+    flushRunningRef.current = true;
     try {
-      while (pendingPointOpsRef.current.length > 0) {
-        /** Drop queued ops if cache already shows the match ended (avoids 400 after last point). */
-        const cachedRows = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
-        let abortedEarly = false;
-        for (const [, rows] of cachedRows) {
-          if (!rows) continue;
-          const live = rows.find((m) => m._id === matchId);
-          if (live && String((live as { status?: unknown }).status ?? '') !== 'in_progress') {
-            pendingPointOpsRef.current = [];
-            bumpPendingVersion();
-            abortedEarly = true;
-            break;
-          }
+      /** Drop queued ops if cache already shows the match ended (avoids 400 after last point). */
+      const cachedRows = queryClient.getQueriesData<Match[]>({ queryKey: ['matches'] });
+      for (const [, rows] of cachedRows) {
+        if (!rows) continue;
+        const live = rows.find((m) => m._id === matchId);
+        if (live && String((live as { status?: unknown }).status ?? '') !== 'in_progress') {
+          pendingPointOpsRef.current = [];
+          pendingNetworkOpsRef.current = [];
+          bumpPendingVersion();
+          return;
         }
-        if (abortedEarly) break;
+      }
 
-        const op = pendingPointOpsRef.current[0]!;
-        const updatedMatch = await refereePoint.mutateAsync({ id: matchId, tournamentId: id, ...op });
-        pendingPointOpsRef.current = pendingPointOpsRef.current.slice(1);
+      while (pendingNetworkOpsRef.current.length > 0) {
+        const ops = pendingNetworkOpsRef.current.slice(0, REFEREE_POINTS_BATCH_MAX_OPS);
+        pendingNetworkOpsRef.current = pendingNetworkOpsRef.current.slice(ops.length);
+        const clientMutationId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        const updatedMatch = await refereePointsBatch.mutateAsync({
+          id: matchId,
+          tournamentId: id,
+          ops,
+          clientMutationId,
+        });
+
+        // Remove the ops we just sent from the optimistic pending queue (FIFO).
+        pendingPointOpsRef.current = pendingPointOpsRef.current.slice(ops.length);
         bumpPendingVersion();
+
         if (String((updatedMatch as { status?: unknown }).status ?? '') === 'completed') {
           pendingPointOpsRef.current = [];
+          pendingNetworkOpsRef.current = [];
           bumpPendingVersion();
           break;
         }
-        if (pendingPointOpsRef.current.length > 0) {
-          await new Promise((r) => setTimeout(r, REFEREE_POINT_QUEUE_GAP_MS));
-        }
       }
     } catch (err: unknown) {
+      // Requeue: keep UI optimistic, but retry sending on next flush.
+      const msg = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? '');
+      if (String(msg).toLowerCase().includes('referee changed')) {
+        // Referee lock lost: discard optimistic ops and refetch authoritative state.
+        pendingPointOpsRef.current = [];
+        pendingNetworkOpsRef.current = [];
+        bumpPendingVersion();
+        queryClient.invalidateQueries({ queryKey: ['matches'] });
+        return;
+      }
+      // For other errors, clear local optimistic ops (same behavior as before) and refetch.
       pendingPointOpsRef.current = [];
+      pendingNetworkOpsRef.current = [];
       bumpPendingVersion();
       queryClient.invalidateQueries({ queryKey: ['matches'] });
-      const msg = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? '');
       if (msg.includes('slow down')) {
         setNotice('Más lento');
         return;
@@ -360,9 +384,17 @@ export default function EditMatchScreen() {
       }
       alertApiError(t, err, 'tournamentDetail.organizerActionFailed');
     } finally {
-      drainPointQueueRunningRef.current = false;
+      flushRunningRef.current = false;
     }
-  }, [id, matchId, queryClient, refereePoint, bumpPendingVersion, t]);
+  }, [id, matchId, queryClient, refereePointsBatch, bumpPendingVersion, t]);
+
+  const scheduleFlushPointsBatch = useCallback(() => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      void flushPointsBatch();
+    }, REFEREE_POINTS_BATCH_DEBOUNCE_MS);
+  }, [flushPointsBatch]);
 
   const tapPulseA = useRef(new Animated.Value(0)).current;
   const tapPulseB = useRef(new Animated.Value(0)).current;
@@ -1027,6 +1059,7 @@ export default function EditMatchScreen() {
       return;
     }
     pendingPointOpsRef.current = [...pendingPointOpsRef.current, { side, delta }];
+    pendingNetworkOpsRef.current = [...pendingNetworkOpsRef.current, { side, delta }];
     bumpPendingVersion();
     void Haptics.selectionAsync();
     const pulse = side === 'A' ? tapPulseA : tapPulseB;
@@ -1036,7 +1069,7 @@ export default function EditMatchScreen() {
       Animated.timing(pulse, { toValue: 1, duration: 90, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.timing(pulse, { toValue: 0, duration: 160, easing: Easing.in(Easing.quad), useNativeDriver: true }),
     ]).start();
-    void drainPointQueue();
+    scheduleFlushPointsBatch();
   };
 
   const onScoreHalfPress = (side: 'A' | 'B', e: PressableEvent) => {
@@ -1619,6 +1652,19 @@ export default function EditMatchScreen() {
               />
             </View>
           </View>
+          {showSwitchSidesReminder ? (
+            <Animated.View
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={t('tournamentDetail.switchSidesReminder')}
+              style={[styles.switchSidesBanner, { transform: [{ scale: switchSidesPulse }] }]}
+            >
+              <MaterialCommunityIcons name="swap-horizontal" size={22} color="#052e1b" accessible={false} />
+              <Text accessible={false} style={styles.switchSidesBannerText}>
+                {t('tournamentDetail.switchSidesReminder')}
+              </Text>
+            </Animated.View>
+          ) : null}
         </View>
       ) : null}
 
@@ -1652,8 +1698,7 @@ export default function EditMatchScreen() {
 
       {null}
 
-      {(match as { status?: string }).status === 'in_progress' &&
-      (showSwitchSidesReminder || matchPointSide || canTakeoverReferee) ? (
+      {(match as { status?: string }).status === 'in_progress' && (matchPointSide || canTakeoverReferee) ? (
         <View style={styles.refereeFooterBlock}>
           {canTakeoverReferee ? (
             <View style={{ marginTop: 8 }}>
@@ -1672,19 +1717,6 @@ export default function EditMatchScreen() {
                 }}
               />
             </View>
-          ) : null}
-          {showSwitchSidesReminder ? (
-            <Animated.View
-              accessible
-              accessibilityRole="text"
-              accessibilityLabel={t('tournamentDetail.switchSidesReminder')}
-              style={[styles.switchSidesReminderRow, { transform: [{ scale: switchSidesPulse }] }]}
-            >
-              <MaterialCommunityIcons name="swap-horizontal" size={25} color="#ffffff" accessible={false} />
-              <Text accessible={false} style={[styles.centerText, styles.switchSidesReminder]}>
-                {t('tournamentDetail.switchSidesReminder')}
-              </Text>
-            </Animated.View>
           ) : null}
           {matchPointSide ? (
             <Animated.View
@@ -1767,6 +1799,28 @@ const styles = StyleSheet.create({
   serveOrderNum: { width: 40, fontSize: 16, fontWeight: '900', fontStyle: 'italic' },
   serveOrderRowWrap: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   refereeFooterBlock: { alignSelf: 'stretch', alignItems: 'center', gap: 6, marginTop: 2 },
+  switchSidesBanner: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34,197,94,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.55)',
+  },
+  switchSidesBannerText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    color: '#bbf7d0',
+    textAlign: 'center',
+  },
   switchSidesReminderRow: {
     flexDirection: 'row',
     alignItems: 'center',

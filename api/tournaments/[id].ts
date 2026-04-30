@@ -384,6 +384,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action !== 'claimReferee' &&
         action !== 'refereeHeartbeat' &&
         action !== 'refereePoint' &&
+        action !== 'refereePointsBatch' &&
         action !== 'setServeOrder' &&
         action !== 'placeTournamentBet'
       ) {
@@ -1286,6 +1287,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         if (!r.ok) return corsRes.status(r.status).json(r.body);
         return corsRes.status(200).json(r.match);
+      }
+
+      if (action === 'refereePointsBatch') {
+        console.log('[tournaments.action] refereePointsBatch', { tournamentId: id, actingUserId });
+        const matchId = typeof body?.matchId === 'string' ? body.matchId.trim() : '';
+        if (!matchId || !ObjectId.isValid(matchId)) return corsRes.status(400).json({ error: 'Invalid matchId' });
+        const matchOid = new ObjectId(matchId);
+
+        const opsRaw = Array.isArray(body?.ops) ? (body.ops as unknown[]) : null;
+        const clientMutationId = typeof body?.clientMutationId === 'string' ? body.clientMutationId.trim() : '';
+        if (!opsRaw || opsRaw.length === 0) return corsRes.status(400).json({ error: 'Invalid ops' });
+        if (opsRaw.length > 60) return corsRes.status(400).json({ error: 'Too many ops' });
+        if (!clientMutationId) return corsRes.status(400).json({ error: 'Missing clientMutationId' });
+
+        const ops: { side: 'A' | 'B'; delta: 1 | -1 }[] = [];
+        for (const op of opsRaw) {
+          const side = (op as any)?.side === 'A' || (op as any)?.side === 'B' ? (op as any).side : '';
+          const delta = Number((op as any)?.delta);
+          if ((side !== 'A' && side !== 'B') || (delta !== 1 && delta !== -1)) {
+            return corsRes.status(400).json({ error: 'Invalid op in ops' });
+          }
+          ops.push({ side, delta: delta as 1 | -1 });
+        }
+
+        // Idempotency (best-effort): if we've already applied this clientMutationId, return current match state.
+        const existing = (await db.collection('matches').findOne(
+          { _id: matchOid },
+          { projection: { tournamentId: 1, lastRefereePointsBatchId: 1 } }
+        )) as { tournamentId?: unknown; lastRefereePointsBatchId?: unknown } | null;
+        if (!existing) return corsRes.status(404).json({ error: 'Match not found' });
+        if (String(existing.tournamentId ?? '') !== id) {
+          return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+        }
+        if (String(existing.lastRefereePointsBatchId ?? '') === clientMutationId) {
+          const curMatch = await db.collection('matches').findOne({ _id: matchOid });
+          if (!curMatch) return corsRes.status(404).json({ error: 'Match not found' });
+          return corsRes.status(200).json(serializeDoc(curMatch as Record<string, unknown>));
+        }
+
+        // Preserve the same "classification after categories" gate as single-point.
+        if (!actorIsAdmin && !isOrg && String((cur as { phase?: unknown }).phase ?? '') === 'categories') {
+          const matchStageRow = (await db.collection('matches').findOne({ _id: matchOid }, { projection: { tournamentId: 1, stage: 1 } })) as
+            | { tournamentId?: unknown; stage?: unknown }
+            | null;
+          if (!matchStageRow) return corsRes.status(404).json({ error: 'Match not found' });
+          if (String(matchStageRow.tournamentId ?? '') !== id) {
+            return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
+          }
+          if (String(matchStageRow.stage ?? '') === 'classification') {
+            return corsRes.status(403).json({ error: 'Only organizers can score classification matches after categories start' });
+          }
+        }
+
+        let lastMatch: unknown = null;
+        for (const op of ops) {
+          const r = await applyOneRefereePoint({
+            db,
+            tournamentId: id,
+            tournamentOid: oid,
+            matchId,
+            actingUserId,
+            actorIsAdmin,
+            isOrg,
+            side: op.side,
+            delta: op.delta,
+            // Batch is the whole point: don't throttle points inside one request.
+            enforceRateLimit: false,
+          });
+          if (!r.ok) return corsRes.status(r.status).json(r.body);
+          lastMatch = r.match;
+          if (String((r.match as any)?.status ?? '') === 'completed') break;
+        }
+
+        await db.collection('matches').updateOne(
+          { _id: matchOid },
+          {
+            $set: {
+              lastRefereePointsBatchId: clientMutationId,
+              lastRefereePointsBatchAt: new Date().toISOString(),
+            },
+          }
+        );
+
+        return corsRes.status(200).json(lastMatch);
       }
 
       if (action === 'setServeOrder') {

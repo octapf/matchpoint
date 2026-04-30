@@ -15,6 +15,7 @@ export const tournamentPostActionSchema = z
       'refereeHeartbeat',
       'startMatch',
       'refereePoint',
+      'refereePointsBatch',
       'setServeOrder',
       'auditTournament',
       'placeTournamentBet',
