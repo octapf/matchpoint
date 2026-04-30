@@ -44,7 +44,7 @@ import {
 } from '../../server/lib/tournamentGuestPlayerActions';
 import { isGuestPlayerSlot, toGuestPlayerSlot } from '../../lib/playerSlots';
 import { jsonBodyForServerError, logApiHandlerError } from '../../server/lib/apiErrorResponse';
-import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
+import { normalizeDbTournamentId, tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
 import { normalizeMongoIdString } from '../../lib/mongoId';
 import { applyOneRefereePoint } from '../../server/lib/applyOneRefereePoint';
@@ -86,6 +86,10 @@ function isRefereeLockActive(match: Record<string, unknown>, nowMs: number): boo
   const expMs = lockExpiresAtMs((match as any).refereeLockExpiresAt);
   if (!refereeUserId || expMs == null) return false;
   return expMs > nowMs;
+}
+
+function matchDocBelongsToTournament(matchTournamentId: unknown, tournamentRouteId: string): boolean {
+  return normalizeDbTournamentId(matchTournamentId) === tournamentRouteId;
 }
 
 /** Both sides must be real 24-char ObjectIds or the driver throws on queries. */
@@ -914,7 +918,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const matchOid = new ObjectId(matchId);
         const match = await db.collection('matches').findOne({ _id: matchOid });
         if (!match) return corsRes.status(404).json({ error: 'Match not found' });
-        if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== id) {
+        if (!matchDocBelongsToTournament((match as { tournamentId?: unknown }).tournamentId, id)) {
           return corsRes.status(400).json({ error: 'Match does not belong to this tournament' });
         }
         const stage = String((match as { stage?: unknown }).stage ?? '');
@@ -937,12 +941,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
         const lockActive = isRefereeLockActive(match as any, nowMs);
 
+        const tidfRef = tournamentIdMongoFilter(id);
+
         // MVP: any user who has joined the tournament may referee (not just teams / suggested referees).
         // Still disallow playing teams from refereeing their own match.
         const actorTeam = await db
           .collection('teams')
           .findOne(
-            { tournamentId: id, playerIds: actingUserId },
+            { ...tidfRef, playerIds: actingUserId },
             { projection: { _id: 1, playerIds: 1 } }
           );
         const actorTeamId = actorTeam ? normalizeMongoIdString((actorTeam as { _id: ObjectId })._id) : '';
@@ -951,8 +957,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Joined = has entry OR is on waitlist (any division).
-        const joinedEntry = await db.collection('entries').findOne({ tournamentId: id, userId: actingUserId }, { projection: { _id: 1 } });
-        const joinedWait = await db.collection('waitlist').findOne({ tournamentId: id, userId: actingUserId }, { projection: { _id: 1 } });
+        const joinedEntry = await db
+          .collection('entries')
+          .findOne({ ...tidfRef, userId: actingUserId }, { projection: { _id: 1 } });
+        const joinedWait = await db
+          .collection('waitlist')
+          .findOne({ ...tidfRef, userId: actingUserId }, { projection: { _id: 1 } });
         if (!joinedEntry && !joinedWait && !actorIsAdmin && !isOrg) {
           return corsRes.status(403).json({ error: 'Only joined players can act as referees' });
         }
@@ -970,7 +980,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Only the other player on the referee team can takeover (same team as current referee).
             const refTeam = await db
               .collection('teams')
-              .findOne({ tournamentId: id, playerIds: currentRef }, { projection: { _id: 1 } });
+              .findOne({ ...tidfRef, playerIds: currentRef }, { projection: { _id: 1 } });
             const refTeamId = refTeam ? normalizeMongoIdString((refTeam as { _id: ObjectId })._id) : '';
             if (!refTeamId || !actorTeamId || refTeamId !== actorTeamId) {
               return corsRes.status(409).json({
@@ -1005,7 +1015,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Team must not be playing any in-progress match (when actor has a team).
         if (actorTeamId) {
           const inProgress = await db.collection('matches').countDocuments({
-            tournamentId: id,
+            ...tidfRef,
             status: 'in_progress',
             $or: [{ teamAId: actorTeamId }, { teamBId: actorTeamId }],
           });
@@ -1014,7 +1024,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Team must not be about to play in the next scheduled matches for this slice.
         const sliceFilter: Record<string, unknown> = {
-          tournamentId: id,
+          ...tidfRef,
           status: 'scheduled',
           stage,
         };
@@ -1051,7 +1061,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Initialize serve order on start: A1, B1, A2, B2.
         const [teamA, teamB] = await db
           .collection('teams')
-          .find({ tournamentId: id, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
+          .find({ ...tidfRef, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
           .project({ _id: 1, playerIds: 1 })
           .toArray()
           .then((rows) => {

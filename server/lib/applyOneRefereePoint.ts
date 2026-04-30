@@ -5,6 +5,7 @@ import { normalizeMongoIdString } from '../../lib/mongoId';
 import { settleBetsForMatch } from './tournamentBets';
 import { assertTournamentAllowsLiveMatchActions } from './tournamentLivePlayGate';
 import { notifyMany } from './notify';
+import { normalizeDbTournamentId, tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 const REFEREE_LOCK_MS = 15_000;
 
@@ -60,7 +61,7 @@ export async function applyOneRefereePoint(params: {
   const matchOid = new ObjectId(matchId);
   const match = await db.collection('matches').findOne({ _id: matchOid });
   if (!match) return { ok: false, status: 404, body: { error: 'Match not found' } };
-  if (String((match as { tournamentId?: unknown }).tournamentId ?? '') !== tournamentId) {
+  if (normalizeDbTournamentId((match as { tournamentId?: unknown }).tournamentId) !== tournamentId) {
     return { ok: false, status: 400, body: { error: 'Match does not belong to this tournament' } };
   }
 
@@ -108,9 +109,10 @@ export async function applyOneRefereePoint(params: {
   }
   const { teamAId, teamBId } = idsRefPoint;
 
+  const tidf = tournamentIdMongoFilter(tournamentId);
   const [teamA, teamB] = await db
     .collection('teams')
-    .find({ tournamentId: tournamentId, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
+    .find({ ...tidf, _id: { $in: [new ObjectId(teamAId), new ObjectId(teamBId)] } })
     .project({ _id: 1, playerIds: 1 })
     .toArray()
     .then((rows) => {

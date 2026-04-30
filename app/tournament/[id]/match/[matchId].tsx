@@ -137,8 +137,15 @@ export default function EditMatchScreen() {
   const isJoined = useMemo(() => {
     if (!userId) return false;
     if ((myEntries ?? []).some((e) => e && (e as any).userId === userId)) return true;
-    return (waitlistInfo?.users ?? []).some((u) => u.userId === userId);
-  }, [myEntries, userId, waitlistInfo]);
+    if ((waitlistInfo?.users ?? []).some((u) => u.userId === userId)) return true;
+    // Fallback: roster membership via teams list (covers legacy/partial entry rows in Mongo).
+    return teams.some((tm) => {
+      const ids = Array.isArray((tm as { playerIds?: unknown }).playerIds)
+        ? ((tm as { playerIds: unknown[] }).playerIds as unknown[]).map(String)
+        : [];
+      return ids.some((pid) => pid === userId && !isGuestPlayerSlot(pid));
+    });
+  }, [myEntries, userId, waitlistInfo, teams]);
 
   /** Same limit resolution as the API (match field, else tournament default) so validation matches the server. */
   const matchWithPointsLimit = useMemo((): Match | null => {
