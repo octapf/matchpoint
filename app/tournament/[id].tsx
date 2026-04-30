@@ -2534,7 +2534,7 @@ export default function TournamentDetailScreen() {
               canAdminReorderClassification={
                 isAdmin &&
                 !shouldUseDevMocks() &&
-                String((tournament as { phase?: unknown }).phase ?? '') === 'classification'
+                classificationMatches.length > 0
               }
               reorderClassificationPending={reorderClassificationMutation.isPending}
               onPressReorderClassification={onPressReorderClassification}
