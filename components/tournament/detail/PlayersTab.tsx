@@ -365,13 +365,9 @@ export function PlayersTab({
           const playerName = getTournamentPlayerDisplayName(u) || t('common.player');
           const isOrganizeOnly = onlySet.has(row.userId);
           const isOrg = organizerIds.includes(row.userId);
-          const showInvite =
-            !!onInviteWaitlistUser && viewerOnWaitlist && !!currentUserId && row.userId !== currentUserId;
-          const canCreateTeamWith =
-            showInvite &&
-            canPairInDivision(currentDivision, viewerGender, (u as { gender?: unknown })?.gender) &&
-            !userIdsInTeam.has(row.userId) &&
-            !userIdsInTeam.has(currentUserId!);
+          const isSelf = !!(currentUserId && row.userId === currentUserId);
+          // Promote/demote organizer for real users (waitlist counts as "joined"; guests are handled elsewhere).
+          const showOrganizerToggleIcon = canManageTournament && (!isSelf || (isSelf && isOrg));
           return (
             <View style={[playerRowStyle as never, isOrg ? (playerRowOrganizerStyle as never) : null]}>
               <View style={playerRowTopStyle as never}>
@@ -390,7 +386,12 @@ export function PlayersTab({
                   />
                   <View style={playerRowTextStyle as never}>
                     <Text style={playerRowNameStyle as never}>{playerName}</Text>
-                    {isOrg ? <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text> : null}
+                    {isOrg ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="ribbon" size={14} color={tokens.accentHover} />
+                        <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text>
+                      </View>
+                    ) : null}
                     {isOrganizeOnly ? (
                       <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerOrganizeOnlyBadge')}</Text>
                     ) : null}
@@ -402,14 +403,16 @@ export function PlayersTab({
                       <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
                     </MatchStyleStatusPill>
                   </View>
-                  {showInvite && canCreateTeamWith ? (
+                  {showOrganizerToggleIcon ? (
                     <View style={rightSlotStyle}>
                       <IconButton
-                        icon="add"
-                        onPress={() => onInviteWaitlistUser!(row.userId)}
-                        disabled={!!invitePartnerPending}
-                        accessibilityLabel={t('tournamentDetail.waitlistInvitePartner')}
-                        color={tokens.accentHover}
+                        icon={isOrg ? 'ribbon' : 'ribbon-outline'}
+                        onPress={() =>
+                          isOrg ? onDemoteOrganizer(row.userId, playerName) : onPromoteOrganizer(row.userId, playerName)
+                        }
+                        disabled={mutationBusy}
+                        accessibilityLabel={isOrg ? t('tournamentDetail.removeOrganizer') : t('tournamentDetail.makeOrganizer')}
+                        color={isOrg ? tokens.accentHover : Colors.textMuted}
                         compact
                       />
                     </View>
@@ -542,7 +545,12 @@ export function PlayersTab({
                   />
                   <View style={playerRowTextStyle as never}>
                     <Text style={playerRowNameStyle as never}>{playerName}</Text>
-                    {isOrg ? <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text> : null}
+                    {isOrg ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="ribbon" size={14} color={tokens.accentHover} />
+                        <Text style={orgBadgeStyle as never}>{t('tournamentDetail.organizerBadge')}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 </Pressable>
               )}

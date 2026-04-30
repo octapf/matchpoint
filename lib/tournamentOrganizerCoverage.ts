@@ -52,8 +52,9 @@ export function divisionForOrganizerCoverage(
     return 'mixed';
   }
   const g = userGender.get(entry.userId) ?? '';
-  if (g === 'male') return 'men';
-  if (g === 'female') return 'women';
+  // If the tournament does not enable gender-specific divisions, treat solo organizers as mixed.
+  if (g === 'male') return divisionsEnabled.includes('men') ? 'men' : divisionsEnabled.includes('mixed') ? 'mixed' : null;
+  if (g === 'female') return divisionsEnabled.includes('women') ? 'women' : divisionsEnabled.includes('mixed') ? 'mixed' : null;
   if (divisionsEnabled.includes('mixed')) return 'mixed';
   return null;
 }

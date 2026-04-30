@@ -111,7 +111,10 @@ export function apiErrorMessage(
     if (err.message.includes('not enabled for this tournament')) {
       return t('apiErrors.divisionNotEnabledForPair');
     }
-    return t('apiErrors.internal');
+    // Show backend-provided message for unknown errors (better than a generic "something went wrong").
+    // Keep truly generic status-only errors as internal.
+    if (err.message.startsWith('API error:')) return t('apiErrors.internal');
+    return err.message;
   }
   return t(fallbackKey);
 }

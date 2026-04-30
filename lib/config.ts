@@ -2,24 +2,73 @@
  * API configuration - uses Expo's EXPO_PUBLIC_ for client-side env vars
  */
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
-const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
-const INVITE_BASE_URL = process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://matchpoint.miralab.ar';
+import Constants from 'expo-constants';
+
+type Extra = Record<string, unknown> & {
+  EXPO_PUBLIC_API_URL?: unknown;
+  EXPO_PUBLIC_GOOGLE_CLIENT_ID?: unknown;
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: unknown;
+  EXPO_PUBLIC_INVITE_BASE_URL?: unknown;
+  EXPO_PUBLIC_DEV_MOCK_DATA?: unknown;
+  EXPO_PUBLIC_WEATHER_DEFAULT_LAT?: unknown;
+  EXPO_PUBLIC_WEATHER_DEFAULT_LON?: unknown;
+  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?: unknown;
+};
+
+const extra: Extra =
+  ((Constants as unknown as { expoConfig?: { extra?: unknown } }).expoConfig?.extra as Extra | undefined) ?? {};
+
+/** Matches `eas.json` / `app.config.js` — release builds must never ship with an empty API origin. */
+const DEFAULT_PRODUCTION_API_URL = 'https://matchpoint-neon-delta.vercel.app';
+/** Dev default for physical device via USB + `adb reverse tcp:3000 tcp:3000`. */
+const DEFAULT_DEV_API_URL = 'http://localhost:3000';
+
+let API_URL =
+  process.env.EXPO_PUBLIC_API_URL || (typeof extra.EXPO_PUBLIC_API_URL === 'string' ? extra.EXPO_PUBLIC_API_URL : '') || '';
+if (!API_URL) {
+  API_URL = __DEV__ ? DEFAULT_DEV_API_URL : DEFAULT_PRODUCTION_API_URL;
+}
+const GOOGLE_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
+  (typeof extra.EXPO_PUBLIC_GOOGLE_CLIENT_ID === 'string' ? extra.EXPO_PUBLIC_GOOGLE_CLIENT_ID : '') ||
+  '';
+const GOOGLE_ANDROID_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+  (typeof extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID === 'string'
+    ? extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+    : '') ||
+  '';
+const INVITE_BASE_URL =
+  process.env.EXPO_PUBLIC_INVITE_BASE_URL ||
+  (typeof extra.EXPO_PUBLIC_INVITE_BASE_URL === 'string' ? extra.EXPO_PUBLIC_INVITE_BASE_URL : '') ||
+  'https://matchpoint.miralab.ar';
 
 /** When true, use local tournament/team/entry/user mocks even if EXPO_PUBLIC_API_URL is set. */
 const DEV_MOCK_DATA =
   process.env.EXPO_PUBLIC_DEV_MOCK_DATA === '1' ||
-  process.env.EXPO_PUBLIC_DEV_MOCK_DATA === 'true';
+  process.env.EXPO_PUBLIC_DEV_MOCK_DATA === 'true' ||
+  extra.EXPO_PUBLIC_DEV_MOCK_DATA === '1' ||
+  extra.EXPO_PUBLIC_DEV_MOCK_DATA === 'true';
 
-const WEATHER_DEFAULT_LAT = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LAT || '41.3851');
-const WEATHER_DEFAULT_LON = parseFloat(process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LON || '2.1734');
+const WEATHER_DEFAULT_LAT = parseFloat(
+  process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LAT ||
+    (typeof extra.EXPO_PUBLIC_WEATHER_DEFAULT_LAT === 'string' ? extra.EXPO_PUBLIC_WEATHER_DEFAULT_LAT : '') ||
+    '41.3851'
+);
+const WEATHER_DEFAULT_LON = parseFloat(
+  process.env.EXPO_PUBLIC_WEATHER_DEFAULT_LON ||
+    (typeof extra.EXPO_PUBLIC_WEATHER_DEFAULT_LON === 'string' ? extra.EXPO_PUBLIC_WEATHER_DEFAULT_LON : '') ||
+    '2.1734'
+);
 
 /**
  * Maps Platform key: Places (autocomplete), Geocoding (validate/save), Maps SDK (Android map).
  * Billing must be enabled; usage is metered — set budgets in Google Cloud. No usage = no charge beyond free tiers when applicable.
  */
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+const GOOGLE_MAPS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  (typeof extra.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY === 'string' ? extra.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY : '') ||
+  '';
 
 export const config = {
   api: {

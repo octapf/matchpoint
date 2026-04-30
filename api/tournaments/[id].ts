@@ -935,16 +935,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const currentLockExp = String((match as any).refereeLockExpiresAt ?? '');
         const lockActive = isRefereeLockActive(match as any, nowMs);
 
-        // Determine actor's team (if any). Non-organizers must have a team to referee.
+        // MVP: any user who has joined the tournament may referee (not just teams / suggested referees).
+        // Still disallow playing teams from refereeing their own match.
         const actorTeam = await db
           .collection('teams')
           .findOne(
             { tournamentId: id, playerIds: actingUserId },
-            { projection: { _id: 1, division: 1, category: 1, groupIndex: 1, playerIds: 1 } }
+            { projection: { _id: 1, playerIds: 1 } }
           );
         const actorTeamId = actorTeam ? normalizeMongoIdString((actorTeam as { _id: ObjectId })._id) : '';
         if (actorTeamId && (actorTeamId === teamAId || actorTeamId === teamBId)) {
           return corsRes.status(400).json({ error: 'Playing teams cannot referee their own match' });
+        }
+
+        // Joined = has entry OR is on waitlist (any division).
+        const joinedEntry = await db.collection('entries').findOne({ tournamentId: id, userId: actingUserId }, { projection: { _id: 1 } });
+        const joinedWait = await db.collection('waitlist').findOne({ tournamentId: id, userId: actingUserId }, { projection: { _id: 1 } });
+        if (!joinedEntry && !joinedWait && !actorIsAdmin && !isOrg) {
+          return corsRes.status(403).json({ error: 'Only joined players can act as referees' });
         }
 
         // Locked by someone else and still active: only organizer/admin OR referee's teammate can takeover.
@@ -972,10 +980,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        // If not org/admin, must be a registered team to referee.
-        if (!actorIsAdmin && !isOrg) {
-          if (!actorTeam) return corsRes.status(403).json({ error: 'Only registered teams can act as referees' });
-        }
+        // Previously required a registered team and same group/category. MVP removes that restriction.
 
         const matchStatus = String((match as { status?: unknown }).status ?? 'scheduled');
         if (mode === 'takeover' && matchStatus === 'in_progress') {
@@ -991,32 +996,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(200).json(serializeDoc(result as Record<string, unknown>));
         }
 
-        if (stage === 'classification') {
-          if (!(typeof groupIndex === 'number' && Number.isFinite(groupIndex) && groupIndex >= 0)) {
-            return corsRes.status(400).json({ error: 'Classification matches must have a groupIndex' });
-          }
-          if (actorTeam && Number((actorTeam as { groupIndex?: unknown }).groupIndex ?? -1) !== Number(groupIndex)) {
-            return corsRes.status(403).json({ error: 'Referee team must belong to the same group' });
-          }
-        } else if (stage === 'category') {
-          if (!category) return corsRes.status(400).json({ error: 'Category matches must have a category' });
-          if (actorTeam && String((actorTeam as { category?: unknown }).category ?? '') !== category) {
-            return corsRes.status(403).json({ error: 'Referee team must belong to the same category' });
-          }
-        } else {
+        if (stage !== 'classification' && stage !== 'category') {
           return corsRes.status(400).json({ error: 'Invalid match stage' });
         }
 
-        if (
-          actorTeam &&
-          division &&
-          String((actorTeam as { division?: unknown }).division ?? '') &&
-          String((actorTeam as { division?: unknown }).division ?? '') !== division
-        ) {
-          return corsRes.status(403).json({ error: 'Referee team must belong to the same division' });
-        }
-
-        // Team must not be playing any in-progress match.
+        // Team must not be playing any in-progress match (when actor has a team).
         if (actorTeamId) {
           const inProgress = await db.collection('matches').countDocuments({
             tournamentId: id,
@@ -1898,12 +1882,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const entryUserIds = new Set(
           (await entriesCol.find({ tournamentId: id }).toArray()).map((e) => e.userId as string)
         );
+        // Players who "joined" but are not in a team yet live in waitlist.
+        const waitlistCol = db.collection('waitlist');
+        const waitlistUserIds = new Set(
+          (await waitlistCol.find({ tournamentId: id }).toArray()).map((w) => String((w as any)?.userId ?? ''))
+        );
+        const joinedUserIds = new Set<string>([...entryUserIds, ...waitlistUserIds].filter(Boolean));
 
         if (update.organizerIds !== undefined) {
           if (!actorIsAdmin) {
             for (const uid of nextOrgs) {
               if (prevOrganizers.includes(uid)) continue;
-              if (!entryUserIds.has(uid)) {
+              if (!joinedUserIds.has(uid)) {
                 return corsRes.status(400).json({
                   error: 'New organizers must be players who joined this tournament',
                 });
@@ -1917,7 +1907,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
             for (const uid of nextOrgs) {
               if (prevOrganizers.includes(uid)) continue;
-              if (!entryUserIds.has(uid)) {
+              if (!joinedUserIds.has(uid)) {
                 if (!nextOnly.includes(uid)) {
                   return corsRes.status(400).json({
                     error: 'Organizers who are not registered must be marked organize-only',

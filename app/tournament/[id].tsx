@@ -1611,30 +1611,22 @@ export default function TournamentDetailScreen() {
 
   const promoteOrganizer = (targetUserId: string, playerName: string) => {
     if (!userId || !id || !tournament) return;
-    Alert.alert(t('tournamentDetail.makeOrganizer'), t('tournamentDetail.makeOrganizerRoleHint'), [
+    Alert.alert(t('tournamentDetail.makeOrganizer'), t('tournamentDetail.makeOrganizerConfirm', { name: playerName }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('tournamentDetail.organizerRolePlay'),
+        text: t('common.ok'),
         onPress: () => {
           const next = [...new Set([...(tournament.organizerIds ?? []), targetUserId])];
+          // If they were marked as organize-only, promoting them should remove that flag.
+          const prevOnly = tournament.organizerOnlyIds ?? [];
+          const nextOnly = prevOnly.includes(targetUserId) ? prevOnly.filter((x) => x !== targetUserId) : prevOnly;
           updateTournament.mutate(
-            { id, organizerIds: next },
+            { id, organizerIds: next, organizerOnlyIds: nextOnly },
             {
-              onError: (err: unknown) =>
-                alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
+              onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed'),
             }
           );
         },
-      },
-      {
-        text: t('tournamentDetail.organizerRoleOrganizeOnly'),
-        onPress: () =>
-          setOrganizeOnlyModal({
-            mode: 'promote',
-            targetUserId,
-            playerName,
-            selected: [...availableDivisions],
-          }),
       },
     ]);
   };
@@ -1701,6 +1693,12 @@ export default function TournamentDetailScreen() {
     const entriesSlim = entries
       .filter((e): e is Entry & { userId: string } => typeof e.userId === 'string' && e.userId.length > 0)
       .map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    // "Sin equipo" players (waitlist) count as joined for organizer-division coverage.
+    for (const uid of waitlistUserIds) {
+      if (!uid) continue;
+      if (entriesSlim.some((e) => e.userId === uid)) continue;
+      entriesSlim.push({ userId: uid, teamId: undefined });
+    }
     const nextOnlyAfterDemote = (tournament.organizerOnlyIds ?? []).filter((x) => x !== targetUserId);
     const nextCoversAfterDemote = organizerOnlyCoversFromTournament(
       tournament.organizerOnlyCovers,
@@ -1775,6 +1773,12 @@ export default function TournamentDetailScreen() {
     const entriesSlim = entries
       .filter((e): e is Entry & { userId: string } => typeof e.userId === 'string' && e.userId.length > 0)
       .map((e) => ({ userId: e.userId, teamId: e.teamId ?? undefined }));
+    // "Sin equipo" players (waitlist) count as joined for organizer-division coverage.
+    for (const uid of waitlistUserIds) {
+      if (!uid) continue;
+      if (entriesSlim.some((e) => e.userId === uid)) continue;
+      entriesSlim.push({ userId: uid, teamId: undefined });
+    }
     const missing = missingDivisionForOrganizers(
       divisions,
       nextOrgs,
@@ -2233,18 +2237,8 @@ export default function TournamentDetailScreen() {
             onEditGuestPlayer={canManageTournament && id ? (g) => router.push(`/tournament/${id}/guest-players?guestId=${g._id}` as never) : undefined}
             onRemoveWaitlistPlayer={confirmRemoveWaitlistPlayer}
             viewerOnWaitlist={onWaitlistInDivision}
-            onInviteWaitlistUser={
-              onWaitlistInDivision && id
-                ? (toUserId) => {
-                    if (!requireOnline()) return;
-                    invitePartnerFromWaitlist.mutate(
-                      { tournamentId: id, division: currentDivision, toUserId },
-                      { onError: (err: unknown) => alertApiError(t, err, 'tournamentDetail.organizerActionFailed') }
-                    );
-                  }
-                : undefined
-            }
-            invitePartnerPending={invitePartnerFromWaitlist.isPending}
+            onInviteWaitlistUser={undefined}
+            invitePartnerPending={false}
             playersPerDivisionCap={playersPerDivisionCap}
             sectionHeadingStyle={styles.groupHeading}
             emptyTextStyle={styles.emptyText}

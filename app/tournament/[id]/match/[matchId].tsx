@@ -36,6 +36,8 @@ import {
   useUpdateMatch,
 } from '@/lib/hooks/useMatches';
 import { useTeams } from '@/lib/hooks/useTeams';
+import { useEntries } from '@/lib/hooks/useEntries';
+import { useWaitlist } from '@/lib/hooks/useWaitlist';
 import { useUsers } from '@/lib/hooks/useUsers';
 import { useUserStore } from '@/store/useUserStore';
 import { alertApiError } from '@/lib/utils/apiError';
@@ -71,6 +73,11 @@ export default function EditMatchScreen() {
 
   const { data: tournament, isLoading: tournamentLoading, isError: tournamentIsError } = useTournament(id);
   const { data: teams = [] } = useTeams(id ? { tournamentId: id } : undefined);
+  // Joined state: entries or waitlist (used to allow any joined user into MatchDetail + refereeing).
+  const { data: myEntries = [] } = useEntries(
+    id && userId ? { tournamentId: id, userId } : undefined,
+    { enabled: !!id && !!userId }
+  );
   /** No polling here — periodic refetch was overwriting the score while pending ops were in flight. */
   const { data: matches = [], isLoading: matchesLoading } = useMatches(
     id ? { tournamentId: id } : undefined,
@@ -116,6 +123,16 @@ export default function EditMatchScreen() {
     return Object.fromEntries(entries);
   }, [teams]);
   const match = useMemo(() => matches.find((m) => m._id === matchId) ?? null, [matches, matchId]);
+  const matchDivision = useMemo(() => {
+    const d = match ? String((match as { division?: unknown }).division ?? '') : '';
+    return (d === 'men' || d === 'women' || d === 'mixed') ? (d as 'men' | 'women' | 'mixed') : 'mixed';
+  }, [match]);
+  const { data: waitlistInfo } = useWaitlist(id, matchDivision);
+  const isJoined = useMemo(() => {
+    if (!userId) return false;
+    if ((myEntries ?? []).some((e) => e && (e as any).userId === userId)) return true;
+    return (waitlistInfo?.users ?? []).some((u) => u.userId === userId);
+  }, [myEntries, userId, waitlistInfo]);
 
   /** Same limit resolution as the API (match field, else tournament default) so validation matches the server. */
   const matchWithPointsLimit = useMemo((): Match | null => {
@@ -454,8 +471,9 @@ export default function EditMatchScreen() {
     if (!match || !userId) return false;
     if (!currentRefereeUserId || currentRefereeUserId === userId) return false;
     if (canManageTournament) return true;
-    return !!(myTeamId && refereeTeamId && myTeamId === refereeTeamId);
-  }, [match, userId, currentRefereeUserId, canManageTournament, myTeamId, refereeTeamId]);
+    // MVP: any joined user can takeover referee when needed.
+    return isJoined;
+  }, [match, userId, currentRefereeUserId, canManageTournament, isJoined]);
 
   useEffect(() => {
     if (!id || !matchId) return;
@@ -477,41 +495,8 @@ export default function EditMatchScreen() {
     return () => clearInterval(h);
   }, [id, matchId, match, isReferee, canManageTournament, refereeHeartbeat, tournamentPlayActive]);
 
-  const eligibleRefTeam = useMemo(() => {
-    if (!userId || !match) return null;
-    const stage = (match as { stage?: string }).stage;
-    const division = (match as { division?: string }).division;
-    const category = (match as { category?: string }).category;
-    const groupIndex = (match as { groupIndex?: number }).groupIndex;
-    const matchTeamIds = new Set(
-      [normalizeMongoIdString(match.teamAId), normalizeMongoIdString(match.teamBId)].filter(Boolean)
-    );
-
-    const myTeam = teams.find((tm) => (tm.playerIds ?? []).includes(userId));
-    if (!myTeam) return null;
-    if (matchTeamIds.has(normalizeMongoIdString(myTeam._id))) return null;
-
-    if (division && myTeam.division && myTeam.division !== division) return null;
-    if (stage === 'classification') {
-      if (typeof groupIndex !== 'number') return null;
-      if (typeof myTeam.groupIndex !== 'number' || myTeam.groupIndex !== groupIndex) return null;
-    }
-    if (stage === 'category') {
-      if (!category) return null;
-      if (myTeam.category !== category) return null;
-    }
-
-    // Must not be playing in any in-progress match.
-    const myTid = normalizeMongoIdString(myTeam._id);
-    const playingNow = matches.some((m) => {
-      if ((m as { status?: string }).status !== 'in_progress') return false;
-      const a = normalizeMongoIdString(m.teamAId);
-      const b = normalizeMongoIdString(m.teamBId);
-      return a === myTid || b === myTid;
-    });
-    if (playingNow) return null;
-    return myTeam;
-  }, [match, matches, teams, userId]);
+  // Previously we restricted refereeing to an "eligible referee team" (same slice / not playing).
+  // MVP requirement: any joined user can enter MatchDetail and act as referee.
 
   const suggestedRefTeam = useMemo(() => {
     if (!match) return null;
@@ -783,7 +768,7 @@ export default function EditMatchScreen() {
     );
   }
 
-  if (!canManageTournament && !isReferee && !eligibleRefTeam) {
+  if (!canManageTournament && !isReferee && !isJoined) {
     return (
       <View style={[styles.container, { paddingBottom: bottomPad }]}>
         <Text style={styles.stateTitle}>{t('common.error')}</Text>
@@ -815,7 +800,7 @@ export default function EditMatchScreen() {
     ? null
     : canManageTournament
       ? 'startMatch'
-      : eligibleRefTeam
+      : isJoined
         ? 'claimReferee'
         : null;
 

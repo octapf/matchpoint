@@ -130,10 +130,12 @@ export async function assertOrganizersCoverAllDivisions(
   const divisions = tournamentDivisionsNormalized(merged.divisions);
   const entriesCol = db.collection('entries');
   const teamsCol = db.collection('teams');
+  const waitlistCol = db.collection('waitlist');
   const usersCol = db.collection('users');
   const tidfCov = tournamentIdMongoFilter(tournamentId);
   const entriesForTournament = await entriesCol.find(tidfCov).toArray();
   const teamsForTournament = await teamsCol.find(tidfCov).toArray();
+  const waitlistForTournament = await waitlistCol.find(tidfCov).toArray();
   const userIds = new Set<string>();
   for (const e of entriesForTournament) {
     if (e.userId && typeof e.userId === 'string') userIds.add(e.userId);
@@ -142,6 +144,10 @@ export async function assertOrganizersCoverAllDivisions(
     for (const pid of (t.playerIds as string[]) ?? []) {
       if (typeof pid === 'string' && ObjectId.isValid(pid)) userIds.add(pid);
     }
+  }
+  for (const w of waitlistForTournament) {
+    const uid = (w as { userId?: unknown }).userId;
+    if (typeof uid === 'string' && ObjectId.isValid(uid)) userIds.add(uid);
   }
   const validUserIds = [...userIds].filter((id) => ObjectId.isValid(id));
   const usersForTournament =
@@ -169,6 +175,14 @@ export async function assertOrganizersCoverAllDivisions(
       userId: e.userId as string,
       teamId: typeof e.teamId === 'string' ? e.teamId : e.teamId == null ? undefined : String(e.teamId),
     }));
+  // Waitlist counts as "joined": include it as a no-team entry for coverage checks
+  // so organizers in "Sin equipo" still cover their division.
+  for (const w of waitlistForTournament) {
+    const uid = (w as { userId?: unknown }).userId;
+    if (typeof uid !== 'string' || !uid) continue;
+    if (entriesSlim.some((e) => e.userId === uid)) continue;
+    entriesSlim.push({ userId: uid, teamId: undefined });
+  }
   const missing = missingDivisionForOrganizers(
     divisions,
     merged.organizerIds,
