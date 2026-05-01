@@ -61,6 +61,8 @@ export async function recomputeCategoryBracketAfterWinnerChange(
           pointsB: 1,
           setsWonA: 1,
           setsWonB: 1,
+          bracketRound: 1,
+          orderIndex: 1,
           advanceTeamAFromMatchId: 1,
           advanceTeamBFromMatchId: 1,
           advanceTeamALoserFromMatchId: 1,
@@ -74,11 +76,13 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
 
   // Compute (winner, loser) for every completed match with a valid winner.
+  const matchById = new Map<string, any>();
   const winnerByMatchId = new Map<string, string>();
   const loserByMatchId = new Map<string, string>();
   for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
     const mid = idStr(m);
+    if (mid) matchById.set(mid, m);
+    if (key(m.status) !== 'completed') continue;
     const w = key(m.winnerId);
     const a = key(m.teamAId);
     const b = key(m.teamBId);
@@ -87,27 +91,63 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
+  const invalidatedMatchIds = new Set<string>();
+  const desiredSlotsByMatchId = new Map<string, { teamAId: string; teamBId: string }>();
+  const plannedMatches = [...(matches as any[])].sort((a, b) => {
+    const ar = Number(a.bracketRound ?? 0);
+    const br = Number(b.bracketRound ?? 0);
+    if (ar !== br) return ar - br;
+    const ao = Number(a.orderIndex ?? 0);
+    const bo = Number(b.orderIndex ?? 0);
+    if (ao !== bo) return ao - bo;
+    return idStr(a).localeCompare(idStr(b));
+  });
+
+  const resolveFeed = (sourceMatchId: string, kind: 'winner' | 'loser'): string => {
+    if (!sourceMatchId) return '';
+    if (invalidatedMatchIds.has(sourceMatchId)) return '';
+    return kind === 'winner'
+      ? winnerByMatchId.get(sourceMatchId) ?? ''
+      : loserByMatchId.get(sourceMatchId) ?? '';
+  };
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+
+    for (const m of plannedMatches) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId) continue;
+
+      const advAW = key(m.advanceTeamAFromMatchId);
+      const advBW = key(m.advanceTeamBFromMatchId);
+      const advAL = key(m.advanceTeamALoserFromMatchId);
+      const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+      const curA = key(m.teamAId);
+      const curB = key(m.teamBId);
+
+      const desiredA = advAW ? resolveFeed(advAW, 'winner') : advAL ? resolveFeed(advAL, 'loser') : curA;
+      const desiredB = advBW ? resolveFeed(advBW, 'winner') : advBL ? resolveFeed(advBL, 'loser') : curB;
+
+      const slotChanged = desiredA !== curA || desiredB !== curB;
+      if (!slotChanged) continue;
+
+      const previousDesired = desiredSlotsByMatchId.get(mid);
+      if (previousDesired?.teamAId !== desiredA || previousDesired?.teamBId !== desiredB) {
+        desiredSlotsByMatchId.set(mid, { teamAId: desiredA, teamBId: desiredB });
+      }
+      if (!invalidatedMatchIds.has(mid)) {
+        invalidatedMatchIds.add(mid);
+        changed = true;
+      }
+    }
+  }
+
   const bulk: any[] = [];
-  for (const m of matches as any[]) {
-    const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
-
-    const advAW = key(m.advanceTeamAFromMatchId);
-    const advBW = key(m.advanceTeamBFromMatchId);
-    const advAL = key(m.advanceTeamALoserFromMatchId);
-    const advBL = key(m.advanceTeamBLoserFromMatchId);
-
-    const curA = key(m.teamAId);
-    const curB = key(m.teamBId);
-
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+  for (const [mid, desired] of desiredSlotsByMatchId.entries()) {
+    const m = matchById.get(mid);
+    if (!m) continue;
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
@@ -127,9 +167,9 @@ export async function recomputeCategoryBracketAfterWinnerChange(
       serveIndex: '',
     };
 
-    if (desiredA) $set.teamAId = desiredA;
+    if (desired.teamAId) $set.teamAId = desired.teamAId;
     else $unset.teamAId = '';
-    if (desiredB) $set.teamBId = desiredB;
+    if (desired.teamBId) $set.teamBId = desired.teamBId;
     else $unset.teamBId = '';
 
     bulk.push({
