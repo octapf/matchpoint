@@ -862,7 +862,7 @@ export default function EditMatchScreen() {
       status !== 'completed' && (canManageTournament || isReferee) && tournamentPlayActive;
 
     const confirmSetServer = (pid: string) => {
-      if (!canEditServeSetup) return;
+      if (!canEditServeSetup || order.length !== 4) return;
       const label = rosterSlotLabel(pid).trim() || t('common.player');
       Alert.alert(
         t('tournamentDetail.setServerTitle'),
@@ -882,132 +882,83 @@ export default function EditMatchScreen() {
       );
     };
 
+    const renderSlot = (idx: number, side: 'A' | 'B') => {
+      const pid = order[idx];
+      if (!pid) return null;
+      const u = usersById.get(pid);
+      const label = rosterSlotLabel(pid);
+      const isGuest = isGuestPlayerSlot(pid);
+      const gg = isGuest ? guestMapRec[guestPlayerIdFromSlot(pid) ?? ''] : undefined;
+      const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
+      return (
+        <Pressable
+          key={`${pid}-${idx}`}
+          style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}
+          onPress={() => confirmSetServer(pid)}
+          disabled={!canEditServeSetup || order.length !== 4}
+          accessibilityRole="button"
+          accessibilityLabel={t('tournamentDetail.setServerTitle')}
+        >
+          <View style={styles.serveSlotTopRow}>
+            <View style={styles.serveAvatarWrap} pointerEvents="none">
+              <Avatar
+                firstName={isGuest ? label : (u as any)?.firstName ?? ''}
+                lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
+                gender={
+                  isGuest
+                    ? gg?.gender === 'male' || gg?.gender === 'female'
+                      ? gg.gender
+                      : undefined
+                    : (u as any)?.gender === 'male' || (u as any)?.gender === 'female'
+                      ? (u as any).gender
+                      : undefined
+                }
+                size="xs"
+                photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
+              />
+            </View>
+            <View style={styles.serveOrderRow}>
+              {isServer ? (
+                (match as { status?: string }).status === 'in_progress' ? (
+                  <RotatingVolleyBall color="#fff" />
+                ) : (
+                  <View pointerEvents="none" style={styles.serveBallIcon}>
+                    <MaterialCommunityIcons name="volleyball" size={22} color="#fff" />
+                  </View>
+                )
+              ) : null}
+              <View style={styles.serveSlotNumPill} accessibilityElementsHidden accessibilityRole="none">
+                <Text style={styles.serveSlotNum}>{idx + 1}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.serveSlotNameWrap} pointerEvents="none">
+            <Text
+              style={[
+                styles.serveSlotName,
+                side === 'A' ? styles.serveSlotNameA : styles.serveSlotNameB,
+                { color: side === 'A' ? tokens.accent : tokens.accentSecondary },
+              ]}
+              numberOfLines={3}
+            >
+              {label}
+            </Text>
+          </View>
+        </Pressable>
+      );
+    };
+
     return (
       <View style={styles.serveRow}>
         <View style={styles.serveHeader} />
 
         <View style={styles.servePlayersSides}>
           <View style={styles.serveSide}>
-            {[0, 2].map((idx) => {
-              const pid = order[idx]!;
-              const u = usersById.get(pid);
-              const label = rosterSlotLabel(pid);
-              const isGuest = isGuestPlayerSlot(pid);
-              const gg = isGuest ? guestMapRec[guestPlayerIdFromSlot(pid) ?? ''] : undefined;
-              const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
-              return (
-                <Pressable
-                  key={`${pid}-${idx}`}
-                  style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}
-                  onPress={() => confirmSetServer(pid)}
-                  disabled={!canEditServeSetup}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('tournamentDetail.setServerTitle')}
-                >
-                  <View style={styles.serveSlotTopRow}>
-                    <View style={styles.serveAvatarWrap} pointerEvents="none">
-                      <Avatar
-                        firstName={isGuest ? label : (u as any)?.firstName ?? ''}
-                        lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
-                        gender={
-                          isGuest
-                            ? gg?.gender === 'male' || gg?.gender === 'female'
-                              ? gg.gender
-                              : undefined
-                            : (u as any)?.gender === 'male' || (u as any)?.gender === 'female'
-                              ? (u as any).gender
-                              : undefined
-                        }
-                        size="xs"
-                        photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
-                      />
-                    </View>
-                    <View style={styles.serveOrderRow}>
-                      {isServer ? (
-                        (match as { status?: string }).status === 'in_progress' ? (
-                          <RotatingVolleyBall color="#fff" />
-                        ) : (
-                          <View pointerEvents="none" style={styles.serveBallIcon}>
-                            <MaterialCommunityIcons name="volleyball" size={22} color="#fff" />
-                          </View>
-                        )
-                      ) : null}
-                    <View style={styles.serveSlotNumPill} accessibilityElementsHidden accessibilityRole="none">
-                      <Text style={styles.serveSlotNum}>{idx + 1}</Text>
-                    </View>
-                    </View>
-                  </View>
-                  <View style={styles.serveSlotNameWrap} pointerEvents="none">
-                    <Text style={[styles.serveSlotName, styles.serveSlotNameA, { color: tokens.accent }]} numberOfLines={3}>
-                      {label}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+            {[0, 2].map((idx) => renderSlot(idx, 'A'))}
           </View>
 
           <View style={styles.serveSide}>
-            {[1, 3].map((idx) => {
-              const pid = order[idx]!;
-              const u = usersById.get(pid);
-              const label = rosterSlotLabel(pid);
-              const isGuest = isGuestPlayerSlot(pid);
-              const gg = isGuest ? guestMapRec[guestPlayerIdFromSlot(pid) ?? ''] : undefined;
-              const isServer = servingPlayerId ? pid === servingPlayerId : idx === (serveIndex % 4);
-              return (
-                <Pressable
-                  key={`${pid}-${idx}`}
-                  style={[styles.serveSlot, isServer ? styles.serveSlotActive : null]}
-                  onPress={() => confirmSetServer(pid)}
-                  disabled={!canEditServeSetup}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('tournamentDetail.setServerTitle')}
-                >
-                  <View style={styles.serveSlotTopRow}>
-                    <View style={styles.serveAvatarWrap} pointerEvents="none">
-                      <Avatar
-                        firstName={isGuest ? label : (u as any)?.firstName ?? ''}
-                        lastName={isGuest ? '' : (u as any)?.lastName ?? ''}
-                        gender={
-                          isGuest
-                            ? gg?.gender === 'male' || gg?.gender === 'female'
-                              ? gg.gender
-                              : undefined
-                            : (u as any)?.gender === 'male' || (u as any)?.gender === 'female'
-                              ? (u as any).gender
-                              : undefined
-                        }
-                        size="xs"
-                        photoUrl={isGuest ? undefined : (u as any)?.photoUrl}
-                      />
-                    </View>
-                    <View style={styles.serveOrderRow}>
-                      {isServer ? (
-                        (match as { status?: string }).status === 'in_progress' ? (
-                          <RotatingVolleyBall color="#fff" />
-                        ) : (
-                          <View pointerEvents="none" style={styles.serveBallIcon}>
-                            <MaterialCommunityIcons name="volleyball" size={22} color="#fff" />
-                          </View>
-                        )
-                      ) : null}
-                    <View style={styles.serveSlotNumPill} accessibilityElementsHidden accessibilityRole="none">
-                      <Text style={styles.serveSlotNum}>{idx + 1}</Text>
-                    </View>
-                    </View>
-                  </View>
-                  <View style={styles.serveSlotNameWrap} pointerEvents="none">
-                    <Text
-                      style={[styles.serveSlotName, styles.serveSlotNameB, { color: tokens.accentSecondary }]}
-                      numberOfLines={3}
-                    >
-                      {label}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+            {[1, 3].map((idx) => renderSlot(idx, 'B'))}
           </View>
         </View>
       </View>
@@ -1354,7 +1305,7 @@ export default function EditMatchScreen() {
             </View>
           </View>
 
-          {renderServeLine(teamAName, teamBName, order)}
+          {order.length === 4 ? renderServeLine(teamAName, teamBName, order) : null}
         </>
 
       {(match as { status?: string }).status !== 'completed' && (match as { status?: string }).status !== 'in_progress' ? (

@@ -5,6 +5,7 @@ import { normalizeMongoIdString } from '../../lib/mongoId';
 import { settleBetsForMatch } from './tournamentBets';
 import { assertTournamentAllowsLiveMatchActions } from './tournamentLivePlayGate';
 import { notifyMany } from './notify';
+import { buildDefaultServeOrder, serveSideAtIndex, validateServeOrderForTeams } from './serveOrder';
 
 const REFEREE_LOCK_MS = 15_000;
 
@@ -143,15 +144,12 @@ export async function applyOneRefereePoint(params: {
   const existingOrder = Array.isArray((match as { serveOrder?: unknown }).serveOrder)
     ? ((match as { serveOrder?: unknown[] }).serveOrder as unknown[])
     : [];
-  const order =
-    existingOrder.length === 4
-      ? existingOrder.map(String).filter(Boolean)
-      : [playersA[0], playersB[0], playersA[1] ?? playersA[0], playersB[1] ?? playersB[0]].map(String).filter(Boolean);
-  if (order.length !== 4) return { ok: false, status: 400, body: { error: 'Invalid serve order state' } };
-  const allowedPlayers = new Set([...playersA, ...playersB].map(String).filter(Boolean));
-  for (const pid of order) {
-    if (!allowedPlayers.has(String(pid))) return { ok: false, status: 400, body: { error: 'Serve order contains invalid player' } };
+  const candidateOrder = existingOrder.length === 4 ? existingOrder : buildDefaultServeOrder(playersA, playersB);
+  const serveOrderValidation = validateServeOrderForTeams(candidateOrder, playersA, playersB);
+  if (!serveOrderValidation.ok) {
+    return { ok: false, status: 400, body: { error: serveOrderValidation.error } };
   }
+  const order = serveOrderValidation.order;
   update.serveOrder = order;
 
   let serveIndex = Number((match as { serveIndex?: unknown }).serveIndex ?? 0);
@@ -181,7 +179,8 @@ export async function applyOneRefereePoint(params: {
     }
   } else if (delta === 1) {
     serveIndexBeforeForEvent = serveIndex;
-    const servingSide: 'A' | 'B' = serveIndex % 2 === 0 ? 'A' : 'B';
+    const servingSide = serveSideAtIndex(order, playersA, playersB, serveIndex);
+    if (!servingSide) return { ok: false, status: 400, body: { error: 'Invalid serve order state' } };
     const scoringSide: 'A' | 'B' = side === 'A' ? 'A' : 'B';
     if (scoringSide !== servingSide) {
       serveIndex = (serveIndex + 1) % 4;

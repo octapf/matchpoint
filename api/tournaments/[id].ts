@@ -48,6 +48,7 @@ import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilte
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
 import { normalizeMongoIdString } from '../../lib/mongoId';
 import { applyOneRefereePoint } from '../../server/lib/applyOneRefereePoint';
+import { loadMatchTeamPlayers, validateServeOrderForTeams } from '../../server/lib/serveOrder';
 
 /** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
 function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
@@ -94,6 +95,10 @@ function validMatchTeamIdsFromDoc(match: { teamAId?: unknown; teamBId?: unknown 
   const teamBId = normalizeMongoIdString(match.teamBId);
   if (!teamAId || !teamBId || !ObjectId.isValid(teamAId) || !ObjectId.isValid(teamBId)) return null;
   return { teamAId, teamBId };
+}
+
+function isStartedForRosterLock(t: { startedAt?: unknown; phase?: unknown } | null | undefined): boolean {
+  return isTournamentStarted(t);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -398,8 +403,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'rebalanceGroups') {
-        const result = await rebalanceTournamentTeams(db, id);
-        return corsRes.status(200).json(result);
+        try {
+          const result = await rebalanceTournamentTeams(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not rebalance groups';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'start') {
@@ -567,12 +577,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!uid || !ObjectId.isValid(uid)) {
           return corsRes.status(400).json({ error: 'Invalid userId' });
         }
-        const started =
-          !!(cur as { startedAt?: unknown }).startedAt ||
-          (cur as { phase?: unknown }).phase === 'classification' ||
-          (cur as { phase?: unknown }).phase === 'categories' ||
-          (cur as { phase?: unknown }).phase === 'completed';
-        if (started) {
+        if (isStartedForRosterLock(cur as { startedAt?: unknown; phase?: unknown })) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const mode = body?.mode === 'dissolveToWaitlist' || body?.mode === 'removeFromTournament' ? body.mode : 'removeFromTournament';
@@ -583,12 +588,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'createGuestPlayer') {
+        if (isStartedForRosterLock(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const r = await createGuestPlayer(db, id, actingUserId, body);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(201).json(serializeDoc(r.doc));
       }
 
       if (action === 'updateGuestPlayer') {
+        if (isStartedForRosterLock(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
@@ -599,6 +610,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'deleteGuestPlayer') {
+        if (isStartedForRosterLock(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
@@ -609,12 +623,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'deleteAllGuestPlayers') {
-        const started =
-          !!(cur as { startedAt?: unknown }).startedAt ||
-          (cur as { phase?: unknown }).phase === 'classification' ||
-          (cur as { phase?: unknown }).phase === 'categories' ||
-          (cur as { phase?: unknown }).phase === 'completed';
-        if (started) {
+        if (isStartedForRosterLock(cur as { startedAt?: unknown; phase?: unknown })) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const r = await deleteAllGuestPlayers(db, id);
@@ -1334,13 +1343,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const order = Array.isArray(body?.order) ? (body.order as unknown[]).map(String).filter(Boolean) : [];
         const servingPlayerId = typeof body?.servingPlayerId === 'string' ? body.servingPlayerId.trim() : '';
         if (order.length !== 4) return corsRes.status(400).json({ error: 'Invalid serve order' });
+        const ids = validMatchTeamIdsFromDoc(match as { teamAId?: unknown; teamBId?: unknown });
+        if (!ids) return corsRes.status(400).json({ error: 'Match teams are not ready' });
+        const { playersA, playersB } = await loadMatchTeamPlayers(db, id, ids.teamAId, ids.teamBId);
+        const orderValidation = validateServeOrderForTeams(order, playersA, playersB);
+        if (!orderValidation.ok) return corsRes.status(400).json({ error: orderValidation.error });
+        if (servingPlayerId && !orderValidation.order.includes(servingPlayerId)) {
+          return corsRes.status(400).json({ error: 'Serving player is not in this match' });
+        }
 
         const now = new Date().toISOString();
         const update: Record<string, unknown> = { updatedAt: now };
-        update.serveOrder = order;
+        update.serveOrder = orderValidation.order;
         if (servingPlayerId) {
           update.servingPlayerId = servingPlayerId;
-          const idx = order.findIndex((p) => p === servingPlayerId);
+          const idx = orderValidation.order.findIndex((p) => p === servingPlayerId);
           if (idx >= 0) update.serveIndex = idx;
         }
         update.refereeLockExpiresAt = lockExpiresAtIso(nowMs);
