@@ -8,6 +8,8 @@ import { planCategorySingleElimination } from './singleElimBracket';
 import { insertAuditLogSafe } from './auditLog';
 import { notifyPlayersEnteredCategoryPhase } from './categoryPhaseNotify';
 
+const CATEGORY_GENERATION_LOCK_STALE_MS = 10 * 60_000;
+
 export async function generateCategoryMatches(
   db: Db,
   tournamentId: string,
@@ -66,18 +68,54 @@ export async function generateCategoryMatches(
     );
   }
 
+  const lockId = new ObjectId().toString();
+  const lockNow = new Date().toISOString();
+  const staleBefore = new Date(Date.parse(lockNow) - CATEGORY_GENERATION_LOCK_STALE_MS).toISOString();
+  const lockedTournament = await tournamentsCol.findOneAndUpdate(
+    {
+      _id: new ObjectId(tournamentId),
+      phase: 'classification',
+      $or: [
+        { categoryGenerationLockId: { $exists: false } },
+        { categoryGenerationLockId: null },
+        { categoryGenerationStartedAt: { $lt: staleBefore } },
+      ],
+    },
+    {
+      $set: {
+        categoryGenerationLockId: lockId,
+        categoryGenerationStartedAt: lockNow,
+        updatedAt: lockNow,
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  if (!lockedTournament) {
+    const latest = await tournamentsCol.findOne(
+      { _id: new ObjectId(tournamentId) },
+      { projection: { phase: 1 } }
+    );
+    const latestPhase = String((latest as { phase?: unknown } | null)?.phase ?? '');
+    if (latestPhase === 'categories' || latestPhase === 'completed') {
+      const existingCategoryMatches = await matchesCol.countDocuments({ tournamentId, stage: 'category' });
+      return { created: 0, total: existingCategoryMatches, categories };
+    }
+    throw new Error('Category bracket generation is already in progress');
+  }
+
   // Remove existing category matches before regenerating.
-  await matchesCol.deleteMany({ tournamentId, stage: 'category' });
+  try {
+    await matchesCol.deleteMany({ tournamentId, stage: 'category' });
 
-  const now = new Date().toISOString();
-  const baseMs = Date.parse(now);
-  let created = 0;
-  let total = 0;
+    const now = new Date().toISOString();
+    const baseMs = Date.parse(now);
+    let created = 0;
+    let total = 0;
 
-  const snapshotDivisions: Array<{
-    division: TournamentDivision | string;
-    categories: Array<{ category: TournamentCategory; teamIds: string[]; matchIds: string[] }>;
-  }> = [];
+    const snapshotDivisions: Array<{
+      division: TournamentDivision | string;
+      categories: Array<{ category: TournamentCategory; teamIds: string[]; matchIds: string[] }>;
+    }> = [];
 
   for (let di = 0; di < divisionCount; di++) {
     const base = cfg.divisionGroupOffset(di);
@@ -206,41 +244,61 @@ export async function generateCategoryMatches(
     snapshotDivisions.push(divisionSnapshot);
   }
 
-  await tournamentsCol.updateOne(
-    { _id: new ObjectId(tournamentId) },
-    {
-      $set: {
-        phase: 'categories',
-        categoriesSnapshot: {
-          computedAt: now,
-          divisions: snapshotDivisions,
+    const phaseUpdate = await tournamentsCol.updateOne(
+      { _id: new ObjectId(tournamentId), categoryGenerationLockId: lockId },
+      {
+        $set: {
+          phase: 'categories',
+          categoriesSnapshot: {
+            computedAt: now,
+            divisions: snapshotDivisions,
+          },
+          updatedAt: now,
         },
-        updatedAt: now,
-      },
+        $unset: {
+          categoryGenerationLockId: '',
+          categoryGenerationStartedAt: '',
+        },
+      }
+    );
+    if (phaseUpdate.matchedCount === 0) {
+      throw new Error('Category generation lock was lost');
     }
-  );
 
-  const tournamentName = String((t as { name?: unknown }).name ?? 'Tournament');
-  for (const snapDiv of snapshotDivisions) {
-    const div = String(snapDiv.division ?? 'mixed');
-    for (const c of snapDiv.categories) {
-      if (!c.teamIds?.length) continue;
-      const cat = c.category;
-      if (cat !== 'Gold' && cat !== 'Silver' && cat !== 'Bronze') continue;
-      await notifyPlayersEnteredCategoryPhase(db, tournamentId, tournamentName, div, cat, c.teamIds);
+    const tournamentName = String((t as { name?: unknown }).name ?? 'Tournament');
+    for (const snapDiv of snapshotDivisions) {
+      const div = String(snapDiv.division ?? 'mixed');
+      for (const c of snapDiv.categories) {
+        if (!c.teamIds?.length) continue;
+        const cat = c.category;
+        if (cat !== 'Gold' && cat !== 'Silver' && cat !== 'Bronze') continue;
+        await notifyPlayersEnteredCategoryPhase(db, tournamentId, tournamentName, div, cat, c.teamIds);
+      }
     }
-  }
 
-  if (opts?.actorId) {
-    await insertAuditLogSafe(db, {
-      actorId: opts.actorId,
-      action: 'tournament.categoryMatches.generated',
-      resource: 'tournament',
-      resourceId: tournamentId,
-      meta: { created, total, categoryPhaseFormat: 'single_elim' as const },
-    });
-  }
+    if (opts?.actorId) {
+      await insertAuditLogSafe(db, {
+        actorId: opts.actorId,
+        action: 'tournament.categoryMatches.generated',
+        resource: 'tournament',
+        resourceId: tournamentId,
+        meta: { created, total, categoryPhaseFormat: 'single_elim' as const },
+      });
+    }
 
-  return { created, total, categories };
+    return { created, total, categories };
+  } catch (err) {
+    await tournamentsCol.updateOne(
+      { _id: new ObjectId(tournamentId), categoryGenerationLockId: lockId },
+      {
+        $set: { updatedAt: new Date().toISOString() },
+        $unset: {
+          categoryGenerationLockId: '',
+          categoryGenerationStartedAt: '',
+        },
+      }
+    );
+    throw err;
+  }
 }
 
