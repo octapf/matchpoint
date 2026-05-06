@@ -2,11 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../server/lib/mongodb';
 import { withCors } from '../server/lib/cors';
-import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
+import { getSessionUserId, isUserAdmin, loadActorUserWithAdminRefresh } from '../server/lib/auth';
 import { entriesPostSchema } from '../server/lib/schemas/entriesPost';
 import { parseLimitOffset } from '../server/lib/pagination';
 import { notifyOne } from '../server/lib/notify';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
+import { assertTournamentReadable } from '../server/lib/tournamentVisibility';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -26,7 +27,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const filter: Record<string, unknown> = {};
       const { tournamentId, userId, guestPlayerId, teamId, inTeamOnly } = req.query;
       if (tournamentId && typeof tournamentId === 'string') {
-        Object.assign(filter, tournamentIdMongoFilter(tournamentId.trim()));
+        const cleanTournamentId = tournamentId.trim();
+        const readable = await assertTournamentReadable(req, db, cleanTournamentId);
+        if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
+        Object.assign(filter, tournamentIdMongoFilter(cleanTournamentId));
+      } else if (userId && typeof userId === 'string') {
+        const actorId = getSessionUserId(req);
+        if (!actorId) return corsRes.status(401).json({ error: 'Authentication required' });
+        const actorUser = await loadActorUserWithAdminRefresh(db, actorId);
+        const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+        if (!actorIsAdmin && actorId !== userId) {
+          return corsRes.status(403).json({ error: 'Not allowed' });
+        }
+      } else {
+        return corsRes.status(200).json([]);
       }
       if (userId && typeof userId === 'string') filter.userId = userId;
       if (guestPlayerId && typeof guestPlayerId === 'string') filter.guestPlayerId = guestPlayerId;
