@@ -19,6 +19,7 @@ import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { promoteNextTeamFromSlotWaitlist } from '../../server/lib/promoteTeamSlotWaitlist';
 import type { TournamentDivision } from '../../types';
+import { assertTournamentReadable } from '../../server/lib/tournamentVisibility';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -52,6 +53,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Team not found' });
+      const tournamentId = String((doc as { tournamentId?: unknown }).tournamentId ?? '');
+      const readable = await assertTournamentReadable(req, db, tournamentId);
+      if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
       return corsRes.status(200).json(serializeDoc(doc as Record<string, unknown>));
     }
 
