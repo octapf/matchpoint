@@ -72,6 +72,15 @@ export async function deleteGuestPlayer(
   guestId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!ObjectId.isValid(guestId)) return { ok: false, error: 'Invalid guest id' };
+  const tournament = await db
+    .collection('tournaments')
+    .findOne({ _id: new ObjectId(tournamentId) }, { projection: { startedAt: 1, phase: 1 } });
+  const startedAt = (tournament as { startedAt?: unknown } | null)?.startedAt;
+  const phase = String((tournament as { phase?: unknown } | null)?.phase ?? '');
+  if (startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed') {
+    return { ok: false, error: 'Tournament already started' };
+  }
+
   const gid = new ObjectId(guestId).toString();
 
   const tidf = tournamentIdMongoFilter(tournamentId);
