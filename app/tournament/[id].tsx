@@ -2404,7 +2404,7 @@ export default function TournamentDetailScreen() {
             primaryGroupPending={randomizeGroupsMutation.isPending}
             rosterTeamsTotal={teams.length}
             maxTeams={tournament?.maxTeams ?? 0}
-            offerGroupRebalance={offerGroupRebalance}
+            offerGroupRebalance={offerGroupRebalance && !tournamentStarted}
             groupMetaTeamsPerGroup={groupMeta.teamsPerGroup}
             onRebalancePress={() => {
               if (!id) return;

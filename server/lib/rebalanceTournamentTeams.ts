@@ -13,6 +13,22 @@ export async function rebalanceTournamentTeams(
   const teamsCol = db.collection('teams');
   const t = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
   if (!t) throw new Error('Tournament not found');
+  const startedAt = (t as { startedAt?: unknown }).startedAt;
+  const phase = String((t as { phase?: unknown }).phase ?? '');
+  if (startedAt || phase === 'classification' || phase === 'categories' || phase === 'completed') {
+    throw new Error('Tournament already started');
+  }
+
+  // Once scoring has started, changing team group indexes leaves existing matches/standings
+  // pointing at the old group layout.
+  const locked = await db.collection('matches').countDocuments({
+    tournamentId,
+    status: { $in: ['in_progress', 'completed'] },
+  });
+  if (locked > 0) {
+    throw new Error('Tournament already started');
+  }
+
   const maxT = Number((t as { maxTeams?: number }).maxTeams);
   const gc = normalizeGroupCount((t as { groupCount?: number }).groupCount);
   const vg = validateTournamentGroups(maxT, gc);
