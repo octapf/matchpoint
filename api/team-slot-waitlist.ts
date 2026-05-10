@@ -10,6 +10,7 @@ import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, par
 import { assertGuestIdsBelongToTournament, resolveTwoSlotGenders } from '../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
 import type { TournamentDivision } from '../types';
+import { assertTournamentReadable } from '../server/lib/tournamentVisibility';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -49,6 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !ObjectId.isValid(tournamentId)) {
         return corsRes.status(400).json({ error: 'Invalid tournamentId' });
       }
+      const readable = await assertTournamentReadable(req, db, tournamentId);
+      if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
       const tidf = tournamentIdMongoFilter(tournamentId);
       const filter: Record<string, unknown> = { ...tidf, status: 'active' };
       if (divisionFilter === 'men' || divisionFilter === 'women' || divisionFilter === 'mixed') {
