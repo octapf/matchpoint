@@ -16,6 +16,8 @@ function reqFor(userId?: string): VercelRequest {
 }
 
 function fakeDb(tournament: Record<string, unknown>, opts?: { entryUserId?: string; waitlistUserId?: string }): Db {
+  const entryUserId = opts?.entryUserId;
+  const waitlistUserId = opts?.waitlistUserId;
   return {
     collection(name: string) {
       return {
@@ -27,10 +29,12 @@ function fakeDb(tournament: Record<string, unknown>, opts?: { entryUserId?: stri
             return query._id instanceof ObjectId ? { _id: query._id } : null;
           }
           if (name === 'entries') {
-            return query.userId === opts?.entryUserId ? { _id: new ObjectId(), userId: opts.entryUserId } : null;
+            return entryUserId && query.userId === entryUserId ? { _id: new ObjectId(), userId: entryUserId } : null;
           }
           if (name === 'waitlist') {
-            return query.userId === opts?.waitlistUserId ? { _id: new ObjectId(), userId: opts.waitlistUserId } : null;
+            return waitlistUserId && query.userId === waitlistUserId
+              ? { _id: new ObjectId(), userId: waitlistUserId }
+              : null;
           }
           return null;
         },
