@@ -1,6 +1,9 @@
 import { ObjectId } from 'mongodb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Db } from 'mongodb';
+import teamHandler from '../api/teams/[id]';
+import { rebalanceTournamentTeams } from '../server/lib/rebalanceTournamentTeams';
+import { deleteGuestPlayer } from '../server/lib/tournamentGuestPlayerActions';
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
@@ -34,10 +37,6 @@ vi.mock('../server/lib/organizer', () => ({
 vi.mock('../server/lib/tournamentGroupDb', () => ({
   countTeamsInGroup: mocks.countTeamsInGroup,
 }));
-
-import teamHandler from '../api/teams/[id]';
-import { rebalanceTournamentTeams } from '../server/lib/rebalanceTournamentTeams';
-import { deleteGuestPlayer } from '../server/lib/tournamentGuestPlayerActions';
 
 const tournamentId = '507f1f77bcf86cd799439011';
 const teamId = '507f1f77bcf86cd799439012';
