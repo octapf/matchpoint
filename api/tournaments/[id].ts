@@ -1946,6 +1946,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         update.organizerOnlyIds = nextOnly;
         update.organizerOnlyCovers = nextCovers;
         nextOnlyForRemoval = nextOnly;
+        if (started && nextOnlyForRemoval.length > 0) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
       }
 
       update.updatedAt = new Date().toISOString();

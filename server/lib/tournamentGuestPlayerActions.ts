@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { guestPlayerInUse } from './guestPlayersDb';
 import { getMongoClient } from './mongodb';
 import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
+import { isTournamentStarted } from '../../lib/isTournamentStarted';
 
 const COL = 'tournament_guest_players';
 
@@ -71,12 +72,19 @@ export async function deleteGuestPlayer(
   tournamentId: string,
   guestId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!ObjectId.isValid(tournamentId)) return { ok: false, error: 'Invalid tournament ID' };
   if (!ObjectId.isValid(guestId)) return { ok: false, error: 'Invalid guest id' };
   const gid = new ObjectId(guestId).toString();
 
   const tidf = tournamentIdMongoFilter(tournamentId);
   const guestOid = new ObjectId(guestId);
   const guestSlot = `guest:${gid}`;
+
+  const tournament = await db.collection('tournaments').findOne({ _id: new ObjectId(tournamentId) });
+  if (!tournament) return { ok: false, error: 'Tournament not found' };
+  if (isTournamentStarted(tournament as { startedAt?: unknown; phase?: unknown })) {
+    return { ok: false, error: 'Tournament already started' };
+  }
 
   const inUse = await guestPlayerInUse(db, tournamentId, gid);
   if (!inUse) {
