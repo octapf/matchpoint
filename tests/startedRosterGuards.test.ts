@@ -84,9 +84,11 @@ describe('started tournament roster guards', () => {
   });
 
   it('rejects team creation after the tournament has started', async () => {
+    const teams = {};
     const tournaments = { findOne: vi.fn(async () => startedTournament()) };
     mocks.getDb.mockResolvedValue({
       collection: vi.fn((name: string) => {
+        if (name === 'teams') return teams;
         if (name === 'tournaments') return tournaments;
         throw new Error(`Unexpected collection ${name}`);
       }),
