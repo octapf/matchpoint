@@ -603,6 +603,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
         }
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const r = await deleteGuestPlayer(db, id, gid);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(200).json({ ok: true });

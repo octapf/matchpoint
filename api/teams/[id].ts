@@ -18,6 +18,7 @@ import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots } fr
 import { resolveTwoSlotGenders } from '../../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilter';
 import { promoteNextTeamFromSlotWaitlist } from '../../server/lib/promoteTeamSlotWaitlist';
+import { isTournamentStarted } from '../../lib/isTournamentStarted';
 import type { TournamentDivision } from '../../types';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
@@ -115,16 +116,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
 
-      const tournamentStartedPatch =
-        !!(tournament as { startedAt?: unknown }).startedAt ||
-        (tournament as { phase?: unknown }).phase === 'classification' ||
-        (tournament as { phase?: unknown }).phase === 'categories' ||
-        (tournament as { phase?: unknown }).phase === 'completed';
+      const tournamentStartedPatch = isTournamentStarted(tournament as { startedAt?: unknown; phase?: unknown });
       if (update.name !== undefined && tournamentStartedPatch) {
         return corsRes.status(400).json({ error: 'Team name cannot be changed after the tournament has started' });
       }
       if (update.playerIds !== undefined && tournamentStartedPatch) {
         return corsRes.status(400).json({ error: 'Team roster cannot be changed after the tournament has started' });
+      }
+      if (update.groupIndex !== undefined && tournamentStartedPatch) {
+        return corsRes.status(400).json({ error: 'Team group cannot be changed after the tournament has started' });
       }
 
       if (update.groupIndex !== undefined) {
@@ -315,11 +315,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournamentsCol = db.collection('tournaments');
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) return corsRes.status(404).json({ error: 'Tournament not found' });
-      const started =
-        !!(tournament as { startedAt?: unknown }).startedAt ||
-        (tournament as { phase?: unknown }).phase === 'classification' ||
-        (tournament as { phase?: unknown }).phase === 'categories' ||
-        (tournament as { phase?: unknown }).phase === 'completed';
+      const started = isTournamentStarted(tournament as { startedAt?: unknown; phase?: unknown });
       if (started) {
         return corsRes.status(400).json({ error: 'Tournament already started' });
       }
