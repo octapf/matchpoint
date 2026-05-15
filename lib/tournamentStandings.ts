@@ -1,6 +1,14 @@
 import type { Match, Team, TournamentCategory } from '@/types';
 
-export type StandingRow = { team: Team; wins: number; points: number };
+export type StandingRow = { team: Team; wins: number; points: number; pointsAgainst?: number; pointDiff?: number };
+
+type TeamStat = {
+  team: Team;
+  wins: number;
+  pf: number;
+  pa: number;
+  pd: number;
+};
 
 export function tieBreakOrdinal(seed: string, teamId: string): number {
   const s = `${seed}\0${teamId}`;
@@ -11,34 +19,137 @@ export function tieBreakOrdinal(seed: string, teamId: string): number {
   return h >>> 0;
 }
 
+function buildTeamStats(teams: Team[], matches: Match[]): Map<string, TeamStat> {
+  const stats = new Map<string, TeamStat>();
+  for (const tm of teams) stats.set(tm._id, { team: tm, wins: 0, pf: 0, pa: 0, pd: 0 });
+
+  for (const m of matches) {
+    if (m.status !== 'completed') continue;
+    const a = String(m.teamAId ?? '');
+    const b = String(m.teamBId ?? '');
+    if (!a || !b) continue;
+    if (!stats.has(a) || !stats.has(b)) continue;
+
+    const pa = Number.isFinite(m.pointsA) ? Math.floor(m.pointsA!) : 0;
+    const pb = Number.isFinite(m.pointsB) ? Math.floor(m.pointsB!) : 0;
+    const sa = stats.get(a)!;
+    const sb = stats.get(b)!;
+    sa.pf += pa;
+    sa.pa += pb;
+    sb.pf += pb;
+    sb.pa += pa;
+
+    const w = String(m.winnerId ?? '');
+    if (w === a) sa.wins += 1;
+    else if (w === b) sb.wins += 1;
+  }
+
+  for (const s of stats.values()) {
+    s.pd = s.pf - s.pa;
+  }
+  return stats;
+}
+
+function internalMiniStats(memberIds: string[], matches: Match[]): Map<string, { wins: number; pf: number; pa: number; pd: number }> {
+  const idSet = new Set(memberIds);
+  const mini = new Map<string, { wins: number; pf: number; pa: number; pd: number }>();
+  for (const id of memberIds) mini.set(id, { wins: 0, pf: 0, pa: 0, pd: 0 });
+
+  for (const m of matches) {
+    if (m.status !== 'completed') continue;
+    const a = String(m.teamAId ?? '');
+    const b = String(m.teamBId ?? '');
+    if (!idSet.has(a) || !idSet.has(b)) continue;
+
+    const pa = Number.isFinite(m.pointsA) ? Math.floor(m.pointsA!) : 0;
+    const pb = Number.isFinite(m.pointsB) ? Math.floor(m.pointsB!) : 0;
+    const sa = mini.get(a)!;
+    const sb = mini.get(b)!;
+    sa.pf += pa;
+    sa.pa += pb;
+    sb.pf += pb;
+    sb.pa += pa;
+
+    const w = String(m.winnerId ?? '');
+    if (w === a) sa.wins += 1;
+    else if (w === b) sb.wins += 1;
+  }
+
+  for (const s of mini.values()) {
+    s.pd = s.pf - s.pa;
+  }
+  return mini;
+}
+
+function orderTieGroup(memberIds: string[], matches: Match[], global: Map<string, TeamStat>, tieBreakSeed: string): string[] {
+  if (memberIds.length <= 1) return [...memberIds];
+  const mini = internalMiniStats(memberIds, matches);
+  return [...memberIds].sort((ia, ib) => {
+    const a = mini.get(ia)!;
+    const b = mini.get(ib)!;
+    if (a.wins !== b.wins) return b.wins - a.wins;
+    if (a.pd !== b.pd) return b.pd - a.pd;
+    if (a.pf !== b.pf) return b.pf - a.pf;
+    const ga = global.get(ia)!;
+    const gb = global.get(ib)!;
+    if (ga.pd !== gb.pd) return gb.pd - ga.pd;
+    if (ga.pf !== gb.pf) return gb.pf - ga.pf;
+    if (tieBreakSeed) {
+      const oa = tieBreakOrdinal(tieBreakSeed, ia);
+      const ob = tieBreakOrdinal(tieBreakSeed, ib);
+      if (oa !== ob) return oa < ob ? -1 : 1;
+    }
+    return ga.team.name.localeCompare(gb.team.name);
+  });
+}
+
+export function compareStandingRowCrossGroup(a: StandingRow, b: StandingRow, tieBreakSeed?: string): number {
+  if (a.wins !== b.wins) return b.wins - a.wins;
+  const pdA = a.pointDiff ?? a.points - (a.pointsAgainst ?? 0);
+  const pdB = b.pointDiff ?? b.points - (b.pointsAgainst ?? 0);
+  if (pdA !== pdB) return pdB - pdA;
+  if (a.points !== b.points) return b.points - a.points;
+  if (tieBreakSeed) {
+    const oa = tieBreakOrdinal(tieBreakSeed, a.team._id);
+    const ob = tieBreakOrdinal(tieBreakSeed, b.team._id);
+    if (oa !== ob) return oa < ob ? -1 : 1;
+  }
+  return a.team.name.localeCompare(b.team.name);
+}
+
 export function computeStandingsForGroup(params: {
   teams: Team[];
   matches: Match[];
   /** Tournament id — deterministic draw when wins/points tie (matches server). */
   tieBreakSeed?: string;
 }): StandingRow[] {
-  const seed = String(params.tieBreakSeed ?? '');
-  const stats: Record<string, StandingRow> = {};
-  for (const tm of params.teams) stats[tm._id] = { team: tm, wins: 0, points: 0 };
-
-  for (const m of params.matches) {
-    if (m.status !== 'completed') continue;
-    if (!m.teamAId || !m.teamBId) continue;
-    if (!stats[m.teamAId] || !stats[m.teamBId]) continue;
-    stats[m.teamAId]!.points += Number.isFinite(m.pointsA) ? Math.floor(m.pointsA!) : 0;
-    stats[m.teamBId]!.points += Number.isFinite(m.pointsB) ? Math.floor(m.pointsB!) : 0;
-    if (m.winnerId && stats[m.winnerId]) stats[m.winnerId]!.wins += 1;
+  const tieBreakSeed = String(params.tieBreakSeed ?? '');
+  const global = buildTeamStats(params.teams, params.matches);
+  const teamIds = params.teams.map((t) => t._id);
+  const winsToMembers = new Map<number, string[]>();
+  for (const tid of teamIds) {
+    const w = global.get(tid)!.wins;
+    const list = winsToMembers.get(w) ?? [];
+    list.push(tid);
+    winsToMembers.set(w, list);
   }
 
-  return Object.values(stats).sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.points !== a.points) return b.points - a.points;
-    if (seed) {
-      const oa = tieBreakOrdinal(seed, a.team._id);
-      const ob = tieBreakOrdinal(seed, b.team._id);
-      if (oa !== ob) return oa < ob ? -1 : 1;
-    }
-    return a.team.name.localeCompare(b.team.name);
+  const winLevels = [...winsToMembers.keys()].sort((x, y) => y - x);
+  const orderedIds: string[] = [];
+  for (const w of winLevels) {
+    const members = winsToMembers.get(w)!;
+    orderedIds.push(...orderTieGroup(members, params.matches, global, tieBreakSeed));
+  }
+
+  return orderedIds.map((tid) => {
+    const s = global.get(tid)!;
+    return {
+      team: s.team,
+      wins: s.wins,
+      points: s.pf,
+      pointsAgainst: s.pa,
+      pointDiff: s.pd,
+    };
   });
 }
 
@@ -122,16 +233,7 @@ export function assignCategories(params: {
       const row = g[rank];
       if (row) bucket.push(row);
     }
-    bucket.sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      if (b.points !== a.points) return b.points - a.points;
-      if (seed) {
-        const oa = tieBreakOrdinal(seed, a.team._id);
-        const ob = tieBreakOrdinal(seed, b.team._id);
-        if (oa !== ob) return oa < ob ? -1 : 1;
-      }
-      return a.team.name.localeCompare(b.team.name);
-    });
+    bucket.sort((a, b) => compareStandingRowCrossGroup(a, b, seed));
     global.push(...bucket);
   }
 
