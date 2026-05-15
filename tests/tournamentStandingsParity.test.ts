@@ -75,7 +75,7 @@ describe('client tournament standings parity', () => {
       standingsByGroup: clientGroups,
       categories,
       categoryFractions: null,
-      categoryCounts: { Gold: 1, Silver: 1 },
+      categoryCounts: { Gold: 1, Silver: 3 },
       singleCategoryAdvanceFraction: 0.5,
       tieBreakSeed: 'seed',
     });
@@ -83,7 +83,7 @@ describe('client tournament standings parity', () => {
       standingsByGroup: serverGroups,
       categories,
       categoryFractions: null,
-      categoryCounts: { Gold: 1, Silver: 1 },
+      categoryCounts: { Gold: 1, Silver: 3 },
       singleCategoryAdvanceFraction: 0.5,
       tieBreakSeed: 'seed',
     });
