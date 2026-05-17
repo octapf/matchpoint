@@ -15,6 +15,7 @@ import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, par
 import { assertGuestIdsBelongToTournament, resolveTwoSlotGenders } from '../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
 import { insertTeamWithEntriesTx } from '../server/lib/insertTeamWithEntriesTx';
+import { assertTournamentReadable } from '../server/lib/tournamentVisibility';
 
 function hasExplicitGroupIndex(raw: unknown): boolean {
   if (raw === undefined || raw === null) return false;
@@ -40,7 +41,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const filter: Record<string, unknown> = {};
       const { tournamentId, createdBy } = req.query;
       if (tournamentId && typeof tournamentId === 'string') {
-        Object.assign(filter, tournamentIdMongoFilter(tournamentId.trim()));
+        const cleanTournamentId = tournamentId.trim();
+        const readable = await assertTournamentReadable(req, db, cleanTournamentId);
+        if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
+        Object.assign(filter, tournamentIdMongoFilter(cleanTournamentId));
+      } else if (createdBy && typeof createdBy === 'string') {
+        const actorId = getSessionUserId(req);
+        if (!actorId) return corsRes.status(401).json({ error: 'Authentication required' });
+        const actorUser = ObjectId.isValid(actorId)
+          ? await db.collection('users').findOne({ _id: new ObjectId(actorId) })
+          : null;
+        const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
+        if (!actorIsAdmin && actorId !== createdBy) {
+          return corsRes.status(403).json({ error: 'Not allowed' });
+        }
+      } else {
+        return corsRes.status(200).json([]);
       }
       if (createdBy && typeof createdBy === 'string') filter.createdBy = createdBy;
 
