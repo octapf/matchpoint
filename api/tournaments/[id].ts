@@ -48,6 +48,7 @@ import { tournamentIdMongoFilter } from '../../server/lib/mongoTournamentIdFilte
 import { purgeTournamentRelatedData } from '../../server/lib/tournamentDeleteCascade';
 import { normalizeMongoIdString } from '../../lib/mongoId';
 import { applyOneRefereePoint } from '../../server/lib/applyOneRefereePoint';
+import { assertTournamentReadable } from '../../server/lib/tournamentVisibility';
 
 /** True when enabled divisions (men/women/mixed) are the same set, ignoring order. */
 function tournamentDivisionsSetEqual(a: unknown, b: unknown): boolean {
@@ -113,28 +114,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const doc = await col.findOne({ _id: oid });
       if (!doc) return corsRes.status(404).json({ error: 'Tournament not found' });
-      const vis = (doc as { visibility?: string }).visibility;
-      if (vis === 'private') {
-        const actorId = getSessionUserId(req);
-        if (!actorId) {
-          return corsRes.status(404).json({ error: 'Tournament not found' });
-        }
-        const actorUser = await loadActorUserWithAdminRefresh(db, actorId);
-        const actorIsAdmin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
-        const isOrg = isTournamentOrganizer(doc as { organizerIds?: string[] }, actorId);
-        if (!actorIsAdmin && !isOrg) {
-          const tidfVis = tournamentIdMongoFilter(id);
-          const entriesCol = db.collection('entries');
-          const waitlistCol = db.collection('waitlist');
-          const [hasEntry, onWaitlist] = await Promise.all([
-            entriesCol.findOne({ ...tidfVis, userId: actorId }),
-            waitlistCol.findOne({ ...tidfVis, userId: actorId }),
-          ]);
-          if (!hasEntry && !onWaitlist) {
-            return corsRes.status(404).json({ error: 'Tournament not found' });
-          }
-        }
-      }
+      const readable = await assertTournamentReadable(req, db, id, doc as Record<string, unknown>);
+      if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
 
       const serialized = serializeDoc(doc as Record<string, unknown>)!;
 

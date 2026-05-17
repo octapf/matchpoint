@@ -7,6 +7,7 @@ import { waitlistInvitePartnerPostSchema } from '../server/lib/schemas/waitlistI
 import { getSessionUserId, isUserAdmin } from '../server/lib/auth';
 import { notifyOne } from '../server/lib/notify';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
+import { assertTournamentReadable } from '../server/lib/tournamentVisibility';
 
 function serializeDoc(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -35,6 +36,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (division !== 'men' && division !== 'women' && division !== 'mixed') {
         return corsRes.status(400).json({ error: 'Invalid or missing division' });
       }
+      const readable = await assertTournamentReadable(req, db, tournamentId);
+      if (!readable.ok) return corsRes.status(readable.status).json({ error: readable.error });
       const tidf = tournamentIdMongoFilter(tournamentId);
       const rows = await col.find({ ...tidf, division }).sort({ createdAt: 1 }).toArray();
       const count = rows.length;
