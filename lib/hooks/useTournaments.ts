@@ -103,6 +103,7 @@ export function useRebalanceTournamentGroups() {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['tournament', id] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
   });
 }

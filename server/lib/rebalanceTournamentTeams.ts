@@ -1,6 +1,8 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
+import { isTournamentStarted } from '../../lib/isTournamentStarted';
 import { normalizeGroupCount, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { generateClassificationMatches } from './classificationMatches';
 
 /**
  * Round-robin assign groupIndex (0..groupCount-1) by createdAt so each group stays within capacity.
@@ -8,16 +10,28 @@ import { normalizeGroupCount, validateTournamentGroups } from '../../lib/tournam
 export async function rebalanceTournamentTeams(
   db: Db,
   tournamentId: string
-): Promise<{ updated: number; teams: number }> {
+): Promise<{ updated: number; teams: number; matches?: { created: number; total: number } }> {
   const tournamentsCol = db.collection('tournaments');
   const teamsCol = db.collection('teams');
+  const matchesCol = db.collection('matches');
   const t = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
   if (!t) throw new Error('Tournament not found');
+  if (isTournamentStarted(t as { startedAt?: unknown; phase?: unknown })) {
+    throw new Error('Tournament already started');
+  }
+  const lockedMatches = await matchesCol.countDocuments({
+    tournamentId,
+    status: { $in: ['in_progress', 'completed'] },
+  });
+  if (lockedMatches > 0) {
+    throw new Error('Tournament already started');
+  }
   const maxT = Number((t as { maxTeams?: number }).maxTeams);
   const gc = normalizeGroupCount((t as { groupCount?: number }).groupCount);
   const vg = validateTournamentGroups(maxT, gc);
   if (!vg.ok) throw new Error('Invalid tournament group configuration');
 
+  const existingClassificationMatches = await matchesCol.countDocuments({ tournamentId, stage: 'classification' });
   const teams = await teamsCol.find({ tournamentId }).sort({ createdAt: 1, _id: 1 }).toArray();
   const now = new Date().toISOString();
   let updated = 0;
@@ -30,5 +44,22 @@ export async function rebalanceTournamentTeams(
       updated++;
     }
   }
-  return { updated, teams: teams.length };
+  if (existingClassificationMatches === 0) {
+    return { updated, teams: teams.length };
+  }
+
+  await matchesCol.deleteMany({ tournamentId, stage: 'category' });
+  await matchesCol.deleteMany({ tournamentId, stage: 'classification' });
+  await teamsCol.updateMany({ tournamentId }, { $unset: { category: '' } });
+  await tournamentsCol.updateOne(
+    { _id: new ObjectId(tournamentId) },
+    { $unset: { categoriesSnapshot: '', classificationSnapshot: '' }, $set: { updatedAt: now } }
+  );
+
+  const matchesPerOpponentRaw = Number((t as { classificationMatchesPerOpponent?: unknown }).classificationMatchesPerOpponent ?? 1);
+  const matchesPerOpponent = Math.max(1, Math.min(5, Math.floor(matchesPerOpponentRaw) || 1));
+  const pointsToWin = Math.max(1, Math.min(99, Number((t as { pointsToWin?: unknown }).pointsToWin ?? 21) || 21));
+  const setsPerMatch = Math.max(1, Math.min(7, Number((t as { setsPerMatch?: unknown }).setsPerMatch ?? 1) || 1));
+  const matches = await generateClassificationMatches(db, tournamentId, { matchesPerOpponent, pointsToWin, setsPerMatch });
+  return { updated, teams: teams.length, matches };
 }

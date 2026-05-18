@@ -115,7 +115,7 @@ export const tournamentsApi = {
     }),
 
   rebalanceTeams: (id: string) =>
-    apiRequest<{ updated: number; teams: number }>(`/api/tournaments/${id}`, {
+    apiRequest<{ updated: number; teams: number; matches?: { created: number; total: number } }>(`/api/tournaments/${id}`, {
       method: 'POST',
       body: JSON.stringify({ action: 'rebalanceGroups' }),
     }),
