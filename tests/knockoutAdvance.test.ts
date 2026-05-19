@@ -106,7 +106,7 @@ describe('recomputeCategoryBracketAfterWinnerChange', () => {
     expect(voidBets).toHaveBeenCalledOnce();
     const [filter, update] = voidBets.mock.calls[0]!;
     expect(filter).toMatchObject({ matchId: { $in: expect.arrayContaining([sf1Id, finalId]) } });
-    expect(String(filter.tournamentId)).toContain(tournamentId);
+    expect(filter.tournamentId).toMatchObject({ $in: expect.arrayContaining([tournamentId]) });
     expect(update).toMatchObject({ $set: { status: 'void', pointsAwarded: 0 } });
   });
 });
