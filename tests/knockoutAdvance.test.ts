@@ -103,9 +103,10 @@ describe('recomputeCategoryBracketAfterWinnerChange', () => {
     });
     expect(byId.get(finalId)?.teamAId).toBeUndefined();
     expect(byId.get(finalId)?.winnerId).toBeUndefined();
-    expect(voidBets).toHaveBeenCalledWith(
-      expect.objectContaining({ tournamentId, matchId: { $in: expect.arrayContaining([sf1Id, finalId]) } }),
-      expect.any(Object)
-    );
+    expect(voidBets).toHaveBeenCalledOnce();
+    const [filter, update] = voidBets.mock.calls[0]!;
+    expect(filter).toMatchObject({ matchId: { $in: expect.arrayContaining([sf1Id, finalId]) } });
+    expect(String(filter.tournamentId)).toContain(tournamentId);
+    expect(update).toMatchObject({ $set: { status: 'void', pointsAwarded: 0 } });
   });
 });
