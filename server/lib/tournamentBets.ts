@@ -129,7 +129,10 @@ function computePointsForUserBets(args: {
 }
 
 /**
- * Recompute settlement for all bets on this match (completed → points; else → void).
+ * Recompute settlement for all bets on this match.
+ *
+ * In-progress/scheduled matches keep their bets pending; callers that intentionally
+ * invalidate a match (for example, bracket slot changes) must void those bets explicitly.
  */
 export async function settleBetsForMatch(db: Db, tournamentId: string, matchId: string): Promise<void> {
   await ensureTournamentBetIndexes(db);
@@ -147,10 +150,6 @@ export async function settleBetsForMatch(db: Db, tournamentId: string, matchId: 
   if (bets.length === 0) return;
 
   if (status !== 'completed') {
-    await c.updateMany(
-      { ...tidf, matchId },
-      { $set: { status: 'void', pointsAwarded: 0, settledAt: now, updatedAt: now } }
-    );
     return;
   }
 
@@ -195,6 +194,17 @@ export async function settleBetsForMatch(db: Db, tournamentId: string, matchId: 
       );
     }
   }
+}
+
+export async function voidBetsForMatches(db: Db, tournamentId: string, matchIds: string[]): Promise<void> {
+  await ensureTournamentBetIndexes(db);
+  const ids = [...new Set(matchIds.map((x) => String(x ?? '').trim()).filter((x) => x && ObjectId.isValid(x)))];
+  if (ids.length === 0) return;
+  const now = new Date().toISOString();
+  await db.collection(COL).updateMany(
+    { ...tournamentIdMongoFilter(tournamentId), matchId: { $in: ids } },
+    { $set: { status: 'void', pointsAwarded: 0, settledAt: now, updatedAt: now } }
+  );
 }
 
 export async function placeTournamentBet(
