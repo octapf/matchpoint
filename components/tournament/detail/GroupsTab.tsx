@@ -118,7 +118,9 @@ export function GroupsTab({
    * create groups or random reorganize. Random reorganize stays available from the header menu.
    */
   const groupCtaKind: 'distribute' | 'reorganize' | 'rebalance' | null = offerGroupRebalance
-    ? 'rebalance'
+    ? primaryGroupAction == null
+      ? null
+      : 'rebalance'
     : primaryGroupAction === 'distribute'
       ? 'distribute'
       : primaryGroupAction === 'reorganize'
