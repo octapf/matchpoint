@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
+import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 
 /**
  * Sets tournament `status` to `open` or `full` from **team** count vs `maxTeams`.
@@ -16,7 +17,7 @@ export async function syncTournamentOpenFullStatus(db: Db, tournamentId: string)
   if (doc.status === 'cancelled') return;
 
   const teamsCol = db.collection('teams');
-  const count = await teamsCol.countDocuments({ tournamentId });
+  const count = await teamsCol.countDocuments(tournamentIdMongoFilter(tournamentId));
   const cap = Math.max(2, Math.floor(Number(doc.maxTeams ?? 16)));
   const next: 'open' | 'full' = count >= cap ? 'full' : 'open';
 

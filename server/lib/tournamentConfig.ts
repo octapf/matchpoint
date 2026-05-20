@@ -68,3 +68,30 @@ export function deriveTournamentGroupConfig(doc: { maxTeams?: unknown; groupCoun
   };
 }
 
+export function divisionIndexForTournamentDivision(
+  cfg: Pick<TournamentGroupConfig, 'divisions' | 'divisionCount'>,
+  division: TournamentDivision | string | null | undefined
+): number {
+  if (cfg.divisionCount <= 1) return 0;
+  const clean = typeof division === 'string' ? division.trim() : '';
+  const idx = cfg.divisions.findIndex((d) => d === clean);
+  return idx >= 0 ? idx : 0;
+}
+
+export function groupIndicesForDivisionIndex(
+  cfg: Pick<TournamentGroupConfig, 'divisionCount' | 'groupsPerDivision' | 'divisionGroupOffset'>,
+  divisionIndex: number
+): number[] {
+  const di = Math.min(cfg.divisionCount - 1, Math.max(0, Math.floor(divisionIndex)));
+  const base = cfg.divisionGroupOffset(di);
+  const count = cfg.groupsPerDivision(di);
+  return Array.from({ length: Math.max(0, count) }, (_, i) => base + i);
+}
+
+export function groupIndicesForTournamentDivision(
+  cfg: TournamentGroupConfig,
+  division: TournamentDivision | string | null | undefined
+): number[] {
+  return groupIndicesForDivisionIndex(cfg, divisionIndexForTournamentDivision(cfg, division));
+}
+

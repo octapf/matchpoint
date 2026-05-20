@@ -39,6 +39,11 @@ export default function TournamentGuestPlayersScreen() {
   const { data: tournament, isLoading } = useTournament(id);
   const canManage =
     !!tournament && !!userId && ((tournament.organizerIds ?? []).includes(userId) || user?.role === 'admin');
+  const tournamentStarted =
+    !!(tournament as { startedAt?: unknown } | undefined)?.startedAt ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'classification' ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'categories' ||
+    (tournament as { phase?: unknown } | undefined)?.phase === 'completed';
 
   const guests = tournament?.guestPlayers ?? [];
   const sortedGuests = useMemo(
@@ -374,7 +379,7 @@ export default function TournamentGuestPlayersScreen() {
                       guest={g}
                       t={t}
                       onEdit={() => router.push(`/tournament/${id}/guest-players?guestId=${gid}` as never)}
-                      onDelete={() => confirmDeleteGuest(g)}
+                      onDelete={tournamentStarted ? undefined : () => confirmDeleteGuest(g)}
                       disabled={guestMutation.isPending}
                       compact
                     />

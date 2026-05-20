@@ -72,6 +72,13 @@ export async function recomputeCategoryBracketAfterWinnerChange(
 
   const key = (x: unknown) => String(x ?? '').trim();
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
+  const feedersFor = (m: any): string[] =>
+    [
+      key(m.advanceTeamAFromMatchId),
+      key(m.advanceTeamBFromMatchId),
+      key(m.advanceTeamALoserFromMatchId),
+      key(m.advanceTeamBLoserFromMatchId),
+    ].filter(Boolean);
 
   // Compute (winner, loser) for every completed match with a valid winner.
   const winnerByMatchId = new Map<string, string>();
@@ -87,7 +94,7 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
-  const bulk: any[] = [];
+  const invalidated = new Set<string>();
   for (const m of matches as any[]) {
     const mid = idStr(m);
     if (!mid) continue;
@@ -106,8 +113,43 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     const desiredB =
       advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
 
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+    const directlyDependsOnEdited = feedersFor(m).includes(editedMatchId);
+    if (directlyDependsOnEdited || desiredA !== curA || desiredB !== curB) {
+      invalidated.add(mid);
+    }
+  }
+
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId || invalidated.has(mid)) continue;
+      if (feedersFor(m).some((feeder) => invalidated.has(feeder))) {
+        invalidated.add(mid);
+        grew = true;
+      }
+    }
+  }
+
+  const resolveWinner = (matchId: string): string => (invalidated.has(matchId) ? '' : winnerByMatchId.get(matchId) ?? '');
+  const resolveLoser = (matchId: string): string => (invalidated.has(matchId) ? '' : loserByMatchId.get(matchId) ?? '');
+
+  const bulk: any[] = [];
+  for (const m of matches as any[]) {
+    const mid = idStr(m);
+    if (!mid || !invalidated.has(mid)) continue;
+
+    const advAW = key(m.advanceTeamAFromMatchId);
+    const advBW = key(m.advanceTeamBFromMatchId);
+    const advAL = key(m.advanceTeamALoserFromMatchId);
+    const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+    const curA = key(m.teamAId);
+    const curB = key(m.teamBId);
+
+    const desiredA = advAW ? resolveWinner(advAW) : advAL ? resolveLoser(advAL) : curA;
+    const desiredB = advBW ? resolveWinner(advBW) : advBL ? resolveLoser(advBL) : curB;
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {

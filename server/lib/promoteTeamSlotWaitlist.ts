@@ -7,6 +7,7 @@ import { insertTeamWithEntriesTx } from './insertTeamWithEntriesTx';
 import { tournamentIdMongoFilter } from './mongoTournamentIdFilter';
 import { notifyMany } from './notify';
 import { syncTournamentOpenFullStatus } from './tournamentStatusSync';
+import { deriveTournamentGroupConfig, groupIndicesForTournamentDivision } from './tournamentConfig';
 import type { TournamentDivision } from '../../types';
 
 function tournamentStartedDoc(t: Record<string, unknown>): boolean {
@@ -55,10 +56,14 @@ export async function promoteNextTeamFromSlotWaitlist(db: Db, tournamentId: stri
     return teamsCol.countDocuments({ ...tidf, division, groupIndex: gi });
   };
 
-  const pickLeastLoadedGroupForDivision = async (division: TournamentDivision): Promise<number> => {
-    let best = 0;
+  const groupCfg = deriveTournamentGroupConfig(tournament as { maxTeams?: unknown; groupCount?: unknown; divisions?: unknown });
+
+  const pickLeastLoadedGroupForDivision = async (division: TournamentDivision): Promise<number | null> => {
+    const candidates = groupIndicesForTournamentDivision(groupCfg, division);
+    if (candidates.length === 0) return null;
+    let best = candidates[0]!;
     let bestCount = Infinity;
-    for (let i = 0; i < vg.groupCount; i++) {
+    for (const i of candidates) {
       const c = await countTeamsInGroupForDivision(division, i);
       if (c < bestCount) {
         bestCount = c;
@@ -157,9 +162,11 @@ export async function promoteNextTeamFromSlotWaitlist(db: Db, tournamentId: stri
     let groupIndex: number | null = null;
     if (allowGroups) {
       const least = await pickLeastLoadedGroupForDivision(pairDivision);
-      const inTarget = await countTeamsInGroupForDivision(pairDivision, least);
-      // If somehow full (shouldn't happen), fall back to null; organizer can rebalance.
-      groupIndex = inTarget < vg.teamsPerGroup ? least : null;
+      if (least != null) {
+        const inTarget = await countTeamsInGroupForDivision(pairDivision, least);
+        // If somehow full (shouldn't happen), fall back to null; organizer can rebalance.
+        groupIndex = inTarget < vg.teamsPerGroup ? least : null;
+      }
     }
 
     const now = new Date().toISOString();
