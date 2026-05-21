@@ -398,8 +398,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'rebalanceGroups') {
-        const result = await rebalanceTournamentTeams(db, id);
-        return corsRes.status(200).json(result);
+        try {
+          const result = await rebalanceTournamentTeams(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not rebalance groups';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'start') {

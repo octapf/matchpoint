@@ -87,27 +87,56 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
+  const resetMatchIds = new Set<string>();
+  const desiredSlotsByMatchId = new Map<string, { teamAId: string; teamBId: string }>();
+  let changed = true;
+
+  // A reset removes that match's winner/loser as valid inputs for later rounds, so keep
+  // iterating until every downstream dependency has seen the invalidation.
+  while (changed) {
+    changed = false;
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid) continue;
+      if (mid === editedMatchId) continue;
+
+      const advAW = key(m.advanceTeamAFromMatchId);
+      const advBW = key(m.advanceTeamBFromMatchId);
+      const advAL = key(m.advanceTeamALoserFromMatchId);
+      const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+      const currentDesired = desiredSlotsByMatchId.get(mid);
+      const curA = currentDesired?.teamAId ?? key(m.teamAId);
+      const curB = currentDesired?.teamBId ?? key(m.teamBId);
+
+      const desiredA =
+        advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
+      const desiredB =
+        advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
+
+      const slotChanged = desiredA !== curA || desiredB !== curB;
+      if (!slotChanged) continue;
+
+      desiredSlotsByMatchId.set(mid, { teamAId: desiredA, teamBId: desiredB });
+      changed = true;
+
+      if (!resetMatchIds.has(mid)) {
+        resetMatchIds.add(mid);
+        winnerByMatchId.delete(mid);
+        loserByMatchId.delete(mid);
+      }
+    }
+  }
+
   const bulk: any[] = [];
   for (const m of matches as any[]) {
     const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
+    if (!mid || !resetMatchIds.has(mid)) continue;
 
-    const advAW = key(m.advanceTeamAFromMatchId);
-    const advBW = key(m.advanceTeamBFromMatchId);
-    const advAL = key(m.advanceTeamALoserFromMatchId);
-    const advBL = key(m.advanceTeamBLoserFromMatchId);
-
-    const curA = key(m.teamAId);
-    const curB = key(m.teamBId);
-
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+    const desired = desiredSlotsByMatchId.get(mid) ?? {
+      teamAId: key(m.teamAId),
+      teamBId: key(m.teamBId),
+    };
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
@@ -127,9 +156,9 @@ export async function recomputeCategoryBracketAfterWinnerChange(
       serveIndex: '',
     };
 
-    if (desiredA) $set.teamAId = desiredA;
+    if (desired.teamAId) $set.teamAId = desired.teamAId;
     else $unset.teamAId = '';
-    if (desiredB) $set.teamBId = desiredB;
+    if (desired.teamBId) $set.teamBId = desired.teamBId;
     else $unset.teamBId = '';
 
     bulk.push({
