@@ -11,7 +11,6 @@ export async function rebalanceTournamentTeams(
   tournamentId: string
 ): Promise<{ updated: number; teams: number }> {
   const tournamentsCol = db.collection('tournaments');
-  const teamsCol = db.collection('teams');
   const t = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
   if (!t) throw new Error('Tournament not found');
   if (isTournamentStarted(t as { startedAt?: unknown; phase?: unknown })) {
@@ -31,6 +30,7 @@ export async function rebalanceTournamentTeams(
   const vg = validateTournamentGroups(maxT, gc);
   if (!vg.ok) throw new Error('Invalid tournament group configuration');
 
+  const teamsCol = db.collection('teams');
   const teams = await teamsCol.find({ tournamentId }).sort({ createdAt: 1, _id: 1 }).toArray();
   const now = new Date().toISOString();
   let updated = 0;
