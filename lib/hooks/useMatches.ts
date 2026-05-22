@@ -232,6 +232,7 @@ export function useUpdateMatch() {
     },
     onSuccess: (data) => {
       upsertMatchFromServer(queryClient, data);
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
   });
 }
