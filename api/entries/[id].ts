@@ -186,6 +186,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'Tournament already started' });
       }
 
+      let organizerRemovalUpdate: {
+        organizerIds: string[];
+        organizerOnlyIds: string[];
+        organizerOnlyCovers: Record<string, unknown>;
+      } | null = null;
+
       if (selfRemove) {
         const orgs = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
         if (orgs.includes(entryUserId)) {
@@ -237,53 +243,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (nextKick.length === 0 && !actorIsAdmin) {
             return corsRes.status(400).json({ error: 'Cannot remove the last organizer' });
           }
-          if (nextKick.length > 0) {
-            const mergedKick = mergedCoverageAfterRemovingOrganizer(
-              tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
-              nextKick,
-              entryUserId
-            );
-            const covKick = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedKick);
-            if (!covKick.ok) {
-              return corsRes.status(400).json({ error: covKick.error });
-            }
+          let finalOrgs = nextKick;
+          if (finalOrgs.length === 0 && actorIsAdmin) {
+            finalOrgs = [actingUserId];
           }
+          const mergedKick = mergedCoverageAfterRemovingOrganizer(
+            tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
+            finalOrgs,
+            entryUserId
+          );
+          const covKick = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedKick);
+          if (!covKick.ok) {
+            return corsRes.status(400).json({ error: covKick.error });
+          }
+          organizerRemovalUpdate = {
+            organizerIds: finalOrgs,
+            organizerOnlyIds: mergedKick.organizerOnlyIds,
+            organizerOnlyCovers: mergedKick.organizerOnlyCovers,
+          };
         }
       }
 
       await removePlayerFromTournament(db, tournamentId, entryUserId);
       await syncTournamentOpenFullStatus(db, tournamentId);
 
-      if (!selfRemove) {
-        const orgsAfter = ((tournament as { organizerIds?: string[] }).organizerIds ?? []) as string[];
-        if (orgsAfter.includes(entryUserId)) {
-          const next = orgsAfter.filter((o) => o !== entryUserId);
-          const now = new Date().toISOString();
-          let finalOrgs = next;
-          if (finalOrgs.length === 0 && actorIsAdmin) {
-            finalOrgs = [actingUserId];
+      if (organizerRemovalUpdate) {
+        await tournamentsCol.updateOne(
+          { _id: new ObjectId(tournamentId) },
+          {
+            $set: {
+              ...organizerRemovalUpdate,
+              updatedAt: new Date().toISOString(),
+            },
           }
-          const mergedFinal = mergedCoverageAfterRemovingOrganizer(
-            tournament as { divisions?: unknown; organizerOnlyIds?: unknown; organizerOnlyCovers?: unknown },
-            finalOrgs,
-            entryUserId
-          );
-          const covFinal = await assertOrganizersCoverAllDivisions(db, tournamentId, mergedFinal);
-          if (!covFinal.ok) {
-            return corsRes.status(400).json({ error: covFinal.error });
-          }
-          await tournamentsCol.updateOne(
-            { _id: new ObjectId(tournamentId) },
-            {
-              $set: {
-                organizerIds: finalOrgs,
-                organizerOnlyIds: mergedFinal.organizerOnlyIds,
-                organizerOnlyCovers: mergedFinal.organizerOnlyCovers,
-                updatedAt: now,
-              },
-            }
-          );
-        }
+        );
       }
 
       return corsRes.status(204).end();

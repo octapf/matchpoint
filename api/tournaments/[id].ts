@@ -576,6 +576,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const mode = body?.mode === 'dissolveToWaitlist' || body?.mode === 'removeFromTournament' ? body.mode : 'removeFromTournament';
+        const organizerIdsForRemoval = Array.isArray((cur as { organizerIds?: unknown }).organizerIds)
+          ? ((cur as { organizerIds: string[] }).organizerIds)
+          : [];
+        if (mode === 'removeFromTournament' && organizerIdsForRemoval.includes(uid)) {
+          return corsRes.status(400).json({ error: 'Remove organizer role before removing this player' });
+        }
         // organizer/admin only (enforced by action guard above)
         await removePlayerFromTournament(db, id, uid, { leaveTournament: mode === 'removeFromTournament' });
         await syncTournamentOpenFullStatus(db, id);
@@ -602,6 +608,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
+        }
+        const started =
+          !!(cur as { startedAt?: unknown }).startedAt ||
+          (cur as { phase?: unknown }).phase === 'classification' ||
+          (cur as { phase?: unknown }).phase === 'categories' ||
+          (cur as { phase?: unknown }).phase === 'completed';
+        if (started) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const r = await deleteGuestPlayer(db, id, gid);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
@@ -865,13 +879,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
         // Category bracket propagation: ensure downstream slots update even when editing a previously completed match.
+        let resetCategoryMatchIds: string[] = [];
         if (nextStatusDoc === 'completed' && stage === 'category' && hasTeamA && hasTeamB) {
           const winnerId = String((updated as any).winnerId ?? '');
           if (winnerId) {
             const loserId = winnerId === teamAId ? teamBId : teamAId;
-            const winnerChanged = !!prevWinnerId && prevWinnerId !== winnerId;
+            const winnerChanged = prevStatus === 'completed' && prevWinnerId !== winnerId;
             if (winnerChanged) {
-              await recomputeCategoryBracketAfterWinnerChange(db, id, division, category, now, matchId);
+              resetCategoryMatchIds = await recomputeCategoryBracketAfterWinnerChange(db, id, division, category, now, matchId);
             } else {
               await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
             }
@@ -895,6 +910,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           await settleBetsForMatch(db, id, matchId);
+          for (const resetMatchId of resetCategoryMatchIds) {
+            await settleBetsForMatch(db, id, resetMatchId);
+          }
         } catch (betErr) {
           console.error('[tournaments] settleBetsForMatch', betErr);
         }
@@ -1945,7 +1963,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         update.organizerOnlyIds = nextOnly;
         update.organizerOnlyCovers = nextCovers;
-        nextOnlyForRemoval = nextOnly;
+        nextOnlyForRemoval = nextOnly.filter((uid) => !prevOnlyRaw.includes(uid) && entryUserIds.has(uid));
+        if (started && nextOnlyForRemoval.length > 0) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
       }
 
       update.updatedAt = new Date().toISOString();

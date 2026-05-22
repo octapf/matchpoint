@@ -45,7 +45,7 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   category: string,
   updatedAtIso: string,
   editedMatchId: string
-): Promise<void> {
+): Promise<string[]> {
   const col = db.collection('matches');
   const matches = await col
     .find(
@@ -87,11 +87,44 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
+  // Any match fed by the edited match must be replayed; so must matches fed by those now-invalid matches.
+  // Compute that closure first so deeper rounds do not keep stale winners from the original snapshot.
+  const invalidatedMatchIds = new Set<string>([editedMatchId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || invalidatedMatchIds.has(mid)) continue;
+      const feeders = [
+        key(m.advanceTeamAFromMatchId),
+        key(m.advanceTeamBFromMatchId),
+        key(m.advanceTeamALoserFromMatchId),
+        key(m.advanceTeamBLoserFromMatchId),
+      ].filter(Boolean);
+      if (feeders.some((fid) => invalidatedMatchIds.has(fid))) {
+        invalidatedMatchIds.add(mid);
+        changed = true;
+      }
+    }
+  }
+
+  const feederValue = (feederId: string, kind: 'winner' | 'loser'): string => {
+    if (!feederId) return '';
+    // The edited match has already been saved with its new result; downstream invalidated matches have not.
+    if (feederId !== editedMatchId && invalidatedMatchIds.has(feederId)) return '';
+    return kind === 'winner'
+      ? winnerByMatchId.get(feederId) ?? ''
+      : loserByMatchId.get(feederId) ?? '';
+  };
+
   const bulk: any[] = [];
+  const resetMatchIds: string[] = [];
   for (const m of matches as any[]) {
     const mid = idStr(m);
     if (!mid) continue;
     if (mid === editedMatchId) continue;
+    if (!invalidatedMatchIds.has(mid)) continue;
 
     const advAW = key(m.advanceTeamAFromMatchId);
     const advBW = key(m.advanceTeamBFromMatchId);
@@ -102,12 +135,9 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     const curB = key(m.teamBId);
 
     const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
+      advAW ? feederValue(advAW, 'winner') : advAL ? feederValue(advAL, 'loser') : curA;
     const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+      advBW ? feederValue(advBW, 'winner') : advBL ? feederValue(advBL, 'loser') : curB;
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
@@ -138,9 +168,11 @@ export async function recomputeCategoryBracketAfterWinnerChange(
         update: { $set, $unset },
       },
     });
+    resetMatchIds.push(mid);
   }
 
   if (bulk.length) {
     await col.bulkWrite(bulk, { ordered: false });
   }
+  return resetMatchIds;
 }
