@@ -73,26 +73,28 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   const key = (x: unknown) => String(x ?? '').trim();
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
 
-  // Compute (winner, loser) for every completed match with a valid winner.
-  const winnerByMatchId = new Map<string, string>();
-  const loserByMatchId = new Map<string, string>();
-  for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
-    const mid = idStr(m);
-    const w = key(m.winnerId);
-    const a = key(m.teamAId);
-    const b = key(m.teamBId);
-    if (!mid || !w || (w !== a && w !== b)) continue;
-    winnerByMatchId.set(mid, w);
-    loserByMatchId.set(mid, w === a ? b : a);
-  }
+  const buildCompletedMaps = (invalidMatchIds: Set<string>) => {
+    const winnerByMatchId = new Map<string, string>();
+    const loserByMatchId = new Map<string, string>();
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || invalidMatchIds.has(mid)) continue;
+      if (key(m.status) !== 'completed') continue;
+      const w = key(m.winnerId);
+      const a = key(m.teamAId);
+      const b = key(m.teamBId);
+      if (!w || (w !== a && w !== b)) continue;
+      winnerByMatchId.set(mid, w);
+      loserByMatchId.set(mid, w === a ? b : a);
+    }
+    return { winnerByMatchId, loserByMatchId };
+  };
 
-  const bulk: any[] = [];
-  for (const m of matches as any[]) {
-    const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
-
+  const desiredSlotsFor = (
+    m: any,
+    winnerByMatchId: Map<string, string>,
+    loserByMatchId: Map<string, string>
+  ) => {
     const advAW = key(m.advanceTeamAFromMatchId);
     const advBW = key(m.advanceTeamBFromMatchId);
     const advAL = key(m.advanceTeamALoserFromMatchId);
@@ -101,13 +103,38 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     const curA = key(m.teamAId);
     const curB = key(m.teamBId);
 
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
+    return {
+      desiredA: advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA,
+      desiredB: advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB,
+      curA,
+      curB,
+    };
+  };
 
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+  const invalidMatchIds = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const { winnerByMatchId, loserByMatchId } = buildCompletedMaps(invalidMatchIds);
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId || invalidMatchIds.has(mid)) continue;
+
+      const { desiredA, desiredB, curA, curB } = desiredSlotsFor(m, winnerByMatchId, loserByMatchId);
+      if (desiredA !== curA || desiredB !== curB) {
+        invalidMatchIds.add(mid);
+        changed = true;
+      }
+    }
+  }
+
+  const { winnerByMatchId, loserByMatchId } = buildCompletedMaps(invalidMatchIds);
+  const bulk: any[] = [];
+  for (const m of matches as any[]) {
+    const mid = idStr(m);
+    if (!mid || !invalidMatchIds.has(mid)) continue;
+
+    const { desiredA, desiredB } = desiredSlotsFor(m, winnerByMatchId, loserByMatchId);
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
