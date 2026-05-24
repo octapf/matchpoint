@@ -398,8 +398,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'rebalanceGroups') {
-        const result = await rebalanceTournamentTeams(db, id);
-        return corsRes.status(200).json(result);
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+        try {
+          const result = await rebalanceTournamentTeams(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not rebalance groups';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'start') {
@@ -567,12 +575,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!uid || !ObjectId.isValid(uid)) {
           return corsRes.status(400).json({ error: 'Invalid userId' });
         }
-        const started =
-          !!(cur as { startedAt?: unknown }).startedAt ||
-          (cur as { phase?: unknown }).phase === 'classification' ||
-          (cur as { phase?: unknown }).phase === 'categories' ||
-          (cur as { phase?: unknown }).phase === 'completed';
-        if (started) {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const mode = body?.mode === 'dissolveToWaitlist' || body?.mode === 'removeFromTournament' ? body.mode : 'removeFromTournament';
@@ -603,18 +606,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
         }
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const r = await deleteGuestPlayer(db, id, gid);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(200).json({ ok: true });
       }
 
       if (action === 'deleteAllGuestPlayers') {
-        const started =
-          !!(cur as { startedAt?: unknown }).startedAt ||
-          (cur as { phase?: unknown }).phase === 'classification' ||
-          (cur as { phase?: unknown }).phase === 'categories' ||
-          (cur as { phase?: unknown }).phase === 'completed';
-        if (started) {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const r = await deleteAllGuestPlayers(db, id);
