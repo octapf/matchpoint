@@ -415,8 +415,8 @@ export default function TournamentDetailScreen() {
   }, [tournament]);
 
   const offerGroupRebalance = useMemo(
-    () => shouldOfferGroupRebalance(teams, groupMeta.groupCount, groupMeta.teamsPerGroup),
-    [teams, groupMeta.groupCount, groupMeta.teamsPerGroup]
+    () => !isTournamentStarted(tournament ?? null) && shouldOfferGroupRebalance(teams, groupMeta.groupCount, groupMeta.teamsPerGroup),
+    [tournament, teams, groupMeta.groupCount, groupMeta.teamsPerGroup]
   );
 
   // Must be declared before any early `return` so hook order stays stable.

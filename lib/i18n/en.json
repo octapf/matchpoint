@@ -74,6 +74,7 @@
     "guestPlayerNotFound": "Guest player not found.",
     "guestInvalidId": "Invalid guest id.",
     "guestNoFieldsToUpdate": "No changes to save.",
+    "guestDeleteLockedAfterStart": "Guest players cannot be deleted after the tournament has started.",
     "guestCreateFailed": "Could not create the guest player. Try again.",
     "bettingWinnerFirst": "Pick a winner for this match before placing a score bet.",
     "bettingScoreRange": "Each score must be between 0 and 35.",

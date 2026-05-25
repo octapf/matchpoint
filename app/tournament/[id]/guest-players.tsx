@@ -21,6 +21,7 @@ import { useUserStore } from '@/store/useUserStore';
 import { useTranslation } from '@/lib/i18n';
 import { alertApiError } from '@/lib/utils/apiError';
 import { shouldUseDevMocks } from '@/lib/config';
+import { isTournamentStarted } from '@/lib/isTournamentStarted';
 import { randomHexObjectId24 } from '@/lib/mongoId';
 import type { Gender, Tournament, TournamentGuestPlayer } from '@/types';
 
@@ -39,6 +40,7 @@ export default function TournamentGuestPlayersScreen() {
   const { data: tournament, isLoading } = useTournament(id);
   const canManage =
     !!tournament && !!userId && ((tournament.organizerIds ?? []).includes(userId) || user?.role === 'admin');
+  const tournamentStarted = isTournamentStarted(tournament ?? null);
 
   const guests = tournament?.guestPlayers ?? [];
   const sortedGuests = useMemo(
@@ -210,6 +212,9 @@ export default function TournamentGuestPlayersScreen() {
   };
 
   const confirmDeleteGuest = (g: TournamentGuestPlayer) => {
+    if (tournamentStarted) {
+      return Alert.alert(t('common.error'), t('errors.guestDeleteLockedAfterStart'));
+    }
     Alert.alert(t('tournamentDetail.guestDeleteTitle'), t('tournamentDetail.guestDeleteConfirm', { name: g.displayName }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -374,7 +379,7 @@ export default function TournamentGuestPlayersScreen() {
                       guest={g}
                       t={t}
                       onEdit={() => router.push(`/tournament/${id}/guest-players?guestId=${gid}` as never)}
-                      onDelete={() => confirmDeleteGuest(g)}
+                      onDelete={tournamentStarted ? undefined : () => confirmDeleteGuest(g)}
                       disabled={guestMutation.isPending}
                       compact
                     />
