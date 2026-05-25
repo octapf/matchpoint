@@ -73,6 +73,7 @@
     "guestPlayerNotFound": "Ospite non trovato.",
     "guestInvalidId": "Id ospite non valido.",
     "guestNoFieldsToUpdate": "Nessuna modifica da salvare.",
+    "guestDeleteLockedAfterStart": "Non puoi eliminare ospiti dopo l'inizio del torneo.",
     "guestCreateFailed": "Impossibile creare l’ospite. Riprova.",
     "bettingWinnerFirst": "Scegli prima il vincitore di questa partita prima della scommessa sul punteggio.",
     "bettingScoreRange": "Ogni punteggio deve essere tra 0 e 35.",

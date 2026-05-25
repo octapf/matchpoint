@@ -5,6 +5,7 @@ import { teamPatchSchema } from '../../server/lib/schemas/teamPatch';
 import { withCors } from '../../server/lib/cors';
 import { isTournamentOrganizer } from '../../server/lib/organizer';
 import { isUserAdmin, loadActorUserWithAdminRefresh, resolveActorUserId } from '../../server/lib/auth';
+import { isTournamentStarted } from '../../lib/isTournamentStarted';
 import {
   normalizeGroupCount,
   tournamentAllowsManualGroupAssignment,
@@ -115,16 +116,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
 
-      const tournamentStartedPatch =
-        !!(tournament as { startedAt?: unknown }).startedAt ||
-        (tournament as { phase?: unknown }).phase === 'classification' ||
-        (tournament as { phase?: unknown }).phase === 'categories' ||
-        (tournament as { phase?: unknown }).phase === 'completed';
+      const tournamentStartedPatch = isTournamentStarted(tournament as { startedAt?: unknown; phase?: unknown } | null);
       if (update.name !== undefined && tournamentStartedPatch) {
         return corsRes.status(400).json({ error: 'Team name cannot be changed after the tournament has started' });
       }
       if (update.playerIds !== undefined && tournamentStartedPatch) {
         return corsRes.status(400).json({ error: 'Team roster cannot be changed after the tournament has started' });
+      }
+      if (update.groupIndex !== undefined && tournamentStartedPatch) {
+        return corsRes.status(400).json({ error: 'Team group cannot be changed after the tournament has started' });
       }
 
       if (update.groupIndex !== undefined) {
