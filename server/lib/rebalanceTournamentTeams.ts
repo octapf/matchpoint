@@ -11,7 +11,6 @@ export async function rebalanceTournamentTeams(
   tournamentId: string
 ): Promise<{ updated: number; teams: number }> {
   const tournamentsCol = db.collection('tournaments');
-  const teamsCol = db.collection('teams');
   const t = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
   if (!t) throw new Error('Tournament not found');
   if (isTournamentStarted(t as { startedAt?: unknown; phase?: unknown })) {
@@ -24,6 +23,7 @@ export async function rebalanceTournamentTeams(
   if (locked > 0) {
     throw new Error('Tournament has started');
   }
+  const teamsCol = db.collection('teams');
   const maxT = Number((t as { maxTeams?: number }).maxTeams);
   const gc = normalizeGroupCount((t as { groupCount?: number }).groupCount);
   const vg = validateTournamentGroups(maxT, gc);
