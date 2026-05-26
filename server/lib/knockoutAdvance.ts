@@ -73,42 +73,90 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   const key = (x: unknown) => String(x ?? '').trim();
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
 
-  // Compute (winner, loser) for every completed match with a valid winner.
-  const winnerByMatchId = new Map<string, string>();
-  const loserByMatchId = new Map<string, string>();
-  for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
+  const docs = (matches as any[]).map((m) => ({ ...m }));
+  const docById = new Map<string, any>();
+  for (const m of docs) {
     const mid = idStr(m);
-    const w = key(m.winnerId);
-    const a = key(m.teamAId);
-    const b = key(m.teamBId);
-    if (!mid || !w || (w !== a && w !== b)) continue;
-    winnerByMatchId.set(mid, w);
-    loserByMatchId.set(mid, w === a ? b : a);
+    if (mid) docById.set(mid, m);
+  }
+
+  const resetFields = (m: any) => {
+    m.status = 'scheduled';
+    delete m.winnerId;
+    delete m.pointsA;
+    delete m.pointsB;
+    delete m.setsWonA;
+    delete m.setsWonB;
+    delete m.startedAt;
+    delete m.completedAt;
+    delete m.durationSeconds;
+    delete m.scoreEvents;
+    delete m.lastPointAt;
+    delete m.refereeUserId;
+    delete m.refereeLockExpiresAt;
+    delete m.servingPlayerId;
+    delete m.serveIndex;
+  };
+
+  const winnerMaps = () => {
+    const winnerByMatchId = new Map<string, string>();
+    const loserByMatchId = new Map<string, string>();
+    for (const m of docs) {
+      if (key(m.status) !== 'completed') continue;
+      const mid = idStr(m);
+      const w = key(m.winnerId);
+      const a = key(m.teamAId);
+      const b = key(m.teamBId);
+      if (!mid || !w || (w !== a && w !== b)) continue;
+      winnerByMatchId.set(mid, w);
+      loserByMatchId.set(mid, w === a ? b : a);
+    }
+    return { winnerByMatchId, loserByMatchId };
+  };
+
+  const dirty = new Set<string>();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const { winnerByMatchId, loserByMatchId } = winnerMaps();
+
+    for (const m of docs) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId) continue;
+
+      const advAW = key(m.advanceTeamAFromMatchId);
+      const advBW = key(m.advanceTeamBFromMatchId);
+      const advAL = key(m.advanceTeamALoserFromMatchId);
+      const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+      const curA = key(m.teamAId);
+      const curB = key(m.teamBId);
+
+      const desiredA =
+        advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
+      const desiredB =
+        advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
+
+      const slotChanged = desiredA !== curA || desiredB !== curB;
+      if (!slotChanged) continue;
+
+      if (desiredA) m.teamAId = desiredA;
+      else delete m.teamAId;
+      if (desiredB) m.teamBId = desiredB;
+      else delete m.teamBId;
+      resetFields(m);
+      dirty.add(mid);
+      changed = true;
+    }
   }
 
   const bulk: any[] = [];
-  for (const m of matches as any[]) {
-    const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
-
-    const advAW = key(m.advanceTeamAFromMatchId);
-    const advBW = key(m.advanceTeamBFromMatchId);
-    const advAL = key(m.advanceTeamALoserFromMatchId);
-    const advBL = key(m.advanceTeamBLoserFromMatchId);
-
-    const curA = key(m.teamAId);
-    const curB = key(m.teamBId);
-
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
-
+  for (const mid of dirty) {
+    const m = docById.get(mid);
+    if (!m) continue;
+    const desiredA = key(m.teamAId);
+    const desiredB = key(m.teamBId);
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
       winnerId: '',
