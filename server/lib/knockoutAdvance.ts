@@ -45,7 +45,7 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   category: string,
   updatedAtIso: string,
   editedMatchId: string
-): Promise<void> {
+): Promise<string[]> {
   const col = db.collection('matches');
   const matches = await col
     .find(
@@ -73,41 +73,82 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   const key = (x: unknown) => String(x ?? '').trim();
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
 
-  // Compute (winner, loser) for every completed match with a valid winner.
-  const winnerByMatchId = new Map<string, string>();
-  const loserByMatchId = new Map<string, string>();
+  type MatchState = {
+    teamAId: string;
+    teamBId: string;
+    status: string;
+    winnerId: string;
+  };
+
+  const byId = new Map<string, MatchState>();
   for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
     const mid = idStr(m);
-    const w = key(m.winnerId);
-    const a = key(m.teamAId);
-    const b = key(m.teamBId);
-    if (!mid || !w || (w !== a && w !== b)) continue;
-    winnerByMatchId.set(mid, w);
-    loserByMatchId.set(mid, w === a ? b : a);
+    if (!mid) continue;
+    byId.set(mid, {
+      teamAId: key(m.teamAId),
+      teamBId: key(m.teamBId),
+      status: key(m.status),
+      winnerId: key(m.winnerId),
+    });
+  }
+
+  const completedResultFor = (matchId: string): { winnerId: string; loserId: string } | null => {
+    const state = byId.get(matchId);
+    if (!state || state.status !== 'completed') return null;
+    const { teamAId, teamBId, winnerId } = state;
+    if (!winnerId || (winnerId !== teamAId && winnerId !== teamBId)) return null;
+    return { winnerId, loserId: winnerId === teamAId ? teamBId : teamAId };
+  };
+
+  const resetIds = new Set<string>();
+  let changed = true;
+  let pass = 0;
+  const maxPasses = Math.max(1, matches.length + 1);
+  while (changed && pass < maxPasses) {
+    changed = false;
+    pass += 1;
+
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId) continue;
+      const state = byId.get(mid);
+      if (!state) continue;
+
+      const advAW = key(m.advanceTeamAFromMatchId);
+      const advBW = key(m.advanceTeamBFromMatchId);
+      const advAL = key(m.advanceTeamALoserFromMatchId);
+      const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+      const desiredA = advAW
+        ? completedResultFor(advAW)?.winnerId ?? ''
+        : advAL
+          ? completedResultFor(advAL)?.loserId ?? ''
+          : state.teamAId;
+      const desiredB = advBW
+        ? completedResultFor(advBW)?.winnerId ?? ''
+        : advBL
+          ? completedResultFor(advBL)?.loserId ?? ''
+          : state.teamBId;
+
+      const slotChanged = desiredA !== state.teamAId || desiredB !== state.teamBId;
+      if (!slotChanged) continue;
+
+      state.teamAId = desiredA;
+      state.teamBId = desiredB;
+      state.status = 'scheduled';
+      state.winnerId = '';
+      resetIds.add(mid);
+      changed = true;
+    }
   }
 
   const bulk: any[] = [];
   for (const m of matches as any[]) {
     const mid = idStr(m);
     if (!mid) continue;
-    if (mid === editedMatchId) continue;
-
-    const advAW = key(m.advanceTeamAFromMatchId);
-    const advBW = key(m.advanceTeamBFromMatchId);
-    const advAL = key(m.advanceTeamALoserFromMatchId);
-    const advBL = key(m.advanceTeamBLoserFromMatchId);
-
-    const curA = key(m.teamAId);
-    const curB = key(m.teamBId);
-
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+    if (!resetIds.has(mid)) continue;
+    const state = byId.get(mid);
+    if (!state) continue;
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
@@ -127,9 +168,9 @@ export async function recomputeCategoryBracketAfterWinnerChange(
       serveIndex: '',
     };
 
-    if (desiredA) $set.teamAId = desiredA;
+    if (state.teamAId) $set.teamAId = state.teamAId;
     else $unset.teamAId = '';
-    if (desiredB) $set.teamBId = desiredB;
+    if (state.teamBId) $set.teamBId = state.teamBId;
     else $unset.teamBId = '';
 
     bulk.push({
@@ -143,4 +184,5 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   if (bulk.length) {
     await col.bulkWrite(bulk, { ordered: false });
   }
+  return [...resetIds];
 }
