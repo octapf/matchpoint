@@ -865,13 +865,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
         // Category bracket propagation: ensure downstream slots update even when editing a previously completed match.
+        let resetCategoryMatchIds: string[] = [];
         if (nextStatusDoc === 'completed' && stage === 'category' && hasTeamA && hasTeamB) {
           const winnerId = String((updated as any).winnerId ?? '');
           if (winnerId) {
             const loserId = winnerId === teamAId ? teamBId : teamAId;
             const winnerChanged = !!prevWinnerId && prevWinnerId !== winnerId;
             if (winnerChanged) {
-              await recomputeCategoryBracketAfterWinnerChange(db, id, division, category, now, matchId);
+              resetCategoryMatchIds = await recomputeCategoryBracketAfterWinnerChange(db, id, division, category, now, matchId);
             } else {
               await applyCategoryKnockoutAdvances(db, id, matchId, winnerId, loserId, now);
             }
@@ -893,6 +894,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
+        for (const resetMatchId of resetCategoryMatchIds) {
+          try {
+            await settleBetsForMatch(db, id, resetMatchId);
+          } catch (betErr) {
+            console.error('[tournaments] settleBetsForResetMatch', betErr);
+          }
+        }
         try {
           await settleBetsForMatch(db, id, matchId);
         } catch (betErr) {
