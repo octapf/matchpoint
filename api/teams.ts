@@ -15,6 +15,7 @@ import { guestPlayerIdFromSlot, isGuestPlayerSlot, normalizeTeamPlayerSlots, par
 import { assertGuestIdsBelongToTournament, resolveTwoSlotGenders } from '../server/lib/guestPlayersDb';
 import { tournamentIdMongoFilter } from '../server/lib/mongoTournamentIdFilter';
 import { insertTeamWithEntriesTx } from '../server/lib/insertTeamWithEntriesTx';
+import { isTournamentStarted } from '../lib/isTournamentStarted';
 
 function hasExplicitGroupIndex(raw: unknown): boolean {
   if (raw === undefined || raw === null) return false;
@@ -69,6 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tournament = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
       if (!tournament) {
         return corsRes.status(404).json({ error: 'Tournament not found' });
+      }
+      if (isTournamentStarted(tournament as { startedAt?: unknown; phase?: unknown } | null)) {
+        return corsRes.status(400).json({ error: 'Tournament already started' });
       }
       const actorUser = await db.collection('users').findOne({ _id: new ObjectId(actorId) });
       const admin = !!(actorUser && isUserAdmin(actorUser as { role?: string; email?: string }));
