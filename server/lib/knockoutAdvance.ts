@@ -72,13 +72,34 @@ export async function recomputeCategoryBracketAfterWinnerChange(
 
   const key = (x: unknown) => String(x ?? '').trim();
   const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
+  const feedsFrom = (m: any, sourceMatchId: string) =>
+    key(m.advanceTeamAFromMatchId) === sourceMatchId ||
+    key(m.advanceTeamBFromMatchId) === sourceMatchId ||
+    key(m.advanceTeamALoserFromMatchId) === sourceMatchId ||
+    key(m.advanceTeamBLoserFromMatchId) === sourceMatchId;
 
-  // Compute (winner, loser) for every completed match with a valid winner.
+  const invalidatedMatchIds = new Set<string>();
+  const queue = [editedMatchId];
+  for (let i = 0; i < queue.length; i++) {
+    const sourceMatchId = queue[i];
+    if (!sourceMatchId) continue;
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId || invalidatedMatchIds.has(mid)) continue;
+      if (feedsFrom(m, sourceMatchId)) {
+        invalidatedMatchIds.add(mid);
+        queue.push(mid);
+      }
+    }
+  }
+
+  // Compute outcomes for completed matches that still have a valid result after this edit.
   const winnerByMatchId = new Map<string, string>();
   const loserByMatchId = new Map<string, string>();
   for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
     const mid = idStr(m);
+    if (!mid || invalidatedMatchIds.has(mid)) continue;
+    if (key(m.status) !== 'completed') continue;
     const w = key(m.winnerId);
     const a = key(m.teamAId);
     const b = key(m.teamBId);
@@ -107,7 +128,7 @@ export async function recomputeCategoryBracketAfterWinnerChange(
       advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
 
     const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+    if (!slotChanged && !invalidatedMatchIds.has(mid)) continue;
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {

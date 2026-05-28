@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { normalizeGroupCount, validateTournamentGroups } from '../../lib/tournamentGroups';
+import { isTournamentStarted } from '../../lib/isTournamentStarted';
 
 /**
  * Round-robin assign groupIndex (0..groupCount-1) by createdAt so each group stays within capacity.
@@ -13,6 +14,9 @@ export async function rebalanceTournamentTeams(
   const teamsCol = db.collection('teams');
   const t = await tournamentsCol.findOne({ _id: new ObjectId(tournamentId) });
   if (!t) throw new Error('Tournament not found');
+  if (isTournamentStarted(t as { startedAt?: unknown; phase?: unknown } | null)) {
+    throw new Error('Tournament already started');
+  }
   const maxT = Number((t as { maxTeams?: number }).maxTeams);
   const gc = normalizeGroupCount((t as { groupCount?: number }).groupCount);
   const vg = validateTournamentGroups(maxT, gc);
