@@ -128,6 +128,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (update.groupIndex !== undefined) {
+        if (tournamentStartedPatch) {
+          return corsRes.status(400).json({ error: 'Team group cannot be changed after the tournament has started' });
+        }
         if (!tournamentAllowsManualGroupAssignment(tournament as { groupsDistributedAt?: string | null })) {
           return corsRes.status(400).json({ error: 'Groups are not created yet. Use Create groups in the tournament first.' });
         }

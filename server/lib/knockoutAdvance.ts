@@ -76,9 +76,11 @@ export async function recomputeCategoryBracketAfterWinnerChange(
   // Compute (winner, loser) for every completed match with a valid winner.
   const winnerByMatchId = new Map<string, string>();
   const loserByMatchId = new Map<string, string>();
+  const matchById = new Map<string, any>();
   for (const m of matches as any[]) {
-    if (key(m.status) !== 'completed') continue;
     const mid = idStr(m);
+    if (mid) matchById.set(mid, m);
+    if (key(m.status) !== 'completed') continue;
     const w = key(m.winnerId);
     const a = key(m.teamAId);
     const b = key(m.teamBId);
@@ -87,27 +89,47 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
-  const bulk: any[] = [];
-  for (const m of matches as any[]) {
-    const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
+  const outputFromMatch = (matchId: string, kind: 'winner' | 'loser', resetMatchIds: Set<string>): string => {
+    if (!matchId || resetMatchIds.has(matchId)) return '';
+    return kind === 'winner' ? winnerByMatchId.get(matchId) ?? '' : loserByMatchId.get(matchId) ?? '';
+  };
 
+  const desiredSlots = (m: any, resetMatchIds: Set<string>): { desiredA: string; desiredB: string } => {
     const advAW = key(m.advanceTeamAFromMatchId);
     const advBW = key(m.advanceTeamBFromMatchId);
     const advAL = key(m.advanceTeamALoserFromMatchId);
     const advBL = key(m.advanceTeamBLoserFromMatchId);
-
     const curA = key(m.teamAId);
     const curB = key(m.teamBId);
 
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
+    return {
+      desiredA: advAW ? outputFromMatch(advAW, 'winner', resetMatchIds) : advAL ? outputFromMatch(advAL, 'loser', resetMatchIds) : curA,
+      desiredB: advBW ? outputFromMatch(advBW, 'winner', resetMatchIds) : advBL ? outputFromMatch(advBL, 'loser', resetMatchIds) : curB,
+    };
+  };
 
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+  const resetMatchIds = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const m of matches as any[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId || resetMatchIds.has(mid)) continue;
+      const { desiredA, desiredB } = desiredSlots(m, resetMatchIds);
+      const curA = key(m.teamAId);
+      const curB = key(m.teamBId);
+      if (desiredA !== curA || desiredB !== curB) {
+        resetMatchIds.add(mid);
+        changed = true;
+      }
+    }
+  }
+
+  const bulk: any[] = [];
+  for (const mid of resetMatchIds) {
+    const m = matchById.get(mid);
+    if (!m) continue;
+    const { desiredA, desiredB } = desiredSlots(m, resetMatchIds);
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {

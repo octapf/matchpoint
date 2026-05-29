@@ -398,8 +398,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'rebalanceGroups') {
-        const result = await rebalanceTournamentTeams(db, id);
-        return corsRes.status(200).json(result);
+        try {
+          const result = await rebalanceTournamentTeams(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not rebalance groups';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'start') {
@@ -599,6 +604,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'deleteGuestPlayer') {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
