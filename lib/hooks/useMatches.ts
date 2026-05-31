@@ -230,8 +230,11 @@ export function useUpdateMatch() {
         queryClient.setQueryData(key, data);
       }
     },
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       upsertMatchFromServer(queryClient, data);
+      if (vars.update?.finalize === true) {
+        queryClient.invalidateQueries({ queryKey: ['matches'] });
+      }
     },
   });
 }

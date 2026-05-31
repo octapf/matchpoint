@@ -1,5 +1,17 @@
 import type { Db } from 'mongodb';
 
+type CategoryKnockoutMatch = {
+  _id?: unknown;
+  teamAId?: unknown;
+  teamBId?: unknown;
+  status?: unknown;
+  winnerId?: unknown;
+  advanceTeamAFromMatchId?: unknown;
+  advanceTeamBFromMatchId?: unknown;
+  advanceTeamALoserFromMatchId?: unknown;
+  advanceTeamBLoserFromMatchId?: unknown;
+};
+
 /**
  * When a category knockout match completes, push winner/loser into downstream slots.
  */
@@ -71,12 +83,12 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     .toArray();
 
   const key = (x: unknown) => String(x ?? '').trim();
-  const idStr = (x: unknown) => String((x as any)?._id ?? '').trim();
+  const idStr = (x: unknown) => String((x as CategoryKnockoutMatch)?._id ?? '').trim();
 
   // Compute (winner, loser) for every completed match with a valid winner.
   const winnerByMatchId = new Map<string, string>();
   const loserByMatchId = new Map<string, string>();
-  for (const m of matches as any[]) {
+  for (const m of matches as CategoryKnockoutMatch[]) {
     if (key(m.status) !== 'completed') continue;
     const mid = idStr(m);
     const w = key(m.winnerId);
@@ -87,27 +99,46 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     loserByMatchId.set(mid, w === a ? b : a);
   }
 
+  const resetIds = new Set<string>();
+  const desiredSlotsById = new Map<string, { teamAId: string; teamBId: string }>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const m of matches as CategoryKnockoutMatch[]) {
+      const mid = idStr(m);
+      if (!mid || mid === editedMatchId || resetIds.has(mid)) continue;
+
+      const advAW = key(m.advanceTeamAFromMatchId);
+      const advBW = key(m.advanceTeamBFromMatchId);
+      const advAL = key(m.advanceTeamALoserFromMatchId);
+      const advBL = key(m.advanceTeamBLoserFromMatchId);
+
+      const curA = key(m.teamAId);
+      const curB = key(m.teamBId);
+
+      const desiredA =
+        advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
+      const desiredB =
+        advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
+      const feederWasReset = [advAW, advBW, advAL, advBL].some((feedId) => feedId && resetIds.has(feedId));
+
+      const slotChanged = desiredA !== curA || desiredB !== curB;
+      if (!slotChanged && !(feederWasReset && key(m.status) === 'completed')) continue;
+
+      resetIds.add(mid);
+      desiredSlotsById.set(mid, { teamAId: desiredA, teamBId: desiredB });
+      winnerByMatchId.delete(mid);
+      loserByMatchId.delete(mid);
+      changed = true;
+    }
+  }
+
   const bulk: any[] = [];
-  for (const m of matches as any[]) {
+  for (const m of matches as CategoryKnockoutMatch[]) {
     const mid = idStr(m);
-    if (!mid) continue;
-    if (mid === editedMatchId) continue;
+    if (!mid || !resetIds.has(mid)) continue;
 
-    const advAW = key(m.advanceTeamAFromMatchId);
-    const advBW = key(m.advanceTeamBFromMatchId);
-    const advAL = key(m.advanceTeamALoserFromMatchId);
-    const advBL = key(m.advanceTeamBLoserFromMatchId);
-
-    const curA = key(m.teamAId);
-    const curB = key(m.teamBId);
-
-    const desiredA =
-      advAW ? winnerByMatchId.get(advAW) ?? '' : advAL ? loserByMatchId.get(advAL) ?? '' : curA;
-    const desiredB =
-      advBW ? winnerByMatchId.get(advBW) ?? '' : advBL ? loserByMatchId.get(advBL) ?? '' : curB;
-
-    const slotChanged = desiredA !== curA || desiredB !== curB;
-    if (!slotChanged) continue;
+    const desired = desiredSlotsById.get(mid) ?? { teamAId: key(m.teamAId), teamBId: key(m.teamBId) };
 
     const $set: Record<string, unknown> = { updatedAt: updatedAtIso, status: 'scheduled' };
     const $unset: Record<string, ''> = {
@@ -127,14 +158,14 @@ export async function recomputeCategoryBracketAfterWinnerChange(
       serveIndex: '',
     };
 
-    if (desiredA) $set.teamAId = desiredA;
+    if (desired.teamAId) $set.teamAId = desired.teamAId;
     else $unset.teamAId = '';
-    if (desiredB) $set.teamBId = desiredB;
+    if (desired.teamBId) $set.teamBId = desired.teamBId;
     else $unset.teamBId = '';
 
     bulk.push({
       updateOne: {
-        filter: { _id: (m as any)._id },
+        filter: { _id: m._id },
         update: { $set, $unset },
       },
     });
