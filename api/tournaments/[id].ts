@@ -398,8 +398,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'rebalanceGroups') {
-        const result = await rebalanceTournamentTeams(db, id);
-        return corsRes.status(200).json(result);
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+        try {
+          const result = await rebalanceTournamentTeams(db, id);
+          return corsRes.status(200).json(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not rebalance groups';
+          return corsRes.status(400).json({ error: msg });
+        }
       }
 
       if (action === 'start') {
@@ -583,6 +591,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'createGuestPlayer') {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const r = await createGuestPlayer(db, id, actingUserId, body);
         if (!r.ok) return corsRes.status(400).json({ error: r.error });
         return corsRes.status(201).json(serializeDoc(r.doc));
@@ -599,6 +610,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'deleteGuestPlayer') {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
         const gid = typeof body?.guestId === 'string' ? body.guestId.trim() : '';
         if (!gid || !ObjectId.isValid(gid)) {
           return corsRes.status(400).json({ error: 'Invalid guestId' });
@@ -609,12 +623,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (action === 'deleteAllGuestPlayers') {
-        const started =
-          !!(cur as { startedAt?: unknown }).startedAt ||
-          (cur as { phase?: unknown }).phase === 'classification' ||
-          (cur as { phase?: unknown }).phase === 'categories' ||
-          (cur as { phase?: unknown }).phase === 'completed';
-        if (started) {
+        if (isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown })) {
           return corsRes.status(400).json({ error: 'Tournament already started' });
         }
         const r = await deleteAllGuestPlayers(db, id);
@@ -1586,11 +1595,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return corsRes.status(400).json({ error: 'No valid fields to update' });
       }
 
-      const started =
-        !!(cur as { startedAt?: unknown }).startedAt ||
-        (cur as { phase?: unknown }).phase === 'classification' ||
-        (cur as { phase?: unknown }).phase === 'categories' ||
-        (cur as { phase?: unknown }).phase === 'completed';
+      const started = isTournamentStarted(cur as { startedAt?: unknown; phase?: unknown });
 
       if (
         started &&
@@ -1943,9 +1948,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return corsRes.status(400).json({ error: cov.error });
         }
 
+        const newlyOrganizeOnly = nextOnly.filter((uid) => !prevOnlyRaw.includes(uid));
+        if (started && newlyOrganizeOnly.length > 0) {
+          return corsRes.status(400).json({ error: 'Tournament already started' });
+        }
+
         update.organizerOnlyIds = nextOnly;
         update.organizerOnlyCovers = nextCovers;
-        nextOnlyForRemoval = nextOnly;
+        nextOnlyForRemoval = newlyOrganizeOnly;
       }
 
       update.updatedAt = new Date().toISOString();
