@@ -133,12 +133,7 @@ export async function recomputeCategoryBracketAfterWinnerChange(
     }
   }
 
-  const bulk: {
-    updateOne: {
-      filter: { _id: unknown };
-      update: { $set: Record<string, unknown>; $unset: Record<string, ''> };
-    };
-  }[] = [];
+  const bulk: any[] = [];
   for (const m of matches as CategoryKnockoutMatch[]) {
     const mid = idStr(m);
     if (!mid || !resetIds.has(mid)) continue;
